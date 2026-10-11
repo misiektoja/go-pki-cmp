@@ -4,7 +4,7 @@ Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags p
 
 ## v0.4.0 - TBD
 
-Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, requests that name the device only in subjectAltName and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation. The client reports a certificate whose confirmation failed separately from a refused request.
+Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, requests that name the device only in subjectAltName and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation. The client reports a certificate whose confirmation failed separately from a refused request. Key updates repeat the old certificate's subject with its original encoding.
 
 ### `pkicmp`
 
@@ -13,10 +13,12 @@ Servers can accept CMP devices that the default settings refuse. They can issue 
 * **poposkInput proofs of possession.** `VerifyPOPWithOptions` verifies a signature proof that carries poposkInput, which RFC 4211 §4.1 allows when the template has no subject. It checks the publicKeyMAC against **`POPOptions.SharedSecret`** within the MAC iteration limits or the sender against **`POPOptions.Sender`**. Such a proof previously failed verification. A malformed poposkInput is now a parse error. **`POPOptions.AllowPoposkInputVariants`** accepts the poposkInput that the Insta Certifier 10 cmpclient sends, which does not follow RFC 4211. Its signature does not cover the template.
 * **`CertRequest.OldCertID`** returns the certificate that a key update names in its oldCertID control. **`CertID.Identifies`** reports whether a CertID names a given certificate.
 * **A template subject from `NewDirectoryNameFromRawDER` is encoded.** `CertTemplate` previously dropped it, so the request carried no subject.
+* **Directory names get the string types crypto/x509 uses.** A name built from `pkix.Name`, as by `NewDirectoryName`, `client.WithSender` and `client.WithTemplateSubject`, encodes a value as PrintableString when it fits and as UTF8String otherwise. Every value was a UTF8String before, so a subject copied from a certificate did not match it byte for byte. A value that cannot be encoded now fails marshalling. It was left out before, which produced an invalid name.
 
 ### `client`
 
 * **`WithMACIterationLimits`** sets the accepted iteration counts in MAC-protected responses. To send a count outside the default range, set it with `pkicmp.WithMACIterationCount` and widen `pkicmp.WithMACIterationLimits` on the credentials.
+* **Key updates repeat the old certificate's subject.** Without `WithTemplateSubject`, `SendKUR` puts the subject of the certificate it updates in the certificate template, with the bytes that certificate encodes, as RFC 9483 §4.1.3 requires. It sent no subject before. A certificate with an empty subject still gets a key update without one. A signed request without `WithSender` names its protection certificate's subject with the same bytes.
 * **`ConfirmationError`** reports that the CA issued a certificate but the certConf that confirms it failed, and carries that certificate. Such a failure previously looked like a refused request, although the CA may keep the certificate. `errors.As` still finds the CA's status inside it.
 
 ### `server`
