@@ -150,10 +150,10 @@ docs: ## Serve the package documentation locally with pkgsite.
 VERSION ?=
 # Artifacts without a release, such as the routine SBOM run, are named after the commit instead.
 SBOM_VERSION := $(if $(VERSION),$(VERSION),$(shell git rev-parse --short HEAD))
-SOURCE_ZIP = dist/go-pkicmp-ng-$(VERSION)-source.zip
-SOURCE_TAR_GZ = dist/go-pkicmp-ng-$(VERSION)-source.tar.gz
-SBOM_FILE = dist/go-pkicmp-ng-$(SBOM_VERSION)-sbom.cdx.json
-RELEASE_CHECKSUMS = dist/go-pkicmp-ng-$(VERSION)_SHA256SUMS.txt
+SOURCE_ZIP = dist/go-pki-cmp-$(VERSION)-source.zip
+SOURCE_TAR_GZ = dist/go-pki-cmp-$(VERSION)-source.tar.gz
+SBOM_FILE = dist/go-pki-cmp-$(SBOM_VERSION)-sbom.cdx.json
+RELEASE_CHECKSUMS = dist/go-pki-cmp-$(VERSION)_SHA256SUMS.txt
 # RELEASE_CHECK_DIR holds the exported tree and the consumer module of a release check.
 RELEASE_CHECK_DIR ?= $(CURDIR)/.cache/release-check
 
@@ -173,8 +173,8 @@ release-check: ## Build, vet and test an export of HEAD and import it from a sep
 	mkdir -p "$$export/export" "$$export/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$export/export"; \
 	cd "$$export/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
-	cd "$$export/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pkicmp-ng v0.0.0\n\nreplace github.com/misiektoja/go-pkicmp-ng => ../export\n' "$(GO_VERSION)" > go.mod; \
-	printf 'package main\n\nimport (\n\t"log"\n\n\t"github.com/misiektoja/go-pkicmp-ng/client"\n\t"github.com/misiektoja/go-pkicmp-ng/pkicmp"\n\t"github.com/misiektoja/go-pkicmp-ng/server"\n)\n\nfunc main() {\n\t_, err := pkicmp.NewMACCredentials([]byte("release-check"))\n\tlog.Println(client.NewClient("http://localhost/cmp") != nil, server.NewCAServer(nil, server.LightweightPolicy()).Err(), err)\n}\n' > main.go; \
+	cd "$$export/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-cmp v0.0.0\n\nreplace github.com/misiektoja/go-pki-cmp => ../export\n' "$(GO_VERSION)" > go.mod; \
+	printf 'package main\n\nimport (\n\t"log"\n\n\t"github.com/misiektoja/go-pki-cmp/client"\n\t"github.com/misiektoja/go-pki-cmp/pkicmp"\n\t"github.com/misiektoja/go-pki-cmp/server"\n)\n\nfunc main() {\n\t_, err := pkicmp.NewMACCredentials([]byte("release-check"))\n\tlog.Println(client.NewClient("http://localhost/cmp") != nil, server.NewCAServer(nil, server.LightweightPolicy()).Err(), err)\n}\n' > main.go; \
 	go mod tidy && go build ./... && go run .; \
 	echo "release check passed for $$(git -C "$(CURDIR)" rev-parse --short HEAD)"
 

@@ -129,10 +129,10 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            dist/go-pkicmp-ng-${{ steps.release.outputs.version }}-sbom.cdx.json
-            dist/go-pkicmp-ng-${{ steps.release.outputs.version }}-source.zip
-            dist/go-pkicmp-ng-${{ steps.release.outputs.version }}-source.tar.gz
-            dist/go-pkicmp-ng-${{ steps.release.outputs.version }}_SHA256SUMS.txt
+            dist/go-pki-cmp-${{ steps.release.outputs.version }}-sbom.cdx.json
+            dist/go-pki-cmp-${{ steps.release.outputs.version }}-source.zip
+            dist/go-pki-cmp-${{ steps.release.outputs.version }}-source.tar.gz
+            dist/go-pki-cmp-${{ steps.release.outputs.version }}_SHA256SUMS.txt
 
       # Publishing the bundle next to the artifacts lets an offline verifier check their provenance
       # without calling the attestations API.
@@ -140,7 +140,7 @@ jobs:
         env:
           ARTIFACT_BUNDLE: ${{ steps.artifacts.outputs.bundle-path }}
           VERSION: ${{ steps.release.outputs.version }}
-        run: cp "$ARTIFACT_BUNDLE" "dist/go-pkicmp-ng-${VERSION}.intoto.jsonl"
+        run: cp "$ARTIFACT_BUNDLE" "dist/go-pki-cmp-${VERSION}.intoto.jsonl"
 
       - name: Publish the draft release and its assets
         env:
@@ -160,4 +160,4 @@ jobs:
           esac
           # Every asset is named after the release rather than matched by a glob, so a stale file left
           # in dist by an earlier run cannot be attached to this one.
-          gh release upload "$VERSION" "dist/go-pkicmp-ng-${VERSION}-source.zip" "dist/go-pkicmp-ng-${VERSION}-source.tar.gz" "dist/go-pkicmp-ng-${VERSION}-sbom.cdx.json" "dist/go-pkicmp-ng-${VERSION}_SHA256SUMS.txt" "dist/go-pkicmp-ng-${VERSION}.intoto.jsonl" --clobber
+          gh release upload "$VERSION" "dist/go-pki-cmp-${VERSION}-source.zip" "dist/go-pki-cmp-${VERSION}-source.tar.gz" "dist/go-pki-cmp-${VERSION}-sbom.cdx.json" "dist/go-pki-cmp-${VERSION}_SHA256SUMS.txt" "dist/go-pki-cmp-${VERSION}.intoto.jsonl" --clobber
