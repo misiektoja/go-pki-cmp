@@ -2,6 +2,25 @@
 
 Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.4.0 - TBD
+
+Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range.
+
+### `pkicmp`
+
+* **MAC iteration count limits are configurable.** **`VerifyOptions.MinMACIterationCount`** and **`MaxMACIterationCount`** bound the PasswordBasedMac or PBMAC1 iteration count the sender chose. The defaults are unchanged at 1 and 500000, exported as `DefaultMinMACIterationCount` and `DefaultMaxMACIterationCount`. **`WithMACIterationLimits`** applies a range when protecting, including when echoing a peer's parameters with `WithProtectionAlgorithm`. `VerifyResult.ProtectionParams` carries the range the message was verified against, so echoing it needs no extra option.
+* **`CertTemplate.RawSubject`** holds the subject name exactly as received. Marshalling still encodes `Subject`.
+
+### `client`
+
+* **`WithMACIterationLimits`** sets the accepted iteration counts in MAC-protected responses. To send a count outside the default range, set it with `pkicmp.WithMACIterationCount` and widen `pkicmp.WithMACIterationLimits` on the credentials.
+
+### `server`
+
+* **`WithMACIterationLimits`** sets the accepted iteration counts in MAC-protected requests, and responses echo the request's count. A request outside the range is rejected with `badMessageCheck` before any key derivation. A request whose MAC parameters are not accepted, for example an iteration count out of range or a PBMAC1 key length out of range, now gets the status text "MAC protection parameters not accepted" instead of "MAC verification failed".
+* **`WithRawSubject`** sets `template.RawSubject` to the subject a CRMF or PKCS#10 request asked for, so the issued certificate keeps every attribute, such as domainComponent and emailAddress, with its order and string type. It is off by default. `x509.CreateCertificate` prefers `RawSubject` to `Subject`, so a CA that changes the subject must clear it and a CA that checks the subject must check every attribute in `Subject.Names`.
+* **`WithOptionalCertConfRecipNonce`** accepts a certConf without recipNonce, which the server otherwise rejects with `badRecipientNonce`. A recipNonce that is present must still match. The certificate hash in each CertStatus still binds the confirmation to the issued certificate.
+
 ## v0.3.2 - 9 Oct 2026
 
 This version requires Go 1.27.2 and updates composite ML-DSA support to the published v0.2.0 library.
