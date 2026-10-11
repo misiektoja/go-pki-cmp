@@ -149,6 +149,11 @@
 // certReqId is rejected in certConf before the error is returned, so the CA
 // learns of it at once (RFC 9483 §3.6.1).
 //
+// A certificate the client accepts can still fail in the confirming certConf,
+// for example when the CA refuses it. The error is then a [ConfirmationError]
+// holding the certificate. The CA may keep it or revoke it as unconfirmed, so
+// check the CA before retrying, because a retry may issue a second one.
+//
 // # Limits
 //
 // [DefaultMaxResponseBytes] (10 MiB) caps response body size to prevent memory
