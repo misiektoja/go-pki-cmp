@@ -74,6 +74,8 @@ type serverConfig struct {
 	allowSHA1Signatures          bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
+	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
+	maxMACIterationCount         int                  // zero selects pkicmp.DefaultMaxMACIterationCount
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
 
 	// Built once by New from signerKey and signerCert. signerErr records a
@@ -202,6 +204,28 @@ func WithMessageTimeTolerance(tolerance time.Duration) Option {
 func WithRAAuthorizer(authorizer RAAuthorizer) Option {
 	return func(c *serverConfig) {
 		c.raAuthorizer = authorizer
+	}
+}
+
+// WithMACIterationLimits sets the range of PasswordBasedMac and PBMAC1
+// iteration counts accepted in MAC-protected requests. A request outside it is
+// rejected with badMessageCheck before any key derivation. Responses echo the
+// request's count, so the same range applies to them.
+//
+// The defaults are [pkicmp.DefaultMinMACIterationCount] and
+// [pkicmp.DefaultMaxMACIterationCount]. Zero selects a default and a maximum
+// below the minimum is raised to it.
+//
+// The client chooses the count and every iteration runs before the MAC can be
+// checked, so the maximum bounds the work an unauthenticated request costs.
+// Only a request naming a known shared secret reaches that point. Raise the
+// maximum for devices configured with more iterations. Raise the minimum, for
+// example to the 100 that RFC 4211 §4.4 requires, to refuse protection too
+// cheap to slow an offline guess of a weak shared secret.
+func WithMACIterationLimits(minimum, maximum int) Option {
+	return func(c *serverConfig) {
+		c.minMACIterationCount = minimum
+		c.maxMACIterationCount = maximum
 	}
 }
 

@@ -32,10 +32,20 @@ func (s *Server) verifyProtection(msg *pkicmp.PKIMessage) (*SenderIdentity, erro
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadMessageCheck, "unknown sender")
 		}
-		vr, err := msg.Verify(pkicmp.VerifyOptions{SharedSecret: secret})
+		vr, err := msg.Verify(pkicmp.VerifyOptions{
+			SharedSecret:         secret,
+			MinMACIterationCount: s.cfg.minMACIterationCount,
+			MaxMACIterationCount: s.cfg.maxMACIterationCount,
+		})
 		if err != nil {
 			if isUnsupportedAlgorithm(err) {
 				return nil, rejection(pkicmp.FailBadAlg, "unsupported protection algorithm")
+			}
+			// Parameters outside local policy, such as an iteration count beyond
+			// WithMACIterationLimits, are not a wrong secret. Saying so points an
+			// operator at the device configuration instead of the credential.
+			if _, ok := errors.AsType[*pkicmp.ParseError](err); ok {
+				return nil, rejection(pkicmp.FailBadMessageCheck, "MAC protection parameters not accepted")
 			}
 			return nil, rejection(pkicmp.FailBadMessageCheck, "MAC verification failed")
 		}
@@ -118,6 +128,9 @@ func (s *Server) protectResponseWithOptions(resp *pkicmp.PKIMessage, sender *Sen
 		if protectionParams != nil {
 			opts = append(opts, protectionParams)
 		}
+		// Parameters restored from a snapshot carry no limits of their own, and
+		// the echoed count was accepted under the configured ones.
+		opts = append(opts, pkicmp.WithMACIterationLimits(s.cfg.minMACIterationCount, s.cfg.maxMACIterationCount))
 		creds, err := pkicmp.NewMACCredentials(sender.secret, opts...)
 		if err != nil {
 			return err
