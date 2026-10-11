@@ -189,6 +189,13 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 				StatusString: pkicmp.PKIFreeText{err.Error()},
 			})
 		}
+		if err := validateProfilePOP(msg); err != nil {
+			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+				Status:       pkicmp.StatusRejection,
+				FailInfo:     pkicmp.FailBadPOP,
+				StatusString: pkicmp.PKIFreeText{err.Error()},
+			})
+		}
 	}
 
 	// RFC 9483 §5.2.2.1: other header fields of a nested message can be
@@ -219,9 +226,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		})
 	}
 
-	if s.cfg.allowSHA1Signatures {
-		ctx = contextWithSHA1Signatures(ctx)
-	}
+	ctx = contextWithPolicyConfig(ctx, s.policyConfig())
 	if s.cfg.rawSubject {
 		ctx = contextWithRawSubject(ctx)
 	}
@@ -250,6 +255,23 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		})
 	}
 	return resp
+}
+
+// policyConfig returns the settings for request checks inside handlers.
+// WithStrictProfileValidation clears every option that relaxes an RFC 9483 rule.
+func (s *Server) policyConfig() policyConfig {
+	relaxed := !s.cfg.strictProfile
+	return policyConfig{
+		allowSHA1Signatures:      s.cfg.allowSHA1Signatures,
+		allowPoposkInputVariants: s.cfg.allowPoposkInputVariants && relaxed,
+		minMACIterationCount:     s.cfg.minMACIterationCount,
+		maxMACIterationCount:     s.cfg.maxMACIterationCount,
+		optionalSubject:          s.cfg.optionalSubject && relaxed,
+		optionalRevocationReason: s.cfg.optionalRevocationReason && relaxed,
+		optionalRevocationIssuer: s.cfg.optionalRevocationIssuer && relaxed,
+		macRevocation:            s.cfg.macRevocation && relaxed,
+		signatureProtectionPOP:   s.cfg.signatureProtectionPOP && relaxed,
+	}
 }
 
 // CleanupExpired removes pending transactions and issued certificates that
@@ -374,6 +396,33 @@ func isInitialRequest(bodyType pkicmp.BodyType) bool {
 	default:
 		return false
 	}
+}
+
+// validateProfilePOP applies the RFC 9483 §4.1.1 rule that a signature proof
+// of possession carries no poposkInput.
+func validateProfilePOP(msg *pkicmp.PKIMessage) error {
+	var msgs *pkicmp.CertReqMessages
+	var err error
+	switch msg.Body.Type {
+	case pkicmp.BodyTypeIR:
+		msgs, err = msg.Body.IR()
+	case pkicmp.BodyTypeCR:
+		msgs, err = msg.Body.CR()
+	case pkicmp.BodyTypeKUR:
+		msgs, err = msg.Body.KUR()
+	default:
+		return nil
+	}
+	if err != nil {
+		// The request handler reports the malformed body.
+		return nil
+	}
+	for _, m := range *msgs {
+		if m.Popo != nil && m.Popo.Signature != nil && m.Popo.Signature.PoposkInput != nil {
+			return errors.New("poposkInput is not allowed in the proof of possession")
+		}
+	}
+	return nil
 }
 
 // validateProfileSender applies the RFC 9483 §3.1 rule that a MAC-protected

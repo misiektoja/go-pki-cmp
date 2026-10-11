@@ -85,8 +85,9 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	}
 
 	// RFC 9483 §3.5: recipNonce MUST equal the senderNonce of the previous message.
+	// WithStrictProfileValidation overrides WithOptionalCertConfRecipNonce.
 	missingRecipNonce := len(msg.Header.RecipNonce) == 0
-	if missingRecipNonce && !s.cfg.optionalCertConfRecipNonce {
+	if missingRecipNonce && (!s.cfg.optionalCertConfRecipNonce || s.cfg.strictProfile) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRecipientNonce,

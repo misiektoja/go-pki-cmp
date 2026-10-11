@@ -45,7 +45,8 @@ type RevocationAuthorizer interface {
 	// notAuthorized, to refuse it.
 	//
 	// Without this interface such requests are rejected with notAuthorized.
-	// It also receives MAC-protected requests when the policy lets them through.
+	// It also receives MAC-protected requests that [WithMACRevocation] lets
+	// through [LightweightPolicy] or that reach a handler without that policy.
 	AuthorizeRevocation(ctx context.Context, req *RevocationRequest, sender *SenderIdentity) error
 }
 
@@ -53,7 +54,10 @@ type RevocationAuthorizer interface {
 type RevocationRequest struct {
 	// Issuer is the issuer name of the certificate, decoded from RawIssuer.
 	Issuer pkix.Name
-	// RawIssuer is the DER issuer name as the requester encoded it.
+	// RawIssuer is the DER issuer name as the requester encoded it. It is empty
+	// only under [WithOptionalRevocationIssuer], for a request that names no
+	// issuer and is not signed with the certificate it names. The CA must then
+	// find the certificate by SerialNumber alone.
 	RawIssuer []byte
 	// SerialNumber is the serial number of the certificate.
 	SerialNumber *big.Int
@@ -88,14 +92,20 @@ func (r *RevocationRequest) Match(cert *x509.Certificate) error {
 	return nil
 }
 
-// identifies reports whether cert carries the issuer and serial number the request names.
+// identifies reports whether cert carries the issuer and serial number the
+// request names. A request without an issuer is matched by serial number.
 func (r *RevocationRequest) identifies(cert *x509.Certificate) bool {
-	return cert.SerialNumber != nil && r.SerialNumber.Cmp(cert.SerialNumber) == 0 &&
-		equalNames(r.RawIssuer, cert.RawIssuer)
+	return r.namesSerialOf(cert) && (len(r.RawIssuer) == 0 || equalNames(r.RawIssuer, cert.RawIssuer))
 }
 
-// parseRevocationRequest extracts the single revocation RFC 9483 §4.2 allows in an rr body.
-func parseRevocationRequest(msg *pkicmp.PKIMessage) (*RevocationRequest, error) {
+// namesSerialOf reports whether the request names the serial number of cert.
+func (r *RevocationRequest) namesSerialOf(cert *x509.Certificate) bool {
+	return cert.SerialNumber != nil && r.SerialNumber.Cmp(cert.SerialNumber) == 0
+}
+
+// parseRevocationRequest extracts the single revocation RFC 9483 §4.2 allows in
+// an rr body. optionalIssuer admits a template without an issuer.
+func parseRevocationRequest(msg *pkicmp.PKIMessage, optionalIssuer bool) (*RevocationRequest, error) {
 	content, err := msg.Body.RR()
 	if err != nil {
 		return nil, rejection(pkicmp.FailBadDataFormat, "malformed revocation request")
@@ -119,17 +129,18 @@ func parseRevocationRequest(msg *pkicmp.PKIMessage) (*RevocationRequest, error) 
 			return nil, rejection(pkicmp.FailBadDataFormat, "malformed issuer")
 		}
 	}
-	if len(issuer) == 0 {
-		return nil, rejection(pkicmp.FailAddInfoNotAvailable, "issuer required")
-	}
-
 	req := &RevocationRequest{
-		RawIssuer:    tmpl.Issuer,
 		SerialNumber: tmpl.SerialNumber,
 		subject:      tmpl.Subject.DirectoryName,
 		publicKey:    tmpl.PublicKey,
 	}
-	req.Issuer.FillFromRDNSequence(&issuer)
+	// An empty name identifies no issuer, so it counts as absent.
+	if len(issuer) > 0 {
+		req.RawIssuer = tmpl.Issuer
+		req.Issuer.FillFromRDNSequence(&issuer)
+	} else if !optionalIssuer {
+		return nil, rejection(pkicmp.FailAddInfoNotAvailable, "issuer required")
+	}
 
 	req.Extensions, err = details.CRLEntryExtensions()
 	if err != nil {
@@ -161,9 +172,16 @@ func (h *caHandler) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage
 	if !ok {
 		return rejection(pkicmp.FailBadRequest, "revocation not supported")
 	}
-	req, err := parseRevocationRequest(msg)
+	req, err := parseRevocationRequest(msg, policyConfigFrom(ctx).optionalRevocationIssuer)
 	if err != nil {
 		return err
+	}
+	// A request that names no issuer and the serial number of its own signer
+	// revokes that certificate. Taking the issuer from the signer keeps the CA
+	// from matching the serial number to a certificate of another issuer.
+	if len(req.RawIssuer) == 0 && sender != nil && sender.Certificate != nil && req.namesSerialOf(sender.Certificate) {
+		req.RawIssuer = bytes.Clone(sender.Certificate.RawIssuer)
+		req.Issuer = sender.Certificate.Issuer
 	}
 
 	// RFC 9483 §4.2: signing with the certificate being revoked proves the

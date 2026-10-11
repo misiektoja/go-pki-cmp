@@ -38,7 +38,7 @@ func TestMLDSARequiresProof(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				err = enforceProofOfPossession(context.Background(), parsed)
+				err = enforceProofOfPossession(context.Background(), parsed, nil)
 				if proof && err != nil {
 					t.Fatal(err)
 				}

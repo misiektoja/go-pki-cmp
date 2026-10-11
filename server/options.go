@@ -73,7 +73,13 @@ type serverConfig struct {
 	strictProfile                bool
 	optionalCertConfRecipNonce   bool
 	allowSHA1Signatures          bool
+	allowPoposkInputVariants     bool
 	rawSubject                   bool
+	optionalSubject              bool
+	optionalRevocationReason     bool
+	optionalRevocationIssuer     bool
+	macRevocation                bool
+	signatureProtectionPOP       bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
 	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
@@ -145,7 +151,7 @@ func WithImplicitConfirm() Option {
 
 // WithStrictProfileValidation enforces the RFC 9483 message construction rules
 // that a receiver can check but does not need to authenticate a peer. It adds
-// seven rejections:
+// eight rejections:
 //
 //   - a MAC-protected message whose sender is not a directoryName naming the
 //     shared secret (§3.1), unless it is a nested message (§5.2.2.1),
@@ -158,7 +164,15 @@ func WithImplicitConfirm() Option {
 //     let the server assign instead,
 //   - a message whose senderNonce is missing or shorter than 128 bits (§3.5),
 //     which RFC 4210 and RFC 9810 leave optional,
-//   - a certConf with more than one CertStatus (§4.1.1).
+//   - a certConf with more than one CertStatus (§4.1.1),
+//   - a CRMF request whose signature proof of possession carries poposkInput
+//     (§4.1.1), even with [WithPoposkInputVariants].
+//
+// It also overrides the options that relax RFC 9483 rules:
+// [WithOptionalCertConfRecipNonce], [WithPoposkInputVariants],
+// [WithOptionalSubject], [WithOptionalRevocationReason],
+// [WithOptionalRevocationIssuer], [WithMACRevocation] and
+// [WithSignatureProtectionPOP].
 //
 // Off by default because deployed clients fail them: Nokia ssh-cmpclient
 // sends a NULL-DN sender, omits its own certificate and reuses the senderNonce,
@@ -181,6 +195,8 @@ func WithStrictProfileValidation() Option {
 // A recipNonce that is present must still match. The confirmation stays bound
 // to the issued certificate by its protection, its transactionID and the
 // certificate hash in every CertStatus, which the server checks either way.
+// [WithStrictProfileValidation] refuses a certConf without recipNonce whether
+// or not this option is set.
 func WithOptionalCertConfRecipNonce() Option {
 	return func(c *serverConfig) {
 		c.optionalCertConfRecipNonce = true
@@ -201,6 +217,26 @@ func WithSHA1Signatures() Option {
 	}
 }
 
+// WithPoposkInputVariants accepts the signature proof of possession that the
+// Insta Certifier 10 cmpclient sends with a CRMF request. It carries
+// poposkInput although the template holds both the subject and the public key,
+// which RFC 4211 §4.1 forbids. It also encodes the signed data and the
+// publicKeyMAC differently from RFC 4211. [pkicmp.POPOptions]
+// AllowPoposkInputVariants lists the variants.
+//
+// The server refuses such a proof with badPOP by default. With the option it
+// still verifies the signature with the requested key, the publicKeyMAC with
+// the shared secret that protected the request and a sender against the
+// certificate that signed it. The proof then does not cover the template, so
+// only the message protection binds the requested names to the key holder.
+// [WithStrictProfileValidation] refuses poposkInput whether or not this option
+// is set.
+func WithPoposkInputVariants() Option {
+	return func(c *serverConfig) {
+		c.allowPoposkInputVariants = true
+	}
+}
+
 // WithRawSubject sets template.RawSubject to the subject name exactly as the
 // request encoded it, in a CRMF certificate template or a PKCS#10 request. The
 // issued certificate then keeps every requested attribute with its order and
@@ -217,6 +253,77 @@ func WithSHA1Signatures() Option {
 func WithRawSubject() Option {
 	return func(c *serverConfig) {
 		c.rawSubject = true
+	}
+}
+
+// WithOptionalSubject accepts a certificate request without a subject when it
+// requests a subjectAltName extension. RFC 9483 §4.1.1 requires the subject, so
+// [LightweightPolicy] refuses such a request with badCertTemplate by default.
+// RFC 5280 §4.1.2.6 allows an empty subject when subjectAltName carries the
+// identity.
+//
+// The template carries the requested extension in ExtraExtensions as the
+// requester encoded it. The CA must check its names and mark it critical, as
+// RFC 5280 §4.2.1.6 requires for a certificate with an empty subject.
+func WithOptionalSubject() Option {
+	return func(c *serverConfig) {
+		c.optionalSubject = true
+	}
+}
+
+// WithOptionalRevocationReason accepts a revocation request whose
+// crlEntryDetails carry no reasonCode. RFC 9483 §4.2 requires one, so
+// [LightweightPolicy] refuses such a request with badRequest by default. With
+// the option it reaches the CA with reason unspecified, which RFC 5280 §5.3.1
+// treats the same as an absent code.
+func WithOptionalRevocationReason() Option {
+	return func(c *serverConfig) {
+		c.optionalRevocationReason = true
+	}
+}
+
+// WithOptionalRevocationIssuer accepts a revocation request that names a
+// serial number but no issuer. RFC 9483 §4.2 requires both, so the server
+// refuses such a request with addInfoNotAvailable by default.
+//
+// A request signed with a certificate of that serial number revokes the
+// signer's own certificate. The server fills in its issuer. Any other
+// request reaches [RevocationAuthorizer] with an empty
+// [RevocationRequest.RawIssuer]. The CA must then find the certificate by
+// serial number and refuse the request when certificates from more than one
+// issuer carry it.
+func WithOptionalRevocationIssuer() Option {
+	return func(c *serverConfig) {
+		c.optionalRevocationIssuer = true
+	}
+}
+
+// WithMACRevocation lets [LightweightPolicy] pass MAC-protected revocation
+// requests to the CA. RFC 9483 §4.2 requires signature protection, so they are
+// refused with wrongIntegrity by default.
+//
+// A shared secret proves who holds the secret, not who holds the certificate.
+// Such a request therefore always goes to [RevocationAuthorizer], which must
+// decide whether that secret may revoke the certificate, for example only one
+// it enrolled. A CA without that interface refuses it with notAuthorized.
+func WithMACRevocation() Option {
+	return func(c *serverConfig) {
+		c.macRevocation = true
+	}
+}
+
+// WithSignatureProtectionPOP accepts a CRMF request without a proof of
+// possession when its signature protection was verified with a certificate for
+// the requested public key. Such a request renews a certificate for the same
+// key. The protection signature proves possession of it, which RFC 4211 §4
+// lets a server establish by other means. RFC 9483 §4.1 requires popo, so the
+// server refuses such a request with badPOP by default.
+//
+// A request protected with a MAC still needs a proof of possession. So does a
+// request signed with a certificate for another key.
+func WithSignatureProtectionPOP() Option {
+	return func(c *serverConfig) {
+		c.signatureProtectionPOP = true
 	}
 }
 

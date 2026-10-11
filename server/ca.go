@@ -102,20 +102,61 @@ func contextWithPollRef(ctx context.Context, pollRef string) context.Context {
 	return context.WithValue(ctx, pollRefKey{}, pollRef)
 }
 
-// sha1SignaturesKey is the context key that carries the WithSHA1Signatures
-// setting to proof of possession checks, which run inside handlers that do not
-// see the server configuration.
-type sha1SignaturesKey struct{}
+// policyConfigKey is the context key that carries the server settings for
+// request checks that run inside handlers, such as [LightweightPolicy], which
+// do not see the server configuration.
+type policyConfigKey struct{}
 
-// contextWithSHA1Signatures marks ctx so proof of possession checks accept SHA-1 signatures.
-func contextWithSHA1Signatures(ctx context.Context) context.Context {
-	return context.WithValue(ctx, sha1SignaturesKey{}, true)
+// policyConfig holds the server options that change request checks. The server
+// clears every relaxation under [WithStrictProfileValidation].
+type policyConfig struct {
+	allowSHA1Signatures      bool
+	allowPoposkInputVariants bool
+	minMACIterationCount     int
+	maxMACIterationCount     int
+	optionalSubject          bool
+	optionalRevocationReason bool
+	optionalRevocationIssuer bool
+	macRevocation            bool
+	signatureProtectionPOP   bool
 }
 
-// sha1SignaturesAllowed reports whether ctx permits SHA-1 signatures in proof of possession.
-func sha1SignaturesAllowed(ctx context.Context) bool {
-	v, _ := ctx.Value(sha1SignaturesKey{}).(bool)
-	return v
+// contextWithPolicyConfig attaches the request check settings to ctx.
+func contextWithPolicyConfig(ctx context.Context, c policyConfig) context.Context {
+	return context.WithValue(ctx, policyConfigKey{}, c)
+}
+
+// policyConfigFrom returns the request check settings in ctx. A context without
+// settings yields the defaults.
+func policyConfigFrom(ctx context.Context) policyConfig {
+	c, _ := ctx.Value(policyConfigKey{}).(policyConfig)
+	return c
+}
+
+// popOptions returns the proof of possession options for a request from sender
+// under the settings in ctx.
+func popOptions(ctx context.Context, sender *SenderIdentity) pkicmp.POPOptions {
+	c := policyConfigFrom(ctx)
+	opts := pkicmp.POPOptions{
+		AllowSHA1Signatures:      c.allowSHA1Signatures,
+		AllowPoposkInputVariants: c.allowPoposkInputVariants,
+		MinMACIterationCount:     c.minMACIterationCount,
+		MaxMACIterationCount:     c.maxMACIterationCount,
+	}
+	if sender == nil {
+		return opts
+	}
+	if sender.MACVerified {
+		opts.SharedSecret = sender.secret
+	}
+	// RFC 4211 §4.1 uses the sender alternative of poposkInput only for an
+	// authenticated name, such as the subject of a valid certificate. A
+	// MAC-protected request has none and must use publicKeyMAC.
+	if sender.Certificate != nil {
+		name := pkicmp.NewDirectoryNameFromRawDER(sender.Certificate.RawSubject)
+		opts.Sender = &name
+	}
+	return opts
 }
 
 // rawSubjectKey is the context key that carries the WithRawSubject setting to
@@ -179,7 +220,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 	// server may be built without a policy wrapper and a certificate issued for
 	// a key the requester does not hold is an authorization failure rather than
 	// a matter of site policy.
-	if err := enforceProofOfPossession(ctx, msg); err != nil {
+	if err := enforceProofOfPossession(ctx, msg, sender); err != nil {
 		return nil, err
 	}
 
