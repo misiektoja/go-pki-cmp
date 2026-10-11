@@ -285,3 +285,30 @@ func TestRejectedCertificateReachesServer(t *testing.T) {
 	defer backend.mu.Unlock()
 	assert.Equal(t, []server.ConfirmStatus{server.ConfirmRejected}, backend.statuses)
 }
+
+// A CA that issues and then refuses the confirming certConf yields a ConfirmationError carrying the certificate.
+func TestAcceptedCertificateConfirmationRefused(t *testing.T) {
+	ca := &certyaml.Certificate{Subject: "cn=issuing-ca"}
+	caCert, err := ca.X509Certificate()
+	require.NoError(t, err)
+
+	var issued *x509.Certificate
+	rec := &confirmRecorder{
+		issue: func(req *pkicmp.PKIMessage) []byte {
+			issued = issueFor(t, ca, requestedPublicKey(req))
+			return issued.Raw
+		},
+		answer: pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{
+			PKIStatusInfo: pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
+		}),
+	}
+	ts := rec.serve(t)
+
+	_, err = sendIR(t, ts.URL, &caCert)
+	var ce *client.ConfirmationError
+	require.ErrorAs(t, err, &ce)
+	require.NotNil(t, ce.Certificate)
+	assert.Equal(t, issued.Raw, ce.Certificate.Raw)
+	assert.True(t, pkicmp.HasFailure(err, pkicmp.FailSystemFailure), "the CA's status must stay reachable")
+	assert.Contains(t, err.Error(), "certConf")
+}
