@@ -28,6 +28,7 @@ import (
 type capturedRequest struct {
 	sender      []byte
 	templateRaw []byte
+	extensions  []pkix.Extension
 }
 
 // subjectTestServer answers one CRMF request of the given type and its certConf, recording the request.
@@ -58,7 +59,15 @@ func subjectTestServer(t *testing.T, pki testPKI, respType pkicmp.BodyType, capt
 				http.Error(w, "unexpected request body", http.StatusBadRequest)
 				return
 			}
-			captured <- capturedRequest{sender: directoryName(t, req.Header.Sender), templateRaw: (*requests)[0].CertReq.CertTemplate.RawSubject}
+			template := (*requests)[0].CertReq.CertTemplate
+			var extensions []pkix.Extension
+			if len(template.Extensions) > 0 {
+				if _, err := asn1.Unmarshal(template.Extensions, &extensions); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+			captured <- capturedRequest{sender: directoryName(t, req.Header.Sender), templateRaw: template.RawSubject, extensions: extensions}
 			rep := &pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{{
 				Status:           pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
 				CertifiedKeyPair: &pkicmp.CertifiedKeyPair{CertOrEncCert: pkicmp.CertOrEncCert{Certificate: &pkicmp.CMPCertificate{Raw: pki.eeCert.Raw}}},
@@ -182,11 +191,30 @@ func TestCertificateSubjectEncoding(t *testing.T) {
 		assert.Equal(t, want, got.templateRaw)
 	})
 
-	// A certificate named only in subjectAltName has no subject to repeat.
-	t.Run("KeyUpdateOmitsEmptySubject", func(t *testing.T) {
+	// RFC 9483 §4.1.3: a certificate named only in subjectAltName is updated
+	// with a NULL-DN subject and the same subjectAltName.
+	t.Run("KeyUpdateOfEmptySubjectRepeatsSubjectAltName", func(t *testing.T) {
 		oldKey, oldCert := issueWithSubject(t, pki, []byte{0x30, 0x00}, "device.example.test")
 		got := send(t, true, oldKey, oldCert)
-		assert.Nil(t, got.templateRaw)
+		assert.Equal(t, []byte{0x30, 0x00}, got.templateRaw)
+		var want pkix.Extension
+		for _, ext := range oldCert.Extensions {
+			if ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 17}) {
+				want = ext
+			}
+		}
+		assert.Equal(t, []pkix.Extension{want}, got.extensions)
+	})
+
+	// RFC 9483 §4.1.1: a request that names the entity only in subjectAltName has a NULL-DN subject.
+	t.Run("SubjectAltNameOnlyRequestHasNullDN", func(t *testing.T) {
+		oldKey, oldCert := issueWithSubject(t, pki, raw)
+		names, err := asn1.Marshal([]asn1.RawValue{{Class: asn1.ClassContextSpecific, Tag: 2, Bytes: []byte("second.example.test")}})
+		require.NoError(t, err)
+		san := pkix.Extension{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Critical: true, Value: names}
+		got := send(t, false, oldKey, oldCert, client.WithTemplateExtension(san))
+		assert.Equal(t, []byte{0x30, 0x00}, got.templateRaw)
+		assert.Equal(t, []pkix.Extension{san}, got.extensions)
 	})
 
 	t.Run("CertificationRequestKeepsTemplateEmpty", func(t *testing.T) {
