@@ -66,10 +66,18 @@
 // [ReasonUnsupportedAlgorithm] unless [VerifyOptions.AllowSHA1Signatures] is
 // set. [VerifyPOPWithOptions] offers the same choice for proof of possession.
 //
+// The sender of a MAC-protected message chooses the PasswordBasedMac or PBKDF2
+// iteration count. The receiver runs every iteration before it can check the
+// MAC. [VerifyOptions.MinMACIterationCount] and [VerifyOptions.MaxMACIterationCount]
+// bound the count, by default from [DefaultMinMACIterationCount] to
+// [DefaultMaxMACIterationCount]. [WithMACIterationLimits] applies the same range
+// when protecting.
+//
 // [VerifyResult.ProtectionParams] captures the algorithm parameters from a verified
-// MAC-protected message. Pass it to [NewMACCredentials] with [WithProtectionAlgorithm]
-// to protect a response with the same algorithm suite (with a fresh salt),
-// as required by RFC 9483 §3.2.
+// MAC-protected message, together with the iteration limits it was verified
+// against. Pass it to [NewMACCredentials] to protect a response with the same
+// algorithm suite (with a fresh salt), as required by RFC 9483 §3.2.
+// [WithProtectionAlgorithm] does the same from a raw [AlgorithmIdentifier].
 //
 // # Caller responsibilities
 //
