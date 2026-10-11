@@ -8,6 +8,8 @@ Most problems come from configuration that differs between CMP peers. Before ask
 
 * The client has a trust anchor through `client.WithTrustedCAs` wherever one is available. Signed responses, including error messages to a MAC-protected request, are verified against it.
 * The MAC secret and the reference sent as `senderKID` match what the CA expects. A peer that implements only RFC 4210 may need `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)`.
+* A request refused with "MAC protection parameters not accepted" uses an iteration count outside `server.WithMACIterationLimits`, which accepts 1 to 500000 by default. `client.WithMACIterationLimits` sets the range for responses.
+* A certConf refused with "missing recipNonce" comes from a client that leaves the field out. `server.WithOptionalCertConfRecipNonce` accepts it.
 * SHA-1 signatures are enabled with `WithSHA1Signatures` in the `client` or `server` package when the peer still uses them. They are off by default.
 * `Err` on a server built with `server.New` or `server.NewCAServer` returns nil. It reports a signer key that does not match its certificate.
 * `server.WithStrictProfileValidation` is set only when every client follows RFC 9483 exactly. It rejects requests that many deployed clients send.
