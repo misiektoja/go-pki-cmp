@@ -35,8 +35,6 @@ func noPOPRequest(bodyType pkicmp.BodyType, cert *x509.Certificate, spki []byte,
 // protection signature was made with the requested key.
 func TestSignatureProtectionPOP(t *testing.T) {
 	ca := &certyaml.Certificate{Subject: "CN=Test CA"}
-	caCert, err := ca.X509Certificate()
-	require.NoError(t, err)
 	device := &certyaml.Certificate{Subject: "CN=device-1", Issuer: ca}
 	deviceCert, err := device.X509Certificate()
 	require.NoError(t, err)
@@ -61,8 +59,6 @@ func TestSignatureProtectionPOP(t *testing.T) {
 		creds, err := pkicmp.NewSignatureCredentials(signer, &deviceCert)
 		require.NoError(t, err)
 		require.NoError(t, creds.Protect(msg))
-		// WithStrictProfileValidation wants the issuer chain after the signer.
-		msg.ExtraCerts = append(msg.ExtraCerts, pkicmp.CMPCertificate{Raw: caCert.Raw})
 		return msg
 	}
 

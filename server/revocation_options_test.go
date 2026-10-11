@@ -85,14 +85,6 @@ func macRR(t *testing.T, cert *x509.Certificate) *pkicmp.PKIMessage {
 	return msg
 }
 
-// withIssuerChain adds the test CA certificate after the signer in extraCerts,
-// as WithStrictProfileValidation requires. extraCerts are not protected, so the
-// signature stays valid.
-func withIssuerChain(f *revocationFixture, msg *pkicmp.PKIMessage) *pkicmp.PKIMessage {
-	msg.ExtraCerts = append(msg.ExtraCerts, pkicmp.CMPCertificate{Raw: f.caCert.Raw})
-	return msg
-}
-
 // WithOptionalRevocationReason reads a request without reasonCode as unspecified.
 func TestRevocationWithOptionalReason(t *testing.T) {
 	withoutReason := func(f *revocationFixture) pkicmp.RevReqContent {
@@ -114,7 +106,7 @@ func TestRevocationWithOptionalReason(t *testing.T) {
 	t.Run("StrictProfileRequiresReason", func(t *testing.T) {
 		f := newRevocationFixture(t)
 		ts := f.serve(t, f.backend, server.LightweightPolicy(), server.WithOptionalRevocationReason(), server.WithStrictProfileValidation())
-		si := rpStatus(t, postCMP(t, ts, withIssuerChain(f, signedRR(t, f.ee, withoutReason(f), pkicmp.MessageOptions{}))))
+		si := rpStatus(t, postCMP(t, ts, signedRR(t, f.ee, withoutReason(f), pkicmp.MessageOptions{})))
 		assert.Equal(t, pkicmp.FailBadRequest, si.FailInfo)
 		assert.Equal(t, pkicmp.PKIFreeText{"reasonCode required"}, si.StatusString)
 		assert.Zero(t, f.backend.calls)
@@ -182,7 +174,7 @@ func TestRevocationWithOptionalIssuer(t *testing.T) {
 		f := newRevocationFixture(t)
 		ca := newSerialCA(f)
 		ts := f.serve(t, ca, server.LightweightPolicy(), server.WithCertificateLookup(ca), server.WithOptionalRevocationIssuer(), server.WithStrictProfileValidation())
-		si := rpStatus(t, postCMP(t, ts, withIssuerChain(f, signedRR(t, f.ee, serialOnly(f.ee.cert), pkicmp.MessageOptions{}))))
+		si := rpStatus(t, postCMP(t, ts, signedRR(t, f.ee, serialOnly(f.ee.cert), pkicmp.MessageOptions{})))
 		assert.Equal(t, pkicmp.FailAddInfoNotAvailable, si.FailInfo)
 		assert.Equal(t, pkicmp.PKIFreeText{"issuer required"}, si.StatusString)
 		assert.Zero(t, ca.revokeCt)
