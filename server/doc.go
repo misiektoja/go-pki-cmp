@@ -178,7 +178,7 @@
 // requires. Requests signed by anyone else, such as a registration authority
 // (RFC 9483 §5.3.2), are rejected with notAuthorized unless the CA implements
 // [RevocationAuthorizer] and approves them. The same applies to MAC-protected
-// requests when the policy lets them through.
+// requests, which [LightweightPolicy] refuses unless [WithMACRevocation] is set.
 //
 // Revocation is synchronous. The server answers with an rp that reports either
 // acceptance or the rejection RevokeCertificate returned. A custom [Handler]
@@ -286,7 +286,9 @@
 //     key the requester did not prove holding (RFC 4211 §4, RFC 9483 §5.1.1).
 //     For a p10cr this is the CSR self-signature. Only signature-based proof is
 //     supported, so a CRMF request without a public key or for a key that
-//     cannot sign, such as X25519, is rejected.
+//     cannot sign, such as X25519, is rejected. [WithSignatureProtectionPOP]
+//     also accepts a CRMF request without proof whose protection signature was
+//     made with the requested key.
 //   - Rejection of a BasicConstraints extension that cannot be decoded, so that
 //     no extension reaches [CA.IssueCertificate] that the checks above did not
 //     understand.
@@ -302,6 +304,13 @@
 //   - Validates BasicConstraints path-length.
 //   - Requires a revocation request to use signature protection and to carry
 //     a reasonCode.
+//
+// Options relax some of these rules for deployed clients that break them:
+// [WithOptionalSubject] admits a request whose identity is in a requested
+// subjectAltName. [WithOptionalRevocationReason] and [WithMACRevocation] admit
+// a revocation request without a reasonCode or with MAC protection.
+// [WithPoposkInputVariants] and [WithOptionalRevocationIssuer] relax checks
+// the server makes with or without the policy.
 //
 // Some RFC 9483 rules govern how a peer constructs a message rather than how
 // this server authenticates it, and deployed clients break them. Those are off
