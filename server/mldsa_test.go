@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // TestMLDSARequiresProof prevents issuance for signature keys without verified possession.

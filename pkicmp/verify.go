@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/crypto/pbkdf2"
 
-	"github.com/misiektoja/go-pkicmp-ng/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/internal/certpath"
 )
 
 // ProtectionMechanism identifies a class of message protection.

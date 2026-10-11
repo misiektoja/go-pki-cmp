@@ -16,8 +16,8 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/internal/certpath"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // enroll performs the full CMP enrollment transaction:

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // Error can be returned by Handler to control the CMP error response.

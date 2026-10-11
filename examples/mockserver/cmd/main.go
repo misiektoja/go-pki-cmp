@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/misiektoja/go-pkicmp-ng/examples/mockserver"
-	"github.com/misiektoja/go-pkicmp-ng/server"
+	"github.com/misiektoja/go-pki-cmp/examples/mockserver"
+	"github.com/misiektoja/go-pki-cmp/server"
 )
 
 func main() {

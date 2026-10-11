@@ -5,7 +5,7 @@ import (
 	"encoding/asn1"
 	"errors"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // verifyProtection verifies message protection and returns the sender identity.

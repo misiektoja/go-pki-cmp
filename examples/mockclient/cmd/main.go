@@ -10,8 +10,8 @@ import (
 	"crypto/x509/pkix"
 	"log/slog"
 
-	"github.com/misiektoja/go-pkicmp-ng/client"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/client"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 func printCert(log *slog.Logger, label string, cert *x509.Certificate) {

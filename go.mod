@@ -1,4 +1,4 @@
-module github.com/misiektoja/go-pkicmp-ng
+module github.com/misiektoja/go-pki-cmp
 
 go 1.27.2
 

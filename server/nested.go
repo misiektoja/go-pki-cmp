@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // RAAuthorizer decides whether a registration authority may forward requests inside a nested message.

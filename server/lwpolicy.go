@@ -6,7 +6,7 @@ import (
 	"encoding/asn1"
 	"slices"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // LightweightPolicy returns a handler wrapper that enforces RFC 9483 Lightweight CMP Profile requirements.
