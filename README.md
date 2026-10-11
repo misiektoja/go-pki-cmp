@@ -58,6 +58,10 @@ Requires Go 1.27.2 or newer.
   a short senderNonce. `server.WithStrictProfileValidation` rejects them as RFC 9483 requires. SHA-1 is
   off by default. `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)` selects the RFC 4210
   PasswordBasedMac profile and `WithSHA1Signatures` in `client` and `server` accepts SHA-1 signatures.
+* **Device compatibility options** in `server`: `WithRawSubject` issues the subject exactly as
+  requested, `WithOptionalCertConfRecipNonce` accepts a certConf without recipNonce and
+  `WithMACIterationLimits` sets the accepted MAC iteration counts. `client.WithMACIterationLimits`
+  sets the range for responses.
 
 ## Package structure
 
