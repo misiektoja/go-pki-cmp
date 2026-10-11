@@ -1,12 +1,12 @@
-go-pkicmp-ng
+go-pki-cmp
 
 This product includes software developed as go-pkicmp
 (https://github.com/tsaarni/go-pkicmp) by Tero Saarni (@tsaarni),
 licensed under the Apache License, Version 2.0.
 
-go-pkicmp-ng is a modified derivative of that work. Files throughout
+go-pki-cmp is a modified derivative of that work. Files throughout
 this repository have been changed, added and removed relative to the
 original. The modifications are recorded in the Git history of this
 repository and summarized in RELEASE_NOTES.md.
 
-Modifications Copyright 2026 the go-pkicmp-ng contributors.
+Modifications Copyright 2026 the go-pki-cmp contributors.

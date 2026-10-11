@@ -1,6 +1,6 @@
 # Contributing
 
-go-pkicmp-ng is a Go library for the Certificate Management Protocol (CMP). Bug reports, interoperability results and code contributions are welcome. Usage questions go through the question issue form, as [SUPPORT.md](SUPPORT.md) describes.
+go-pki-cmp is a Go library for the Certificate Management Protocol (CMP). Bug reports, interoperability results and code contributions are welcome. Usage questions go through the question issue form, as [SUPPORT.md](SUPPORT.md) describes.
 
 ## Before contributing
 
@@ -61,7 +61,7 @@ A release is started by pushing a version tag that is reachable from `main` and 
 4. The Release workflow repeats the check and creates a draft release. The draft carries the release notes section, complete source archives, a CycloneDX SBOM, SHA-256 checksums and a signed build provenance bundle.
 5. Review the draft and publish it.
 
-Consumers can check that an artifact was built by the workflow with `gh attestation verify <file> --repo misiektoja/go-pkicmp-ng`.
+Consumers can check that an artifact was built by the workflow with `gh attestation verify <file> --repo misiektoja/go-pki-cmp`.
 
 ## Code style
 
