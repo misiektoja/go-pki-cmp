@@ -110,10 +110,8 @@ creds, _ := pkicmp.NewSignatureCredentials(existingKey, existingCert)
 c := client.NewClient("http://localhost:8080/cmp", client.WithTrustedCAs(trustedCAs))
 
 // SignatureCredentials lets SendKUR name existingCert in the CRMF oldCertID control.
-result, err := c.SendKUR(context.Background(), newKey, creds,
-	client.WithSender(existingCert.Subject),
-	client.WithTemplateSubject(existingCert.Subject),
-)
+// The sender and template subject repeat existingCert's subject with its original encoding.
+result, err := c.SendKUR(context.Background(), newKey, creds)
 ```
 
 Revocation Request (RR):
