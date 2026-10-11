@@ -1,7 +1,7 @@
 github.com/go-asn1-ber/asn1-ber v1.5.7 h1:DTX+lbVTWaTw1hQ+PbZPlnDZPEIs0SS/GCZAl535dDk=
 github.com/go-asn1-ber/asn1-ber v1.5.7/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
-github.com/misiektoja/go-composite-mldsa v0.2.0 h1:Gx4LrM5sI+S1cKiiWm73Hn6rvDqw+297IZHij1dOTqg=
-github.com/misiektoja/go-composite-mldsa v0.2.0/go.mod h1:VDbjLFqIpOSO6Oga14SE3vrdIe5PgfZlk2JtajaUT50=
+github.com/misiektoja/go-composite-mldsa v0.2.1 h1:Qf5JSW0jJvlwXDisVob1iC5M5LKlsWhbupPku+a7sDY=
+github.com/misiektoja/go-composite-mldsa v0.2.1/go.mod h1:VDbjLFqIpOSO6Oga14SE3vrdIe5PgfZlk2JtajaUT50=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/tsaarni/certyaml v0.13.0 h1:QZAW7S4nRQUn2k4E6jZyErn7kzE1Nk5v3LnoiS0F+Fo=
