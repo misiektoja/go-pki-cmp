@@ -56,7 +56,9 @@
 // provide the certificate with [WithOldCertificate]. The request repeats the
 // subject of oldCert in the sender and the certificate template with the bytes
 // oldCert encodes, so a CA comparing names byte by byte finds them unchanged.
-// [WithSender] and [WithTemplateSubject] override either name.
+// When oldCert has an empty subject, the template carries a NULL-DN subject and
+// the subjectAltName of oldCert instead. [WithSender] and [WithTemplateSubject]
+// override either name.
 //
 // # Revocation
 //

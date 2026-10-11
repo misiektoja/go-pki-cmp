@@ -32,12 +32,15 @@ func WithSenderKID(kid []byte) RequestOption {
 
 // WithTemplateSubject sets the subject name in the CRMF CertTemplate. Without it, a key update
 // repeats the old certificate's subject as encoded in that certificate, as RFC 9483 §4.1.3
-// requires, and leaves the subject out when that certificate has an empty subject.
+// requires. A template that names the entity only in a subjectAltName extension, including
+// the key update of a certificate with an empty subject, gets a NULL-DN subject as RFC 9483
+// §4.1.1 requires.
 func WithTemplateSubject(subject pkix.Name) RequestOption {
 	return func(o *requestOptions) { o.templateSubject = &subject }
 }
 
-// WithTemplateExtension adds an extension to the CRMF CertTemplate.
+// WithTemplateExtension adds an extension to the CRMF CertTemplate. A key update of a
+// certificate with an empty subject adds that certificate's subjectAltName unless one is set.
 func WithTemplateExtension(ext pkix.Extension) RequestOption {
 	return func(o *requestOptions) { o.templateExts = append(o.templateExts, ext) }
 }
