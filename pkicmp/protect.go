@@ -26,6 +26,10 @@ type macOptions struct {
 	// echoed back verbatim to preserve the original encoding.
 	OWFParameters []byte
 	MACParameters []byte
+	// MinIterationCount and MaxIterationCount bound IterationCount. Zero
+	// selects the package default, as in [VerifyOptions].
+	MinIterationCount int
+	MaxIterationCount int
 }
 
 // protectWithMAC protects the message using Password-Based MAC with default
@@ -68,7 +72,7 @@ func (m *PKIMessage) protectWithMACOptions(opts macOptions) error {
 		mac = defaultPBMMAC
 	}
 
-	if err := validatePBMIterationCount(iterCount); err != nil {
+	if err := validatePBMIterationCount(iterCount, opts.MinIterationCount, opts.MaxIterationCount); err != nil {
 		return err
 	}
 	if _, err := hashFromOID(owf); err != nil {
@@ -126,8 +130,10 @@ func (m *PKIMessage) protectWithMACOptions(opts macOptions) error {
 
 // protectWithMACAlgorithm protects the message by echoing the algorithm
 // parameters from a received message (with a fresh salt). Used by servers
-// to match the request's protection suite. RFC 9810 §5.1.3.
-func (m *PKIMessage) protectWithMACAlgorithm(secret []byte, alg *AlgorithmIdentifier) error {
+// to match the request's protection suite. The echoed iteration count must lie
+// within minIterations and maxIterations, where zero selects the default.
+// RFC 9810 §5.1.3.
+func (m *PKIMessage) protectWithMACAlgorithm(secret []byte, alg *AlgorithmIdentifier, minIterations, maxIterations int) error {
 	if alg.Algorithm.Equal(oidPBMAC1) {
 		var params struct {
 			KeyDerivationFunc algorithmIdentifierASN1
@@ -144,11 +150,13 @@ func (m *PKIMessage) protectWithMACAlgorithm(secret []byte, alg *AlgorithmIdenti
 			return err
 		}
 		return m.protectWithPBMAC1Options(pbmac1Options{
-			Secret:         secret,
-			IterationCount: kdfParams.IterationCount,
-			KeyLength:      kdfParams.KeyLength,
-			PRF:            kdfParams.PRF.Algorithm,
-			MAC:            params.MessageAuthScheme.Algorithm,
+			Secret:            secret,
+			IterationCount:    kdfParams.IterationCount,
+			KeyLength:         kdfParams.KeyLength,
+			PRF:               kdfParams.PRF.Algorithm,
+			MAC:               params.MessageAuthScheme.Algorithm,
+			MinIterationCount: minIterations,
+			MaxIterationCount: maxIterations,
 		})
 	}
 	if alg.Algorithm.Equal(oidPasswordBasedMac) {
@@ -158,13 +166,15 @@ func (m *PKIMessage) protectWithMACAlgorithm(secret []byte, alg *AlgorithmIdenti
 			return err
 		}
 		return m.protectWithMACOptions(macOptions{
-			Secret:         secret,
-			Algorithm:      alg.Algorithm,
-			IterationCount: p.IterationCount,
-			OWF:            p.OWF.Algorithm,
-			MAC:            p.MAC.Algorithm,
-			OWFParameters:  p.OWF.Parameters,
-			MACParameters:  p.MAC.Parameters,
+			Secret:            secret,
+			Algorithm:         alg.Algorithm,
+			IterationCount:    p.IterationCount,
+			OWF:               p.OWF.Algorithm,
+			MAC:               p.MAC.Algorithm,
+			OWFParameters:     p.OWF.Parameters,
+			MACParameters:     p.MAC.Parameters,
+			MinIterationCount: minIterations,
+			MaxIterationCount: maxIterations,
 		})
 	}
 	return &ParseError{Detail: fmt.Sprintf("unsupported MAC algorithm: %v", alg.Algorithm)}
@@ -177,6 +187,10 @@ type pbmac1Options struct {
 	KeyLength      int                   // default: MAC hash size
 	PRF            asn1.ObjectIdentifier // default: oidHMACWithSHA256 (for PBKDF2)
 	MAC            asn1.ObjectIdentifier // default: oidHMACWithSHA256 (messageAuthScheme)
+	// MinIterationCount and MaxIterationCount bound IterationCount. Zero
+	// selects the package default, as in [VerifyOptions].
+	MinIterationCount int
+	MaxIterationCount int
 }
 
 // protectWithPBMAC1Options protects the message using PBMAC1 with explicit parameters.
@@ -202,7 +216,7 @@ func (m *PKIMessage) protectWithPBMAC1Options(opts pbmac1Options) error {
 		mac = oidHMACWithSHA256
 	}
 
-	if err := validatePBMIterationCount(iterCount); err != nil {
+	if err := validatePBMIterationCount(iterCount, opts.MinIterationCount, opts.MaxIterationCount); err != nil {
 		return err
 	}
 	macHash, err := hmacHashFromOID(mac)
@@ -449,13 +463,10 @@ func (p *pbmParameter) unmarshal(s *cryptobyte.String) error {
 	if err := p.OWF.unmarshal(&seq); err != nil {
 		return err
 	}
-	var count int64
-	if !seq.ReadASN1Integer(&count) {
+	// Reading into int rejects a value that does not fit the platform int. The
+	// range check belongs to the caller, which knows the configured limits.
+	if !seq.ReadASN1Integer(&p.IterationCount) {
 		return &ParseError{Detail: "invalid iterationCount"}
-	}
-	p.IterationCount = int(count)
-	if err := validatePBMIterationCount(p.IterationCount); err != nil {
-		return err
 	}
 	return p.MAC.unmarshal(&seq)
 }
@@ -485,25 +496,51 @@ var (
 	// defaultPBMMAC is the default MAC algorithm OID for Password-Based MAC.
 	defaultPBMMAC = oidHMACWithSHA256
 
-	// defaultPBMMinIterationCount and defaultPBMMaxIterationCount bound PBM
-	// iteration processing to reduce CPU DoS risk from untrusted inputs.
-	// These are local policy values; RFC 4211 §4.4 requires a minimum of 100
-	// but no maximum is specified by any RFC. PBKDF2 commonly uses 262144 (2^18).
-	defaultPBMMinIterationCount = 1
-	defaultPBMMaxIterationCount = 500000
-
 	// defaultPBKDF2MinKeyLength is the shortest PBMAC1 derived key accepted from a
 	// peer, in bytes. 128 bits is the conventional floor for a symmetric key and
 	// is well beyond exhaustive search.
 	defaultPBKDF2MinKeyLength = 16
 )
 
-func validatePBMIterationCount(iterationCount int) error {
-	if iterationCount < defaultPBMMinIterationCount {
-		return &ParseError{Detail: fmt.Sprintf("PBM iterationCount too small: %d", iterationCount)}
+const (
+	// DefaultMinMACIterationCount is the smallest PasswordBasedMac or PBMAC1
+	// iteration count accepted by default. RFC 4211 §4.4 requires at least 100,
+	// but the default stays at 1 so that a peer choosing fewer is not rejected.
+	DefaultMinMACIterationCount = 1
+
+	// DefaultMaxMACIterationCount is the largest PasswordBasedMac or PBMAC1
+	// iteration count accepted by default. No RFC sets a maximum. RFC 4210 and
+	// RFC 9810 let an implementation limit the count to reduce the risk of
+	// denial of service, because the peer chooses it and the receiver must run
+	// every iteration before it can check the MAC.
+	DefaultMaxMACIterationCount = 500000
+)
+
+// macIterationLimits returns the effective iteration count bounds. A
+// non-positive bound selects its default and a maximum below the minimum is
+// raised to it.
+func macIterationLimits(minimum, maximum int) (int, int) {
+	if minimum <= 0 {
+		minimum = DefaultMinMACIterationCount
 	}
-	if iterationCount > defaultPBMMaxIterationCount {
-		return &ParseError{Detail: fmt.Sprintf("PBM iterationCount too large: %d", iterationCount)}
+	if maximum <= 0 {
+		maximum = DefaultMaxMACIterationCount
+	}
+	if maximum < minimum {
+		maximum = minimum
+	}
+	return minimum, maximum
+}
+
+// validatePBMIterationCount checks a PasswordBasedMac or PBKDF2 iteration count
+// against the bounds that macIterationLimits derives from minimum and maximum.
+func validatePBMIterationCount(iterationCount, minimum, maximum int) error {
+	minimum, maximum = macIterationLimits(minimum, maximum)
+	if iterationCount < minimum {
+		return &ParseError{Detail: fmt.Sprintf("PBM iterationCount too small: %d (minimum %d)", iterationCount, minimum)}
+	}
+	if iterationCount > maximum {
+		return &ParseError{Detail: fmt.Sprintf("PBM iterationCount too large: %d (maximum %d)", iterationCount, maximum)}
 	}
 	return nil
 }
