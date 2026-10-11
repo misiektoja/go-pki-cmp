@@ -68,7 +68,7 @@ Requires Go 1.27.2 or newer.
   sets the range for responses.
 * **Request rule options** in `server` accept requests that break an RFC 9483 rule:
   `WithPoposkInputVariants` for the proof of possession of the Insta Certifier 10 cmpclient,
-  `WithOptionalSubject` for a request that names its identity only in subjectAltName and
+  `WithOptionalSubject` for a template without a subject field that names its identity in subjectAltName and
   `WithSignatureProtectionPOP` for a key update that keeps its key and is signed with it.
   `WithOptionalRevocationReason`, `WithOptionalRevocationIssuer` and `WithMACRevocation` accept
   revocation requests without a reason code, without an issuer or protected with a shared secret.
