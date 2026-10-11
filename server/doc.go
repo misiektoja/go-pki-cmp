@@ -150,6 +150,11 @@
 // recipNonce. [WithOptionalCertConfRecipNonce] accepts a certConf that leaves
 // recipNonce out. One that carries a different value is still rejected.
 //
+// A certConf must use the credentials of the request (RFC 9483 §4.1.1),
+// because the transaction is found by them. A key update that keeps its key is
+// therefore confirmed with the old certificate. A certConf signed with the
+// newly issued certificate is rejected as an unknown transaction.
+//
 // # Revocation
 //
 // Implement [Revoker] to accept revocation requests (RFC 9483 §4.2). Without it
