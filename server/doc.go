@@ -299,15 +299,16 @@
 //   - Requires KUR to use signature protection (not MAC).
 //   - Requires a MAC-protected message to identify its shared secret through
 //     either the sender name or senderKID.
-//   - Enforces subject presence in certificate templates.
+//   - Requires a certificate template to name the entity in its subject, or
+//     in a requested subjectAltName with a NULL-DN subject (RFC 9483 §4.1.1).
 //   - Rejects requests for CA certificates.
 //   - Validates BasicConstraints path-length.
 //   - Requires a revocation request to use signature protection and to carry
 //     a reasonCode.
 //
 // Options relax some of these rules for deployed clients that break them:
-// [WithOptionalSubject] admits a request whose identity is in a requested
-// subjectAltName. [WithOptionalRevocationReason] and [WithMACRevocation] admit
+// [WithOptionalSubject] admits a template that leaves out the subject field
+// and names the entity in a requested subjectAltName. [WithOptionalRevocationReason] and [WithMACRevocation] admit
 // a revocation request without a reasonCode or with MAC protection.
 // [WithPoposkInputVariants] and [WithOptionalRevocationIssuer] relax checks
 // the server makes with or without the policy.

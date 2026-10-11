@@ -258,15 +258,15 @@ func WithRawSubject() Option {
 	}
 }
 
-// WithOptionalSubject accepts a certificate request without a subject when it
-// requests a subjectAltName extension. RFC 9483 §4.1.1 requires the subject, so
-// [LightweightPolicy] refuses such a request with badCertTemplate by default.
-// RFC 5280 §4.1.2.6 allows an empty subject when subjectAltName carries the
-// identity.
+// WithOptionalSubject accepts a CRMF certificate template that leaves out the
+// subject field when it requests a subjectAltName extension. RFC 9483 §4.1.1
+// requires the field and lets it be a NULL-DN when subjectAltName names the
+// entity, so [LightweightPolicy] accepts a NULL-DN subject without this option
+// and refuses a missing one with badCertTemplate.
 //
-// The template carries the requested extension in ExtraExtensions as the
-// requester encoded it. The CA must check its names and mark it critical, as
-// RFC 5280 §4.2.1.6 requires for a certificate with an empty subject.
+// Either way the template carries an empty subject and the requested
+// subjectAltName in ExtraExtensions, marked critical as RFC 5280 §4.2.1.6
+// requires. The CA must check its names.
 func WithOptionalSubject() Option {
 	return func(c *serverConfig) {
 		c.optionalSubject = true
