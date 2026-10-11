@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // Client handles CMP message transport and polling.
@@ -24,6 +24,8 @@ type Client struct {
 	minCheckAfter       time.Duration
 	maxCheckAfter       time.Duration
 	allowSHA1Signatures bool
+	minMACIterations    int
+	maxMACIterations    int
 }
 
 const (
@@ -145,6 +147,21 @@ func WithServerCerts(certs []*x509.Certificate) Option {
 // which rejects SHA-1 certificate signatures.
 func WithSHA1Signatures() Option {
 	return func(c *Client) { c.allowSHA1Signatures = true }
+}
+
+// WithMACIterationLimits sets the range of PasswordBasedMac and PBMAC1
+// iteration counts accepted in MAC-protected responses. The defaults are
+// [pkicmp.DefaultMinMACIterationCount] and [pkicmp.DefaultMaxMACIterationCount].
+// Zero selects a default and a maximum below the minimum is raised to it.
+//
+// Requests are not affected. To send a count outside the defaults, set it on
+// the credentials with [pkicmp.WithMACIterationCount] and widen
+// [pkicmp.WithMACIterationLimits] to match.
+func WithMACIterationLimits(minimum, maximum int) Option {
+	return func(c *Client) {
+		c.minMACIterations = minimum
+		c.maxMACIterations = maximum
+	}
 }
 
 // WithMaxResponseBytes sets the maximum number of bytes accepted from a CMP

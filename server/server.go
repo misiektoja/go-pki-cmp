@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // MaxRequestBodySize limits the size of incoming CMP request bodies to prevent DoS.
@@ -131,8 +132,9 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 	// RFC 9810 §7: Validate PVNO.
 	if msg.Header.PVNO < pkicmp.PVNO2 || msg.Header.PVNO > pkicmp.PVNO3 {
 		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
-			Status:   pkicmp.StatusRejection,
-			FailInfo: pkicmp.FailUnsupportedVersion,
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailUnsupportedVersion,
+			StatusString: pkicmp.PKIFreeText{fmt.Sprintf("unsupported pvno %d", msg.Header.PVNO)},
 		})
 		// RFC 9810 §7: Use the closest supported PVNO in the error response.
 		if msg.Header.PVNO > pkicmp.PVNO3 {
@@ -187,6 +189,13 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 				StatusString: pkicmp.PKIFreeText{err.Error()},
 			})
 		}
+		if err := validateProfilePOP(msg); err != nil {
+			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+				Status:       pkicmp.StatusRejection,
+				FailInfo:     pkicmp.FailBadPOP,
+				StatusString: pkicmp.PKIFreeText{err.Error()},
+			})
+		}
 	}
 
 	// RFC 9483 §5.2.2.1: other header fields of a nested message can be
@@ -217,8 +226,9 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		})
 	}
 
-	if s.cfg.allowSHA1Signatures {
-		ctx = contextWithSHA1Signatures(ctx)
+	ctx = contextWithPolicyConfig(ctx, s.policyConfig())
+	if s.cfg.rawSubject {
+		ctx = contextWithRawSubject(ctx)
 	}
 
 	// Dispatch by body type.
@@ -237,12 +247,31 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		// already catches invalid headers, so reaching here means the header is valid.
 		resp = s.buildResponse(msg, pkicmp.NewPKIConfBody(), sender)
 	default:
+		// Clients probe with general messages, so the text says why they fail.
 		resp = s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-			Status:   pkicmp.StatusRejection,
-			FailInfo: pkicmp.FailBadRequest,
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailBadRequest,
+			StatusString: pkicmp.PKIFreeText{"message type not supported"},
 		})
 	}
 	return resp
+}
+
+// policyConfig returns the settings for request checks inside handlers.
+// WithStrictProfileValidation clears every option that relaxes an RFC 9483 rule.
+func (s *Server) policyConfig() policyConfig {
+	relaxed := !s.cfg.strictProfile
+	return policyConfig{
+		allowSHA1Signatures:      s.cfg.allowSHA1Signatures,
+		allowPoposkInputVariants: s.cfg.allowPoposkInputVariants && relaxed,
+		minMACIterationCount:     s.cfg.minMACIterationCount,
+		maxMACIterationCount:     s.cfg.maxMACIterationCount,
+		optionalSubject:          s.cfg.optionalSubject && relaxed,
+		optionalRevocationReason: s.cfg.optionalRevocationReason && relaxed,
+		optionalRevocationIssuer: s.cfg.optionalRevocationIssuer && relaxed,
+		macRevocation:            s.cfg.macRevocation && relaxed,
+		signatureProtectionPOP:   s.cfg.signatureProtectionPOP && relaxed,
+	}
 }
 
 // CleanupExpired removes pending transactions and issued certificates that
@@ -369,6 +398,33 @@ func isInitialRequest(bodyType pkicmp.BodyType) bool {
 	}
 }
 
+// validateProfilePOP applies the RFC 9483 §4.1.1 rule that a signature proof
+// of possession carries no poposkInput.
+func validateProfilePOP(msg *pkicmp.PKIMessage) error {
+	var msgs *pkicmp.CertReqMessages
+	var err error
+	switch msg.Body.Type {
+	case pkicmp.BodyTypeIR:
+		msgs, err = msg.Body.IR()
+	case pkicmp.BodyTypeCR:
+		msgs, err = msg.Body.CR()
+	case pkicmp.BodyTypeKUR:
+		msgs, err = msg.Body.KUR()
+	default:
+		return nil
+	}
+	if err != nil {
+		// The request handler reports the malformed body.
+		return nil
+	}
+	for _, m := range *msgs {
+		if m.Popo != nil && m.Popo.Signature != nil && m.Popo.Signature.PoposkInput != nil {
+			return errors.New("poposkInput is not allowed in the proof of possession")
+		}
+	}
+	return nil
+}
+
 // validateProfileSender applies the RFC 9483 §3.1 rule that a MAC-protected
 // message names the shared secret in the sender field.
 func validateProfileSender(msg *pkicmp.PKIMessage, sender *SenderIdentity) error {
@@ -411,15 +467,13 @@ func validateProfileExtraCerts(msg *pkicmp.PKIMessage, sender *SenderIdentity) e
 	if sender.Certificate != nil && !certs[0].Equal(sender.Certificate) {
 		return errors.New("first certificate in extraCerts is not the CMP protection certificate")
 	}
+	// §3.3 says self-signed certificates should be omitted, so the chain may end
+	// below its root. Whether it reaches a trust anchor is for the
+	// CertificateLookup that authenticates the signer to decide.
 	for i := 0; i < len(certs)-1; i++ {
 		if err := compositex509.CheckSignatureFrom(certs[i], certs[i+1]); err != nil {
 			return errors.New("extraCerts is not an ordered certificate chain")
 		}
-	}
-	// The chain is only complete once it reaches a self-issued certificate.
-	last := certs[len(certs)-1]
-	if err := compositex509.CheckSignatureFrom(last, last); err != nil {
-		return errors.New("incomplete certificate chain in extraCerts")
 	}
 	return nil
 }

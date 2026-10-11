@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/crypto/pbkdf2"
 
-	"github.com/misiektoja/go-pkicmp-ng/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/internal/certpath"
 )
 
 // ProtectionMechanism identifies a class of message protection.
@@ -100,6 +100,19 @@ type VerifyOptions struct {
 	// peers. crypto/x509 still rejects SHA-1 signatures on certificates during
 	// chain building. DSA is not supported.
 	AllowSHA1Signatures bool
+
+	// MinMACIterationCount and MaxMACIterationCount bound the iteration count
+	// that the sender chose for PasswordBasedMac or for PBKDF2 in PBMAC1. A
+	// message outside the range fails before any key derivation. Zero selects
+	// [DefaultMinMACIterationCount] or [DefaultMaxMACIterationCount]. A maximum
+	// below the minimum is raised to it.
+	//
+	// The maximum limits the work an unauthenticated message can cost, because
+	// every iteration runs before the MAC can be checked. Raise it for a peer
+	// that sends more iterations. The minimum is the security setting: it
+	// refuses protection too cheap to slow an offline guess of a weak secret.
+	MinMACIterationCount int
+	MaxMACIterationCount int
 }
 
 // VerifyResult is returned on successful verification.
@@ -188,7 +201,8 @@ func (m *PKIMessage) verifyPBM(opts VerifyOptions) (*VerifyResult, error) {
 		return nil, err
 	}
 
-	if err := validatePBMIterationCount(p.IterationCount); err != nil {
+	minIterations, maxIterations := macIterationLimits(opts.MinMACIterationCount, opts.MaxMACIterationCount)
+	if err := validatePBMIterationCount(p.IterationCount, minIterations, maxIterations); err != nil {
 		return nil, err
 	}
 
@@ -236,6 +250,8 @@ func (m *PKIMessage) verifyPBM(opts VerifyOptions) (*VerifyResult, error) {
 		ProtectionParams: func(c *macCredentialConfig) {
 			c.algorithm = oidPasswordBasedMac
 			c.iterationCount = p.IterationCount
+			c.minIterationCount = minIterations
+			c.maxIterationCount = maxIterations
 			c.owf = p.OWF.Algorithm
 			c.mac = p.MAC.Algorithm
 			c.owfParameters = p.OWF.Parameters
@@ -274,7 +290,8 @@ func (m *PKIMessage) verifyPBMAC1(opts VerifyOptions) (*VerifyResult, error) {
 		return nil, err
 	}
 
-	if err := validatePBMIterationCount(pbkdf2Params.IterationCount); err != nil {
+	minIterations, maxIterations := macIterationLimits(opts.MinMACIterationCount, opts.MaxMACIterationCount)
+	if err := validatePBMIterationCount(pbkdf2Params.IterationCount, minIterations, maxIterations); err != nil {
 		return nil, err
 	}
 
@@ -328,6 +345,8 @@ func (m *PKIMessage) verifyPBMAC1(opts VerifyOptions) (*VerifyResult, error) {
 		ProtectionParams: func(c *macCredentialConfig) {
 			c.algorithm = oidPBMAC1
 			c.iterationCount = pbkdf2Params.IterationCount
+			c.minIterationCount = minIterations
+			c.maxIterationCount = maxIterations
 			c.keyLength = pbkdf2Params.KeyLength
 			c.owf = pbkdf2Params.PRF.Algorithm
 			c.mac = pbmac1Params.MessageAuthScheme.Algorithm

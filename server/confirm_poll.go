@@ -8,7 +8,7 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // issuedInfoContextKey passes issuance details to the handler during certConf.
@@ -85,14 +85,16 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	}
 
 	// RFC 9483 §3.5: recipNonce MUST equal the senderNonce of the previous message.
-	if len(msg.Header.RecipNonce) == 0 {
+	// WithStrictProfileValidation overrides WithOptionalCertConfRecipNonce.
+	missingRecipNonce := len(msg.Header.RecipNonce) == 0
+	if missingRecipNonce && (!s.cfg.optionalCertConfRecipNonce || s.cfg.strictProfile) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"missing recipNonce"},
 		})
 	}
-	if !bytes.Equal(msg.Header.RecipNonce, entry.issuedSenderNonce) {
+	if !missingRecipNonce && !bytes.Equal(msg.Header.RecipNonce, entry.issuedSenderNonce) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRecipientNonce,
@@ -104,7 +106,7 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	// RFC 9483 §3.1 tells the sender to generate a fresh nonce, but the
 	// receiver-side checks §3.5 requires are just that senderNonce is present
 	// and long enough, which validateHeader applies under the same option, and
-	// that recipNonce matches, which is enforced above for every client.
+	// that recipNonce matches, which is enforced above whenever it is present.
 	// Rejecting a repeat by default would discard an already-issued certificate
 	// over a peer-side generation defect that deployed clients exhibit.
 	if s.cfg.strictProfile {
@@ -119,16 +121,11 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 		}
 	}
 
-	// certConf MUST NOT be signed with the newly issued certificate (security best practice).
-	if sender != nil && sender.Certificate != nil && entry.cert != nil {
-		if publicKeysEqual(certificatePublicKey(sender.Certificate), certificatePublicKey(entry.cert)) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-				Status:       pkicmp.StatusRejection,
-				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{"certConf signed with newly issued certificate"},
-			})
-		}
-	}
+	// RFC 9483 §4.1.1: certConf MUST use the same credentials as the first
+	// request. getIssued enforces this, because the transaction is keyed by the
+	// request's credential, so a certConf signed with the newly issued
+	// certificate finds no transaction. The public keys are not compared,
+	// because a key update may keep the signer's key.
 
 	// Notify handler about the confirmation, passing issuance details via context.
 	ctx = context.WithValue(ctx, issuedInfoContextKey{}, issuedInfo{cert: entry.cert, issueRef: entry.issueRef})
@@ -190,19 +187,6 @@ func certReqIDMatches(entry *transactionEntry, certReqID int64) bool {
 // certStatusRejects reports whether a CertStatus rejects its certificate, an absent statusInfo meaning acceptance.
 func certStatusRejects(cs *pkicmp.CertStatus) bool {
 	return cs.StatusInfo != nil && cs.StatusInfo.Status == pkicmp.StatusRejection
-}
-
-// publicKeysEqual compares two public keys by their PKIX-encoded form.
-func publicKeysEqual(a, b crypto.PublicKey) bool {
-	aDER, err := compositex509.MarshalPKIXPublicKey(a)
-	if err != nil {
-		return false
-	}
-	bDER, err := compositex509.MarshalPKIXPublicKey(b)
-	if err != nil {
-		return false
-	}
-	return bytes.Equal(aDER, bDER)
 }
 
 // certificatePublicKey returns the key a certificate certifies. crypto/x509

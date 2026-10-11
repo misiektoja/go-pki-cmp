@@ -1,15 +1,18 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"fmt"
+	"slices"
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // SendIR performs an Initialization Request (RFC 9810 §5.3.1).
@@ -45,12 +48,41 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 		PublicKey: pubDER,
 	}
 
-	if ropts.templateSubject != nil {
-		tmpl.Subject = pkicmp.NewDirectoryName(*ropts.templateSubject)
+	var oldCertificate *x509.Certificate
+	if expectedRepType == pkicmp.BodyTypeKUP {
+		oldCertificate = ropts.oldCertificate
+		if oldCertificate == nil {
+			if provider, ok := creds.(interface{ Certificate() *x509.Certificate }); ok {
+				oldCertificate = provider.Certificate()
+			}
+		}
 	}
 
-	if len(ropts.templateExts) > 0 {
-		extDER, err := asn1.Marshal(ropts.templateExts)
+	switch {
+	case ropts.templateSubject != nil:
+		tmpl.Subject = pkicmp.NewDirectoryName(*ropts.templateSubject)
+	case oldCertificate != nil && !hasEmptySubject(oldCertificate):
+		// RFC 9483 §4.1.3: a key update keeps the subject of the certificate it replaces.
+		tmpl.Subject = certificateSubject(oldCertificate)
+	}
+
+	extensions := ropts.templateExts
+	if len(tmpl.Subject.DirectoryName) == 0 && len(tmpl.Subject.Raw) == 0 {
+		// RFC 9483 §4.1.3: a key update repeats the name of the certificate it
+		// replaces, which for an empty subject is its subjectAltName.
+		if oldCertificate != nil && !hasSubjectAltName(extensions) {
+			if san, ok := subjectAltNameOf(oldCertificate); ok {
+				extensions = append(slices.Clone(extensions), san)
+			}
+		}
+		// RFC 9483 §4.1.1: an entity named only in subjectAltName has a NULL-DN subject.
+		if hasSubjectAltName(extensions) {
+			tmpl.Subject = pkicmp.NewDirectoryNameFromRawDER([]byte{0x30, 0x00})
+		}
+	}
+
+	if len(extensions) > 0 {
+		extDER, err := asn1.Marshal(extensions)
 		if err != nil {
 			return nil, &Error{Op: "marshal extensions", Err: err}
 		}
@@ -61,20 +93,12 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 		CertReqID:    0,
 		CertTemplate: tmpl,
 	}
-	if expectedRepType == pkicmp.BodyTypeKUP {
-		oldCertificate := ropts.oldCertificate
-		if oldCertificate == nil {
-			if provider, ok := creds.(interface{ Certificate() *x509.Certificate }); ok {
-				oldCertificate = provider.Certificate()
-			}
+	if oldCertificate != nil {
+		control, err := pkicmp.NewOldCertIDControl(oldCertificate)
+		if err != nil {
+			return nil, &Error{Op: "encode oldCertID", Err: err}
 		}
-		if oldCertificate != nil {
-			control, err := pkicmp.NewOldCertIDControl(oldCertificate)
-			if err != nil {
-				return nil, &Error{Op: "encode oldCertID", Err: err}
-			}
-			certReq.Controls = []pkicmp.AttributeTypeAndValue{control}
-		}
+		certReq.Controls = []pkicmp.AttributeTypeAndValue{control}
 	}
 
 	certReqMsg := pkicmp.CertReqMsg{
@@ -99,4 +123,32 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 	}
 
 	return c.enroll(ctx, body, expectedRepType, creds, ropts, key.Public())
+}
+
+// oidSubjectAltName identifies the RFC 5280 §4.2.1.6 subjectAltName extension.
+var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
+
+// hasSubjectAltName reports whether extensions include a subjectAltName.
+func hasSubjectAltName(extensions []pkix.Extension) bool {
+	return slices.ContainsFunc(extensions, func(ext pkix.Extension) bool { return ext.Id.Equal(oidSubjectAltName) })
+}
+
+// subjectAltNameOf returns the subjectAltName extension of an empty-subject certificate with its encoded value.
+func subjectAltNameOf(cert *x509.Certificate) (pkix.Extension, bool) {
+	if !hasEmptySubject(cert) {
+		return pkix.Extension{}, false
+	}
+	i := slices.IndexFunc(cert.Extensions, func(ext pkix.Extension) bool { return ext.Id.Equal(oidSubjectAltName) })
+	if i < 0 {
+		return pkix.Extension{}, false
+	}
+	return cert.Extensions[i], true
+}
+
+// hasEmptySubject reports whether a certificate names its subject only in subjectAltName.
+func hasEmptySubject(cert *x509.Certificate) bool {
+	if len(cert.RawSubject) > 0 {
+		return bytes.Equal(cert.RawSubject, []byte{0x30, 0x00})
+	}
+	return len(cert.Subject.ToRDNSequence()) == 0 && len(cert.Subject.Names) == 0
 }

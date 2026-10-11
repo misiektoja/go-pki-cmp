@@ -44,7 +44,7 @@ These are repository variables:
 
 | Variable | Contents |
 | --- | --- |
-| `NCM_CMP_COMMON_NAME` | Common name for the enrollment tests. Unset gives `go-pkicmp-ng-test-<UTC YYMMDD-HHMMSS>-<test>` |
+| `NCM_CMP_COMMON_NAME` | Common name for the enrollment tests. Unset gives `go-pki-cmp-test-<UTC YYMMDD-HHMMSS>-<test>` |
 | `NCM_CMP_COUNTRY` | Country requested in the subject. Omitted when unset |
 | `NCM_CMP_ORGANIZATION` | Organization requested in the subject. Omitted when unset |
 | `NCM_CMP_KUR` | `false` skips both key update tests |

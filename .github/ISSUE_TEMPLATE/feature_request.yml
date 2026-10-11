@@ -1,12 +1,12 @@
 name: Feature request
-description: Ask for a capability that go-pkicmp-ng does not have yet
+description: Ask for a capability that go-pki-cmp does not have yet
 labels:
   - enhancement
 body:
   - type: markdown
     attributes:
       value: |
-        The [README](https://github.com/misiektoja/go-pkicmp-ng/blob/main/README.md) lists the RFCs the library implements and what each package covers.
+        The [README](https://github.com/misiektoja/go-pki-cmp/blob/main/README.md) lists the RFCs the library implements and what each package covers.
 
   - type: textarea
     id: problem

@@ -1,10 +1,11 @@
 package client
 
 import (
+	"crypto/x509"
 	"fmt"
 	"strings"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // Error indicates a CMP client operational failure.
@@ -21,6 +22,27 @@ func (e *Error) Error() string {
 }
 
 func (e *Error) Unwrap() error {
+	return e.Err
+}
+
+// ConfirmationError reports that the CA issued Certificate but the certConf
+// exchange that confirms it failed. The CA may keep the certificate or revoke
+// it as unconfirmed (RFC 9483 §4.1.1), so a caller must not assume either
+// outcome, and retrying the request may issue a second certificate. Err is
+// the failure, so [errors.As] still finds a [pkicmp.PKIStatusError] or an
+// [UnverifiedStatusError] from the CA's answer.
+type ConfirmationError struct {
+	// Certificate is the certificate the CA issued.
+	Certificate *x509.Certificate
+	// Err is why the confirmation failed.
+	Err error
+}
+
+func (e *ConfirmationError) Error() string {
+	return fmt.Sprintf("cmp: certConf: %v", e.Err)
+}
+
+func (e *ConfirmationError) Unwrap() error {
 	return e.Err
 }
 

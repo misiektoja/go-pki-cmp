@@ -34,6 +34,12 @@
 // A CA that means to decide an extension itself must drop it from
 // ExtraExtensions first, as the example below does for keyUsage.
 //
+// The subject is rebuilt from [crypto/x509/pkix.Name], which drops attribute
+// types it does not model, such as domainComponent and emailAddress. It may
+// also change the order and string types of the rest. [WithRawSubject] also sets
+// template.RawSubject to the requested name, which [x509.CreateCertificate]
+// issues unchanged instead of Subject.
+//
 // # Basic example
 //
 //	type myCA struct {
@@ -140,6 +146,15 @@
 // without any CertStatus rejects the certificate (RFC 9810 §5.3.18) and reaches
 // the CA as [ConfirmRejected].
 //
+// A certConf must repeat the senderNonce of the certificate response in its
+// recipNonce. [WithOptionalCertConfRecipNonce] accepts a certConf that leaves
+// recipNonce out. One that carries a different value is still rejected.
+//
+// A certConf must use the credentials of the request (RFC 9483 §4.1.1),
+// because the transaction is found by them. A key update that keeps its key is
+// therefore confirmed with the old certificate. A certConf signed with the
+// newly issued certificate is rejected as an unknown transaction.
+//
 // # Revocation
 //
 // Implement [Revoker] to accept revocation requests (RFC 9483 §4.2). Without it
@@ -163,7 +178,7 @@
 // requires. Requests signed by anyone else, such as a registration authority
 // (RFC 9483 §5.3.2), are rejected with notAuthorized unless the CA implements
 // [RevocationAuthorizer] and approves them. The same applies to MAC-protected
-// requests when the policy lets them through.
+// requests, which [LightweightPolicy] refuses unless [WithMACRevocation] is set.
 //
 // Revocation is synchronous. The server answers with an rp that reports either
 // acceptance or the rejection RevokeCertificate returned. A custom [Handler]
@@ -250,6 +265,12 @@
 // rejected with badAlg. This includes SHA-1 signatures, which RFC 9481 §7.1
 // deprecates. [WithSHA1Signatures] accepts them from RFC 4210 era devices.
 //
+// A MAC-protected request whose iteration count lies outside
+// [WithMACIterationLimits] is rejected with badMessageCheck and the status text
+// "MAC protection parameters not accepted", before any key derivation. The
+// default range is [pkicmp.DefaultMinMACIterationCount] to
+// [pkicmp.DefaultMaxMACIterationCount].
+//
 // # Middleware
 //
 // [NewCAServer] takes a handler wrapper implementing authorization and request
@@ -265,7 +286,9 @@
 //     key the requester did not prove holding (RFC 4211 §4, RFC 9483 §5.1.1).
 //     For a p10cr this is the CSR self-signature. Only signature-based proof is
 //     supported, so a CRMF request without a public key or for a key that
-//     cannot sign, such as X25519, is rejected.
+//     cannot sign, such as X25519, is rejected. [WithSignatureProtectionPOP]
+//     also accepts a CRMF request without proof whose protection signature was
+//     made with the requested key.
 //   - Rejection of a BasicConstraints extension that cannot be decoded, so that
 //     no extension reaches [CA.IssueCertificate] that the checks above did not
 //     understand.
@@ -276,11 +299,19 @@
 //   - Requires KUR to use signature protection (not MAC).
 //   - Requires a MAC-protected message to identify its shared secret through
 //     either the sender name or senderKID.
-//   - Enforces subject presence in certificate templates.
+//   - Requires a certificate template to name the entity in its subject, or
+//     in a requested subjectAltName with a NULL-DN subject (RFC 9483 §4.1.1).
 //   - Rejects requests for CA certificates.
 //   - Validates BasicConstraints path-length.
 //   - Requires a revocation request to use signature protection and to carry
 //     a reasonCode.
+//
+// Options relax some of these rules for deployed clients that break them:
+// [WithOptionalSubject] admits a template that leaves out the subject field
+// and names the entity in a requested subjectAltName. [WithOptionalRevocationReason] and [WithMACRevocation] admit
+// a revocation request without a reasonCode or with MAC protection.
+// [WithPoposkInputVariants] and [WithOptionalRevocationIssuer] relax checks
+// the server makes with or without the policy.
 //
 // Some RFC 9483 rules govern how a peer constructs a message rather than how
 // this server authenticates it, and deployed clients break them. Those are off

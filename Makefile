@@ -13,6 +13,11 @@ export GOTOOLCHAIN := go$(GO_VERSION)
 CMP_TEST_SUITE_DIR := test/integration/cmp-test-suite/testdata/cmp-test-suite
 CMP_TEST_SUITE_COMMIT := d35c9de4516924b0a9a96176b3c8692660e57a8c
 
+# The Insta Certifier CMP clients are proprietary. CERTIFIER_CLIENTS_DIR is a local directory that holds
+# them, laid out as test/integration/certifier/Dockerfile describes.
+CERTIFIER_CLIENT_IMAGE ?= go-pkicmp-certifier-clients
+CERTIFIER_CLIENTS_DIR ?=
+
 .PHONY: all
 all: test
 
@@ -72,7 +77,7 @@ fuzz: ## Fuzz every target in pkicmp for FUZZTIME each. Failing inputs are saved
 ##@ Integration
 
 .PHONY: test-integration
-test-integration: test-integration-ejbca test-integration-openssl test-integration-cmp-test-suite test-integration-ncm ## Run all integration tests. The NCM tests skip unless NCM_CMP_* is set.
+test-integration: test-integration-ejbca test-integration-openssl test-integration-cmp-test-suite test-integration-ncm test-integration-certifier ## Run all integration tests. The NCM and Insta Certifier client tests skip without their setup.
 
 .PHONY: test-integration-ejbca
 test-integration-ejbca: ## Run the client against EJBCA. Needs make setup-ejbca.
@@ -90,6 +95,10 @@ test-integration-cmp-test-suite: ## Run the server against the Siemens CMP test 
 test-integration-ncm: ## Run the client against a Nokia NCM instance described by the NCM_CMP_* variables.
 	go test -v -count=1 -tags integration -timeout 20m ./test/integration/ncm
 
+.PHONY: test-integration-certifier
+test-integration-certifier: ## Run the server against the Insta Certifier CMP clients. Needs make setup-certifier-clients.
+	CERTIFIER_CLIENT_IMAGE=$(CERTIFIER_CLIENT_IMAGE) go test -v -count=1 -tags integration -timeout 30m ./test/integration/certifier
+
 .PHONY: setup
 setup: setup-ejbca setup-cmp-test-suite ## Set up all integration environments.
 
@@ -97,6 +106,11 @@ setup: setup-ejbca setup-cmp-test-suite ## Set up all integration environments.
 setup-ejbca: ## Start and configure the EJBCA container. Needs Docker.
 	docker compose -f test/integration/ejbca/docker-compose.yml up -d
 	bash test/integration/ejbca/setup.sh
+
+.PHONY: setup-certifier-clients
+setup-certifier-clients: ## Build the Insta Certifier client image from CERTIFIER_CLIENTS_DIR. Needs Docker.
+	@test -n "$(CERTIFIER_CLIENTS_DIR)" || { echo "error: set CERTIFIER_CLIENTS_DIR to the directory that holds bin/cmpclient"; exit 1; }
+	docker build --platform linux/amd64 -t $(CERTIFIER_CLIENT_IMAGE) -f test/integration/certifier/Dockerfile $(CERTIFIER_CLIENTS_DIR)
 
 .PHONY: setup-cmp-test-suite
 setup-cmp-test-suite: _clone-cmp-test-suite _sync-cmp-test-suite ## Clone the pinned CMP test suite and install its dependencies. Needs uv.
@@ -136,10 +150,10 @@ docs: ## Serve the package documentation locally with pkgsite.
 VERSION ?=
 # Artifacts without a release, such as the routine SBOM run, are named after the commit instead.
 SBOM_VERSION := $(if $(VERSION),$(VERSION),$(shell git rev-parse --short HEAD))
-SOURCE_ZIP = dist/go-pkicmp-ng-$(VERSION)-source.zip
-SOURCE_TAR_GZ = dist/go-pkicmp-ng-$(VERSION)-source.tar.gz
-SBOM_FILE = dist/go-pkicmp-ng-$(SBOM_VERSION)-sbom.cdx.json
-RELEASE_CHECKSUMS = dist/go-pkicmp-ng-$(VERSION)_SHA256SUMS.txt
+SOURCE_ZIP = dist/go-pki-cmp-$(VERSION)-source.zip
+SOURCE_TAR_GZ = dist/go-pki-cmp-$(VERSION)-source.tar.gz
+SBOM_FILE = dist/go-pki-cmp-$(SBOM_VERSION)-sbom.cdx.json
+RELEASE_CHECKSUMS = dist/go-pki-cmp-$(VERSION)_SHA256SUMS.txt
 # RELEASE_CHECK_DIR holds the exported tree and the consumer module of a release check.
 RELEASE_CHECK_DIR ?= $(CURDIR)/.cache/release-check
 
@@ -159,8 +173,8 @@ release-check: ## Build, vet and test an export of HEAD and import it from a sep
 	mkdir -p "$$export/export" "$$export/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$export/export"; \
 	cd "$$export/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
-	cd "$$export/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pkicmp-ng v0.0.0\n\nreplace github.com/misiektoja/go-pkicmp-ng => ../export\n' "$(GO_VERSION)" > go.mod; \
-	printf 'package main\n\nimport (\n\t"log"\n\n\t"github.com/misiektoja/go-pkicmp-ng/client"\n\t"github.com/misiektoja/go-pkicmp-ng/pkicmp"\n\t"github.com/misiektoja/go-pkicmp-ng/server"\n)\n\nfunc main() {\n\t_, err := pkicmp.NewMACCredentials([]byte("release-check"))\n\tlog.Println(client.NewClient("http://localhost/cmp") != nil, server.NewCAServer(nil, server.LightweightPolicy()).Err(), err)\n}\n' > main.go; \
+	cd "$$export/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-cmp v0.0.0\n\nreplace github.com/misiektoja/go-pki-cmp => ../export\n' "$(GO_VERSION)" > go.mod; \
+	printf 'package main\n\nimport (\n\t"log"\n\n\t"github.com/misiektoja/go-pki-cmp/client"\n\t"github.com/misiektoja/go-pki-cmp/pkicmp"\n\t"github.com/misiektoja/go-pki-cmp/server"\n)\n\nfunc main() {\n\t_, err := pkicmp.NewMACCredentials([]byte("release-check"))\n\tlog.Println(client.NewClient("http://localhost/cmp") != nil, server.NewCAServer(nil, server.LightweightPolicy()).Err(), err)\n}\n' > main.go; \
 	go mod tidy && go build ./... && go run .; \
 	echo "release check passed for $$(git -C "$(CURDIR)" rev-parse --short HEAD)"
 

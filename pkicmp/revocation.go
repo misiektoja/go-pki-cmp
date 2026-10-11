@@ -328,6 +328,33 @@ func (id *CertID) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
 	})
 }
 
+// Identifies reports whether id names cert by serial number and issuer. The
+// issuer must be a directoryName. Names are compared by their decoded
+// attributes, so string types may differ, as in the sender check of
+// [PKIMessage.Verify].
+func (id *CertID) Identifies(cert *x509.Certificate) bool {
+	if id == nil || cert == nil || id.SerialNumber == nil || cert.SerialNumber == nil ||
+		id.SerialNumber.Cmp(cert.SerialNumber) != 0 {
+		return false
+	}
+	issuer := id.Issuer
+	// A directoryName built with NewDirectoryNameFromRawDER holds only Raw.
+	if len(issuer.DirectoryName) == 0 && len(issuer.Raw) > 0 {
+		raw := cryptobyte.String(issuer.Raw)
+		if err := issuer.unmarshal(&raw); err != nil || !raw.Empty() {
+			return false
+		}
+	}
+	if len(issuer.DirectoryName) == 0 {
+		return false
+	}
+	var certIssuer pkix.RDNSequence
+	if rest, err := asn1.Unmarshal(cert.RawIssuer, &certIssuer); err != nil || len(rest) > 0 {
+		return false
+	}
+	return issuer.DirectoryName.String() == certIssuer.String()
+}
+
 // unmarshal decodes one CertID.
 func (id *CertID) unmarshal(s *cryptobyte.String) error {
 	var seq cryptobyte.String

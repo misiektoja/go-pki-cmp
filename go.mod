@@ -1,9 +1,9 @@
-module github.com/misiektoja/go-pkicmp-ng
+module github.com/misiektoja/go-pki-cmp
 
 go 1.27.2
 
 require (
-	github.com/misiektoja/go-composite-mldsa v0.2.0
+	github.com/misiektoja/go-composite-mldsa v0.2.1
 	github.com/stretchr/testify v1.12.1
 	github.com/tsaarni/certyaml v0.13.0
 	golang.org/x/crypto v0.57.0

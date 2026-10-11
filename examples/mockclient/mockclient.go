@@ -13,8 +13,8 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 
-	"github.com/misiektoja/go-pkicmp-ng/client"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/client"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // Enroll performs an Initialization Request (IR) using Password-Based MAC

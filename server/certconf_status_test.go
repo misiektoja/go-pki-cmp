@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tsaarni/certyaml"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
-	"github.com/misiektoja/go-pkicmp-ng/server"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/server"
 )
 
 // certStatus returns a CertStatus for cert with certReqID, rejecting the certificate when reject is set.

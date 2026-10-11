@@ -6,7 +6,7 @@ import (
 	"crypto/x509/pkix"
 	"time"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // Option configures a Server.
@@ -71,9 +71,19 @@ type serverConfig struct {
 	maxTransactions              int
 	maxTransactionsPerCredential int
 	strictProfile                bool
+	optionalCertConfRecipNonce   bool
 	allowSHA1Signatures          bool
+	allowPoposkInputVariants     bool
+	rawSubject                   bool
+	optionalSubject              bool
+	optionalRevocationReason     bool
+	optionalRevocationIssuer     bool
+	macRevocation                bool
+	signatureProtectionPOP       bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
+	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
+	maxMACIterationCount         int                  // zero selects pkicmp.DefaultMaxMACIterationCount
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
 
 	// Built once by New from signerKey and signerCert. signerErr records a
@@ -141,30 +151,57 @@ func WithImplicitConfirm() Option {
 
 // WithStrictProfileValidation enforces the RFC 9483 message construction rules
 // that a receiver can check but does not need to authenticate a peer. It adds
-// seven rejections:
+// eight rejections:
 //
 //   - a MAC-protected message whose sender is not a directoryName naming the
 //     shared secret (§3.1), unless it is a nested message (§5.2.2.1),
 //   - a signature-protected request or nested message that carries no
 //     extraCerts (§3.3, §5.2.2),
 //   - a signature-protected request whose extraCerts do not lead with the CMP
-//     protection certificate followed by its issuer chain (§3.3),
+//     protection certificate or that hold a certificate not certifying the one
+//     before it (§3.3). The chain may stop below a self-signed root, which §3.3
+//     recommends leaving out,
 //   - a certConf whose senderNonce repeats one used earlier in the transaction (§3.1),
 //   - a request without a transactionID (§3.5), which RFC 4210 and RFC 9810
 //     let the server assign instead,
 //   - a message whose senderNonce is missing or shorter than 128 bits (§3.5),
 //     which RFC 4210 and RFC 9810 leave optional,
-//   - a certConf with more than one CertStatus (§4.1.1).
+//   - a certConf with more than one CertStatus (§4.1.1),
+//   - a CRMF request whose signature proof of possession carries poposkInput
+//     (§4.1.1), even with [WithPoposkInputVariants].
+//
+// It also overrides the options that relax RFC 9483 rules:
+// [WithOptionalCertConfRecipNonce], [WithPoposkInputVariants],
+// [WithOptionalSubject], [WithOptionalRevocationReason],
+// [WithOptionalRevocationIssuer], [WithMACRevocation] and
+// [WithSignatureProtectionPOP].
 //
 // Off by default because deployed clients fail them: Nokia ssh-cmpclient
-// sends a NULL-DN sender, omits its own certificate and reuses the senderNonce,
-// openssl cmp omits a self-signed issuer and RFC 4210 clients may omit the
-// transactionID or send a shorter senderNonce. None of them affects
-// authentication, which comes from senderKID or CertificateLookup plus
-// recipNonce. Turn it on for a conformance suite or a known-conforming fleet.
+// sends a NULL-DN sender, omits its own certificate and reuses the senderNonce.
+// RFC 4210 clients may omit the transactionID or send a shorter senderNonce.
+// None of them affects authentication, which comes from senderKID or
+// CertificateLookup plus recipNonce. Turn it on for a conformance suite or a
+// known-conforming fleet.
 func WithStrictProfileValidation() Option {
 	return func(c *serverConfig) {
 		c.strictProfile = true
+	}
+}
+
+// WithOptionalCertConfRecipNonce accepts a certConf that carries no recipNonce.
+// RFC 9810 Appendix C.4 and RFC 9483 §3.5 require certConf to repeat the
+// senderNonce of the certificate response, so the server answers a certConf
+// without one with badRecipientNonce by default. Use the option for clients
+// that leave the field out.
+//
+// A recipNonce that is present must still match. The confirmation stays bound
+// to the issued certificate by its protection, its transactionID and the
+// certificate hash in every CertStatus, which the server checks either way.
+// [WithStrictProfileValidation] refuses a certConf without recipNonce whether
+// or not this option is set.
+func WithOptionalCertConfRecipNonce() Option {
+	return func(c *serverConfig) {
+		c.optionalCertConfRecipNonce = true
 	}
 }
 
@@ -179,6 +216,116 @@ func WithStrictProfileValidation() Option {
 func WithSHA1Signatures() Option {
 	return func(c *serverConfig) {
 		c.allowSHA1Signatures = true
+	}
+}
+
+// WithPoposkInputVariants accepts the signature proof of possession that the
+// Insta Certifier 10 cmpclient sends with a CRMF request. It carries
+// poposkInput although the template holds both the subject and the public key,
+// which RFC 4211 §4.1 forbids. It also encodes the signed data and the
+// publicKeyMAC differently from RFC 4211. [pkicmp.POPOptions]
+// AllowPoposkInputVariants lists the variants.
+//
+// The server refuses such a proof with badPOP by default. With the option it
+// still verifies the signature with the requested key, the publicKeyMAC with
+// the shared secret that protected the request and a sender against the
+// certificate that signed it. The proof then does not cover the template, so
+// only the message protection binds the requested names to the key holder.
+// [WithStrictProfileValidation] refuses poposkInput whether or not this option
+// is set.
+func WithPoposkInputVariants() Option {
+	return func(c *serverConfig) {
+		c.allowPoposkInputVariants = true
+	}
+}
+
+// WithRawSubject sets template.RawSubject to the subject name exactly as the
+// request encoded it, in a CRMF certificate template or a PKCS#10 request. The
+// issued certificate then keeps every requested attribute with its order and
+// string type. Without it the subject is rebuilt from pkix.Name, which drops
+// attribute types pkix.Name does not model, such as domainComponent and
+// emailAddress, reorders the rest and may change their string type.
+//
+// [x509.CreateCertificate] uses RawSubject instead of Subject. A CA that
+// changes the subject must therefore clear RawSubject. A CA that checks the
+// subject must check every attribute in Subject.Names, because CommonName and
+// SerialNumber hold only the last value of their type and the raw name may
+// repeat it. Only handlers built with [NewCAHandler] or [NewCAServer] apply the
+// option.
+func WithRawSubject() Option {
+	return func(c *serverConfig) {
+		c.rawSubject = true
+	}
+}
+
+// WithOptionalSubject accepts a CRMF certificate template that leaves out the
+// subject field when it requests a subjectAltName extension. RFC 9483 §4.1.1
+// requires the field and lets it be a NULL-DN when subjectAltName names the
+// entity, so [LightweightPolicy] accepts a NULL-DN subject without this option
+// and refuses a missing one with badCertTemplate.
+//
+// Either way the template carries an empty subject and the requested
+// subjectAltName in ExtraExtensions, marked critical as RFC 5280 §4.2.1.6
+// requires. The CA must check its names.
+func WithOptionalSubject() Option {
+	return func(c *serverConfig) {
+		c.optionalSubject = true
+	}
+}
+
+// WithOptionalRevocationReason accepts a revocation request whose
+// crlEntryDetails carry no reasonCode. RFC 9483 §4.2 requires one, so
+// [LightweightPolicy] refuses such a request with badRequest by default. With
+// the option it reaches the CA with reason unspecified, which RFC 5280 §5.3.1
+// treats the same as an absent code.
+func WithOptionalRevocationReason() Option {
+	return func(c *serverConfig) {
+		c.optionalRevocationReason = true
+	}
+}
+
+// WithOptionalRevocationIssuer accepts a revocation request that names a
+// serial number but no issuer. RFC 9483 §4.2 requires both, so the server
+// refuses such a request with addInfoNotAvailable by default.
+//
+// A request signed with a certificate of that serial number revokes the
+// signer's own certificate. The server fills in its issuer. Any other
+// request reaches [RevocationAuthorizer] with an empty
+// [RevocationRequest.RawIssuer]. The CA must then find the certificate by
+// serial number and refuse the request when certificates from more than one
+// issuer carry it.
+func WithOptionalRevocationIssuer() Option {
+	return func(c *serverConfig) {
+		c.optionalRevocationIssuer = true
+	}
+}
+
+// WithMACRevocation lets [LightweightPolicy] pass MAC-protected revocation
+// requests to the CA. RFC 9483 §4.2 requires signature protection, so they are
+// refused with wrongIntegrity by default.
+//
+// A shared secret proves who holds the secret, not who holds the certificate.
+// Such a request therefore always goes to [RevocationAuthorizer], which must
+// decide whether that secret may revoke the certificate, for example only one
+// it enrolled. A CA without that interface refuses it with notAuthorized.
+func WithMACRevocation() Option {
+	return func(c *serverConfig) {
+		c.macRevocation = true
+	}
+}
+
+// WithSignatureProtectionPOP accepts a CRMF request without a proof of
+// possession when its signature protection was verified with a certificate for
+// the requested public key. Such a request renews a certificate for the same
+// key. The protection signature proves possession of it, which RFC 4211 §4
+// lets a server establish by other means. RFC 9483 §4.1 requires popo, so the
+// server refuses such a request with badPOP by default.
+//
+// A request protected with a MAC still needs a proof of possession. So does a
+// request signed with a certificate for another key.
+func WithSignatureProtectionPOP() Option {
+	return func(c *serverConfig) {
+		c.signatureProtectionPOP = true
 	}
 }
 
@@ -202,6 +349,28 @@ func WithMessageTimeTolerance(tolerance time.Duration) Option {
 func WithRAAuthorizer(authorizer RAAuthorizer) Option {
 	return func(c *serverConfig) {
 		c.raAuthorizer = authorizer
+	}
+}
+
+// WithMACIterationLimits sets the range of PasswordBasedMac and PBMAC1
+// iteration counts accepted in MAC-protected requests. A request outside it is
+// rejected with badMessageCheck before any key derivation. Responses echo the
+// request's count, so the same range applies to them.
+//
+// The defaults are [pkicmp.DefaultMinMACIterationCount] and
+// [pkicmp.DefaultMaxMACIterationCount]. Zero selects a default and a maximum
+// below the minimum is raised to it.
+//
+// The client chooses the count and every iteration runs before the MAC can be
+// checked, so the maximum bounds the work an unauthenticated request costs.
+// Only a request naming a known shared secret reaches that point. Raise the
+// maximum for devices configured with more iterations. Raise the minimum, for
+// example to the 100 that RFC 4211 §4.4 requires, to refuse protection too
+// cheap to slow an offline guess of a weak shared secret.
+func WithMACIterationLimits(minimum, maximum int) Option {
+	return func(c *serverConfig) {
+		c.minMACIterationCount = minimum
+		c.maxMACIterationCount = maximum
 	}
 }
 

@@ -1,6 +1,44 @@
 # Release Notes
 
-Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
+Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
+
+## v0.4.0 - 11 Oct 2026
+
+The library is now **go-pki-cmp**, with a new module path. This release adds device compatibility options, configurable MAC iteration limits and exact subject preservation. It fixes same-key update confirmation and enrollment with only a subjectAltName. Clients can distinguish failed certificate confirmation from a refused request.
+
+### `pkicmp`
+
+* **MAC iteration limits** are configurable through `VerifyOptions.MinMACIterationCount`, `MaxMACIterationCount` and `WithMACIterationLimits`. PasswordBasedMac and PBMAC1 defaults remain 1 to 500000. `VerifyResult.ProtectionParams` preserves the accepted range when echoing a peer's parameters.
+* **`CertTemplate.RawSubject`** preserves the received subject DER. Marshalling uses `Subject` and now supports subjects built with `NewDirectoryNameFromRawDER`.
+* **`VerifyPOPWithOptions`** supports poposkInput proofs. It checks publicKeyMAC against `POPOptions.SharedSecret` or the sender against `POPOptions.Sender`. Malformed inputs fail parsing. `AllowPoposkInputVariants` accepts Insta Certifier 10 cmpclient encodings. These proofs verify possession of the key but do not cover the certificate template.
+* **`CertRequest.OldCertID`** reads a key update's issuer and serial number. **`CertID.Identifies`** matches them to a certificate.
+* **Directory names use crypto/x509 string types:** PrintableString where possible and UTF8String otherwise. Unencodable values now fail marshalling instead of producing an invalid name.
+
+### `client`
+
+* **`WithMACIterationLimits`** bounds MAC iterations in responses. Sending a count outside the defaults also requires `pkicmp.WithMACIterationCount` and wider `pkicmp.WithMACIterationLimits` on the credentials.
+* **`SendKUR` preserves the old certificate's subject encoding** unless `WithTemplateSubject` overrides it. For an empty subject it also copies subjectAltName unless one is supplied. Signed requests preserve the signer's subject encoding unless `WithSender` overrides it.
+* **SAN-only requests carry a NULL-DN subject** as RFC 9483 requires, instead of omitting the subject field.
+* **`ConfirmationError`** carries the issued certificate when certConf fails. The CA may keep or revoke it, so retrying enrollment may issue another certificate. `errors.As` still exposes the underlying error.
+
+### `server`
+
+* **`WithMACIterationLimits`** bounds MAC iterations in requests. Responses echo the accepted count. Out-of-range requests fail before key derivation with `badMessageCheck`. Rejected MAC parameters now report "MAC protection parameters not accepted".
+* **`WithRawSubject`** preserves every requested subject attribute, its order and string type for CRMF and PKCS#10 requests. It is off by default. CAs must check all attributes in `Subject.Names` and clear `RawSubject` before changing `Subject`.
+* **`WithOptionalCertConfRecipNonce`** accepts certConf without recipNonce. A supplied nonce must still match and certificate hashes are still checked.
+* **`WithPoposkInputVariants`** accepts Insta Certifier 10 cmpclient proofs for `ir`, `cr` and `kur`. Signatures and publicKeyMACs are verified, but only message protection binds the requested names to the key holder.
+* **`WithSignatureProtectionPOP`** accepts a missing CRMF proof when the message is signed with the requested key, as in Nokia ssh-cmpclient same-key updates. MAC-protected requests still need a proof.
+* **NULL-DN subjects with subjectAltName are accepted**, including under strict validation. The CA template marks subjectAltName critical. `WithOptionalSubject` also accepts CRMF templates that omit the subject field. Both cases require subjectAltName.
+* **Revocation options** accept missing reasonCode (`WithOptionalRevocationReason`), missing issuer (`WithOptionalRevocationIssuer`) or MAC protection (`WithMACRevocation`). An absent reason becomes unspecified. A missing issuer comes from the signer's certificate when its serial matches. Otherwise the CA must resolve the serial without an issuer and reject ambiguous matches. MAC revocation requires `RevocationAuthorizer` approval.
+* **`WithStrictProfileValidation`** overrides the optional nonce, proof, subject and revocation rules above and rejects all poposkInput proofs. Raw subject preservation and MAC limits still apply. Strict validation now accepts extraCerts without a self-signed root, while checking chain order. `CertificateLookup` remains responsible for trust.
+* **Rejection status texts** now identify unsupported protocol versions and message types.
+* **Same-key updates complete confirmation** when certConf uses the original request's credentials. Confirmation with the newly issued certificate remains refused.
+* **MAC-protected responses repeat the request's senderKID**, including when a server signer is configured.
+
+### Requirements
+
+* **The module path is `github.com/misiektoja/go-pki-cmp`.** Update imports and the `go.mod` requirement from `github.com/misiektoja/go-pkicmp-ng`. Package names are unchanged. Releases through v0.3.2 use the old path.
+* **go-composite-mldsa v0.2.1** is now required, with fixes for key parsing and certificate signing.
 
 ## v0.3.2 - 9 Oct 2026
 

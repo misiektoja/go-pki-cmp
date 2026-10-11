@@ -1,6 +1,6 @@
 # Dependencies
 
-go-pkicmp-ng is a modified derivative of [tsaarni/go-pkicmp](https://github.com/tsaarni/go-pkicmp), as [NOTICE](NOTICE) records. Other third-party code is consumed through versioned packages.
+go-pki-cmp is a modified derivative of [tsaarni/go-pkicmp](https://github.com/tsaarni/go-pkicmp), as [NOTICE](NOTICE) records. Other third-party code is consumed through versioned packages.
 
 | Dependency | Use | License |
 | --- | --- | --- |

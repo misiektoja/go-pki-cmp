@@ -5,6 +5,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -294,33 +295,15 @@ func (gn *GeneralName) unmarshal(s *cryptobyte.String) error {
 	}
 }
 
+// marshalRDNSequence encodes a Name as encoding/asn1 does, so a name built from pkix.Name
+// values gets the same string types as a certificate crypto/x509 creates from that name.
 func marshalRDNSequence(b *cryptobyte.Builder, rdn pkix.RDNSequence) {
-	// RDNSequence is a SEQUENCE OF RelativeDistinguishedName
-	// RelativeDistinguishedName is a SET OF AttributeTypeAndValue
-	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
-		for _, rset := range rdn {
-			b.AddASN1(cbasn1.SET, func(b *cryptobyte.Builder) {
-				for _, atv := range rset {
-					b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
-						b.AddASN1ObjectIdentifier(atv.Type)
-						// pkix.Name values can be various string types.
-						// For simplicity in Phase 1, we use UTF8String if it's a string.
-						// A more robust implementation would use encoding/asn1.Marshal.
-						if val, ok := atv.Value.(string); ok {
-							b.AddASN1(cbasn1.UTF8String, func(b *cryptobyte.Builder) {
-								b.AddBytes([]byte(val))
-							})
-						} else {
-							// Fallback: try to marshal with encoding/asn1
-							if der, err := asn1.Marshal(atv.Value); err == nil {
-								b.AddBytes(der)
-							}
-						}
-					})
-				}
-			})
-		}
-	})
+	der, err := asn1.Marshal(rdn)
+	if err != nil {
+		b.SetError(fmt.Errorf("pkicmp: encode directoryName: %w", err))
+		return
+	}
+	b.AddBytes(der)
 }
 
 // parseRDNSequence parses a Name (CHOICE rdnSequence RDNSequence).

@@ -16,8 +16,8 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/internal/certpath"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // enroll performs the full CMP enrollment transaction:
@@ -118,7 +118,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
 	}
 	if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
-		return nil, err
+		return nil, &ConfirmationError{Certificate: cert, Err: err}
 	}
 
 	return &EnrollResult{
@@ -249,6 +249,14 @@ func (c *Client) rejectCertificate(ctx context.Context, conf *certConfirmation, 
 	return reason
 }
 
+// certificateSubject returns a certificate's subject as a directoryName with its original encoding.
+func certificateSubject(cert *x509.Certificate) pkicmp.GeneralName {
+	if len(cert.RawSubject) > 0 {
+		return pkicmp.NewDirectoryNameFromRawDER(cert.RawSubject)
+	}
+	return pkicmp.NewDirectoryName(cert.Subject)
+}
+
 // newRequest builds and protects the first message of an operation.
 func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, opts *requestOptions) (*pkicmp.PKIMessage, error) {
 	if creds == nil {
@@ -258,8 +266,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	if opts.sender != nil {
 		sender = pkicmp.NewDirectoryName(*opts.sender)
 	} else if sc, ok := creds.(*pkicmp.SignatureCredentials); ok && sc.Certificate() != nil {
-		// RFC 9810 §C.5/C.6: sender name SHOULD be present for CR/KUR.
-		sender = pkicmp.NewDirectoryName(sc.Certificate().Subject)
+		// RFC 9810 §C.5/C.6: sender name SHOULD be present for CR/KUR. RFC 9483 §3.1 makes it the
+		// protection certificate's subject, sent as encoded so a CA comparing bytes finds it.
+		sender = certificateSubject(sc.Certificate())
 	}
 
 	recipient := pkicmp.GeneralName{}
@@ -708,10 +717,12 @@ func (c *Client) verifyResponse(req *pkicmp.PKIMessage, resp *pkicmp.PKIMessage,
 			}
 			return nil
 		}(),
-		TrustPool:           trustedCAs,
-		ExtraCerts:          candidates,
-		SenderKID:           resp.Header.SenderKID,
-		AllowSHA1Signatures: c.allowSHA1Signatures,
+		TrustPool:            trustedCAs,
+		ExtraCerts:           candidates,
+		SenderKID:            resp.Header.SenderKID,
+		AllowSHA1Signatures:  c.allowSHA1Signatures,
+		MinMACIterationCount: c.minMACIterations,
+		MaxMACIterationCount: c.maxMACIterations,
 	})
 	if err != nil {
 		if hint := c.verificationHint(err, trustedCAs); hint != "" {

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // SendRR asks the CA to revoke cert for the given reason (RFC 9483 §4.2).

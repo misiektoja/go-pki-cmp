@@ -1,6 +1,6 @@
 # Contributing
 
-go-pkicmp-ng is a Go library for the Certificate Management Protocol (CMP). Bug reports, interoperability results and code contributions are welcome. Usage questions go through the question issue form, as [SUPPORT.md](SUPPORT.md) describes.
+go-pki-cmp is a Go library for the Certificate Management Protocol (CMP). Bug reports, interoperability results and code contributions are welcome. Usage questions go through the question issue form, as [SUPPORT.md](SUPPORT.md) describes.
 
 ## Before contributing
 
@@ -41,6 +41,8 @@ make teardown          # Stop and remove the EJBCA container
 
 `make test-integration-ncm` runs the client against a Nokia NCM instance. It needs the endpoint and credentials in `NCM_CMP_*` variables and skips without them. [test/integration/ncm/README.md](test/integration/ncm/README.md) lists the variables. CI runs these tests for pushes to `dev` and `main` and once a week when the repository has the NCM secrets.
 
+`make test-integration-certifier` runs the server against the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient. The clients are proprietary, so the tests need a local image built from your own copies and skip without it. CI does not run them. [test/integration/certifier/README.md](test/integration/certifier/README.md) describes the image.
+
 Protocol changes need negative tests and an RFC citation. A change must keep working against real CMP peers and against clients that implement only RFC 4210. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments and the README.
 
 Every change must comply with the Developer Certificate of Origin 1.1. Use `git commit -s` only when you intend to provide that certification.
@@ -53,13 +55,15 @@ The module uses semantic versioning. [RELEASE_NOTES.md](RELEASE_NOTES.md) descri
 
 A release is started by pushing a version tag that is reachable from `main` and by nothing else.
 
-1. Give the release its section in `RELEASE_NOTES.md`, headed `## vX.Y.Z - YYYY-MM-DD`, and merge `dev` into `main`.
+Release headings use `## vX.Y.Z - D Mon YYYY`, for example `## v0.4.0 - 11 Oct 2026`. Use an unpadded day and an abbreviated English month. Keep `TBD` until the release date is set.
+
+1. Set the release date in `RELEASE_NOTES.md` and merge `dev` into `main`.
 2. Run `make release-check VERSION=vX.Y.Z` on `main`. It builds, vets and tests an export of the tree, imports it from a separate module and checks the release notes heading.
 3. Tag the release commit on `main` and push the tag with `git push origin vX.Y.Z`.
 4. The Release workflow repeats the check and creates a draft release. The draft carries the release notes section, complete source archives, a CycloneDX SBOM, SHA-256 checksums and a signed build provenance bundle.
 5. Review the draft and publish it.
 
-Consumers can check that an artifact was built by the workflow with `gh attestation verify <file> --repo misiektoja/go-pkicmp-ng`.
+Consumers can check that an artifact was built by the workflow with `gh attestation verify <file> --repo misiektoja/go-pki-cmp`.
 
 ## Code style
 

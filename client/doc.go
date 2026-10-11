@@ -49,14 +49,16 @@
 //	c := client.NewClient("http://ca.example.com/.well-known/cmp/p/ca/",
 //	    client.WithTrustedCAs(trustedCAPool),
 //	)
-//	result, err := c.SendKUR(context.Background(), newKey, newCreds,
-//	    client.WithSender(oldCert.Subject),
-//	    client.WithTemplateSubject(oldCert.Subject),
-//	)
+//	result, err := c.SendKUR(context.Background(), newKey, newCreds)
 //
 // SendKUR automatically identifies oldCert through the CRMF oldCertID control
 // when newCreds is a [pkicmp.SignatureCredentials]. Custom credential types can
-// provide the certificate with [WithOldCertificate].
+// provide the certificate with [WithOldCertificate]. The request repeats the
+// subject of oldCert in the sender and the certificate template with the bytes
+// oldCert encodes, so a CA comparing names byte by byte finds them unchanged.
+// When oldCert has an empty subject, the template carries a NULL-DN subject and
+// the subjectAltName of oldCert instead. [WithSender] and [WithTemplateSubject]
+// override either name.
 //
 // # Revocation
 //
@@ -148,6 +150,11 @@
 // changed it. A certificate that fails these checks or arrives under another
 // certReqId is rejected in certConf before the error is returned, so the CA
 // learns of it at once (RFC 9483 §3.6.1).
+//
+// A certificate the client accepts can still fail in the confirming certConf,
+// for example when the CA refuses it. The error is then a [ConfirmationError]
+// holding the certificate. The CA may keep it or revoke it as unconfirmed, so
+// check the CA before retrying, because a retry may issue a second one.
 //
 // # Limits
 //

@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tsaarni/certyaml"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
-	"github.com/misiektoja/go-pkicmp-ng/server"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/server"
 )
 
 // postCMP sends a CMP message and returns the parsed response.
@@ -387,8 +387,17 @@ func TestStrictProfileValidation(t *testing.T) {
 		assert.Equal(t, pkicmp.BodyTypeError, resp.Body.Type)
 	})
 
-	t.Run("rejects an incomplete chain", func(t *testing.T) {
-		resp := postCMP(t, ts, newSignedCR(t, "strict-incomplete", fullChain[:1]))
+	// RFC 9483 section 3.3 recommends leaving self-signed certificates out of extraCerts.
+	t.Run("accepts a chain without its self-signed root", func(t *testing.T) {
+		resp := postCMP(t, ts, newSignedCR(t, "strict-rootless", fullChain[:1]))
+		assert.Equal(t, pkicmp.BodyTypeCP, resp.Body.Type)
+	})
+
+	t.Run("rejects a certificate that does not certify the one before it", func(t *testing.T) {
+		other, err := (&certyaml.Certificate{Subject: "CN=Other CA"}).X509Certificate()
+		require.NoError(t, err)
+		unrelated := []pkicmp.CMPCertificate{{Raw: clientX509.Raw}, {Raw: other.Raw}}
+		resp := postCMP(t, ts, newSignedCR(t, "strict-unrelated", unrelated))
 		assert.Equal(t, pkicmp.BodyTypeError, resp.Body.Type)
 	})
 

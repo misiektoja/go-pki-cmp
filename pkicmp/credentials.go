@@ -22,15 +22,17 @@ type Credentials interface {
 type MACCredentialOption func(*macCredentialConfig)
 
 type macCredentialConfig struct {
-	algorithm      asn1.ObjectIdentifier
-	iterationCount int
-	keyLength      int
-	owf            asn1.ObjectIdentifier // PBM OWF or PBMAC1 PRF
-	mac            asn1.ObjectIdentifier
-	owfParameters  []byte               // raw ASN.1 params for PBM OWF echo-back
-	macParameters  []byte               // raw ASN.1 params for PBM MAC echo-back
-	protectionAlg  *AlgorithmIdentifier // raw AlgID from WithProtectionAlgorithm
-	err            error                // invalid option, reported by NewMACCredentials
+	algorithm         asn1.ObjectIdentifier
+	iterationCount    int
+	minIterationCount int // zero selects DefaultMinMACIterationCount
+	maxIterationCount int // zero selects DefaultMaxMACIterationCount
+	keyLength         int
+	owf               asn1.ObjectIdentifier // PBM OWF or PBMAC1 PRF
+	mac               asn1.ObjectIdentifier
+	owfParameters     []byte               // raw ASN.1 params for PBM OWF echo-back
+	macParameters     []byte               // raw ASN.1 params for PBM MAC echo-back
+	protectionAlg     *AlgorithmIdentifier // raw AlgID from WithProtectionAlgorithm
+	err               error                // invalid option, reported by NewMACCredentials
 }
 
 // WithPBM configures PasswordBasedMac protection (RFC 4210 §5.1.3.1).
@@ -105,9 +107,26 @@ func pbmAlgorithmOIDs(owf, mac crypto.Hash) (asn1.ObjectIdentifier, asn1.ObjectI
 	return owfOID, macOID, nil
 }
 
-// WithMACIterationCount sets the PBKDF iteration count.
+// WithMACIterationCount sets the PBKDF iteration count. The default is 10000.
+// A count outside [DefaultMinMACIterationCount] and
+// [DefaultMaxMACIterationCount] also needs [WithMACIterationLimits].
 func WithMACIterationCount(n int) MACCredentialOption {
 	return func(c *macCredentialConfig) { c.iterationCount = n }
+}
+
+// WithMACIterationLimits bounds the iteration count that Protect uses, whether
+// it comes from [WithMACIterationCount] or is echoed through
+// [WithProtectionAlgorithm]. The defaults are [DefaultMinMACIterationCount] and
+// [DefaultMaxMACIterationCount]. Zero selects a default and a maximum below the
+// minimum is raised to it.
+//
+// The bound matters most when echoing: the count then comes from a peer, so
+// pass the limits the received message was verified against.
+func WithMACIterationLimits(minimum, maximum int) MACCredentialOption {
+	return func(c *macCredentialConfig) {
+		c.minIterationCount = minimum
+		c.maxIterationCount = maximum
+	}
 }
 
 // WithProtectionAlgorithm echoes the protection parameters from a received
@@ -158,7 +177,7 @@ func NewMACCredentials(secret []byte, opts ...MACCredentialOption) (*MACCredenti
 
 func (c *MACCredentials) Protect(msg *PKIMessage) error {
 	if c.cfg.protectionAlg != nil {
-		return msg.protectWithMACAlgorithm(c.secret, c.cfg.protectionAlg)
+		return msg.protectWithMACAlgorithm(c.secret, c.cfg.protectionAlg, c.cfg.minIterationCount, c.cfg.maxIterationCount)
 	}
 	alg := c.cfg.algorithm
 	if alg == nil {
@@ -166,21 +185,25 @@ func (c *MACCredentials) Protect(msg *PKIMessage) error {
 	}
 	if alg.Equal(oidPBMAC1) {
 		return msg.protectWithPBMAC1Options(pbmac1Options{
-			Secret:         c.secret,
-			IterationCount: c.cfg.iterationCount,
-			KeyLength:      c.cfg.keyLength,
-			PRF:            c.cfg.owf,
-			MAC:            c.cfg.mac,
+			Secret:            c.secret,
+			IterationCount:    c.cfg.iterationCount,
+			KeyLength:         c.cfg.keyLength,
+			PRF:               c.cfg.owf,
+			MAC:               c.cfg.mac,
+			MinIterationCount: c.cfg.minIterationCount,
+			MaxIterationCount: c.cfg.maxIterationCount,
 		})
 	}
 	return msg.protectWithMACOptions(macOptions{
-		Secret:         c.secret,
-		Algorithm:      alg,
-		IterationCount: c.cfg.iterationCount,
-		OWF:            c.cfg.owf,
-		MAC:            c.cfg.mac,
-		OWFParameters:  c.cfg.owfParameters,
-		MACParameters:  c.cfg.macParameters,
+		Secret:            c.secret,
+		Algorithm:         alg,
+		IterationCount:    c.cfg.iterationCount,
+		OWF:               c.cfg.owf,
+		MAC:               c.cfg.mac,
+		OWFParameters:     c.cfg.owfParameters,
+		MACParameters:     c.cfg.macParameters,
+		MinIterationCount: c.cfg.minIterationCount,
+		MaxIterationCount: c.cfg.maxIterationCount,
 	})
 }
 

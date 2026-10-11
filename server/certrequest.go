@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -10,15 +11,18 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 type parsedCRMF struct {
 	certReqID    int64
 	subject      pkix.Name
+	rawSubject   []byte // DER Name as requested, nil when the template has no subject
 	publicKey    crypto.PublicKey
+	publicKeyDER []byte // DER SubjectPublicKeyInfo from the template
 	extensions   []pkix.Extension
 	signaturePOP bool // request carries a signature proof of possession
+	popoAbsent   bool // request carries no proof of possession at all
 }
 
 // parseCRMFMsg extracts fields from a CRMF request body.
@@ -54,6 +58,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 		name.FillFromRDNSequence(&reqMsg.CertReq.CertTemplate.Subject.DirectoryName)
 		result.subject = name
 	}
+	result.rawSubject = reqMsg.CertReq.CertTemplate.RawSubject
 
 	// Extract public key.
 	if len(reqMsg.CertReq.CertTemplate.PublicKey) > 0 {
@@ -62,9 +67,11 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
 		}
 		result.publicKey = pub
+		result.publicKeyDER = reqMsg.CertReq.CertTemplate.PublicKey
 	}
 
 	result.signaturePOP = reqMsg.Popo != nil && reqMsg.Popo.Signature != nil
+	result.popoAbsent = reqMsg.Popo == nil
 
 	// Extract extensions.
 	if len(reqMsg.CertReq.CertTemplate.Extensions) > 0 {
@@ -89,7 +96,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 // applies the same rule, so a request usually passes it once in the policy and
 // once here, which costs one extra public key operation and keeps either layer
 // correct on its own.
-func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage) error {
+func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) error {
 	switch msg.Body.Type {
 	case pkicmp.BodyTypeP10CR:
 		csr, err := msg.Body.P10CR()
@@ -110,7 +117,7 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage) error
 		if err != nil {
 			return err
 		}
-		if err := verifyPOPMsg(msg, pkicmp.POPOptions{AllowSHA1Signatures: sha1SignaturesAllowed(ctx)}); err != nil {
+		if err := verifyPOPMsg(msg, popOptions(ctx, sender)); err != nil {
 			failInfo := pkicmp.FailBadPOP
 			var verr *pkicmp.VerificationError
 			if errors.As(err, &verr) && verr.Reason == pkicmp.ReasonUnsupportedAlgorithm {
@@ -131,6 +138,9 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage) error
 		// the indirect method of RFC 9810 §5.2.8.3, which is not implemented, so
 		// such requests are refused rather than issued for an unproven key.
 		if !crmf.signaturePOP {
+			if crmf.popoAbsent && policyConfigFrom(ctx).signatureProtectionPOP && signedWithRequestedKey(crmf, sender) {
+				return nil
+			}
 			return rejection(pkicmp.FailBadPOP, "proof of possession by signature required")
 		}
 		return nil
@@ -138,6 +148,19 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage) error
 		// Only certificate requests carry a proof of possession.
 		return nil
 	}
+}
+
+// signedWithRequestedKey reports whether the message protection was verified
+// with a certificate for the public key the template requests. That signature
+// then proves possession of the private key, which RFC 4211 §4 lets a server
+// establish by other means than the popo field.
+func signedWithRequestedKey(crmf *parsedCRMF, sender *SenderIdentity) bool {
+	if sender == nil || sender.MACVerified || sender.Certificate == nil || len(crmf.publicKeyDER) == 0 {
+		return false
+	}
+	cert := sender.Certificate
+	return bytes.Equal(crmf.publicKeyDER, cert.RawSubjectPublicKeyInfo) ||
+		samePublicKey(crmf.publicKeyDER, certificatePublicKey(cert))
 }
 
 // verifyPOPMsg verifies the Proof of Possession for CRMF requests.

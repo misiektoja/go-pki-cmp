@@ -6,7 +6,7 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // SendP10CR sends a PKCS#10 CSR to the CA (RFC 9810 §5.3.3).

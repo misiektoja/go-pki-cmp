@@ -113,8 +113,9 @@ type ParseError struct {
 
 // ParseError details reported from more than one place.
 const (
-	detailInvalidCertReqID   = "invalid certReqId"
-	detailMissingMessageBody = "missing message body"
+	detailInvalidCertReqID       = "invalid certReqId"
+	detailMissingMessageBody     = "missing message body"
+	detailPoposkInputAuthMissing = "poposkInput authInfo missing"
 )
 
 func (e *ParseError) Error() string {

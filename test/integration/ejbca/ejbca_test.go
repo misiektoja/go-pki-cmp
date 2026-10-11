@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/misiektoja/go-pkicmp-ng/client"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/client"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 func TestEJBCAInitializeECDSAP384(t *testing.T) {

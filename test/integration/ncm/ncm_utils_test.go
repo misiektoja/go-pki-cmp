@@ -29,8 +29,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/misiektoja/go-pkicmp-ng/client"
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/client"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 const (
@@ -296,7 +296,7 @@ func (c *ncmConfig) enrollmentName(purpose string) string {
 func generatedName(purpose string) string {
 	// A profile that certifies an identity only once would refuse every run after the first
 	// if the name repeated.
-	return fmt.Sprintf("go-pkicmp-ng-test-%s-%s", time.Now().UTC().Format("060102-150405"), purpose)
+	return fmt.Sprintf("go-pki-cmp-test-%s-%s", time.Now().UTC().Format("060102-150405"), purpose)
 }
 
 // enrollP10CR generates an RSA key, enrolls it for subject through P10CR and returns the key and the issued certificate's chain.

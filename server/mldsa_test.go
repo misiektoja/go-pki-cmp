@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // TestMLDSARequiresProof prevents issuance for signature keys without verified possession.
@@ -38,7 +38,7 @@ func TestMLDSARequiresProof(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				err = enforceProofOfPossession(context.Background(), parsed)
+				err = enforceProofOfPossession(context.Background(), parsed, nil)
 				if proof && err != nil {
 					t.Fatal(err)
 				}

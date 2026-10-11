@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tsaarni/certyaml"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
-	"github.com/misiektoja/go-pkicmp-ng/server"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/server"
 )
 
 // requestType identifies the CMP operation type (test-only equivalent of the removed server.RequestType).
@@ -331,6 +331,11 @@ func statusInfoOf(t *testing.T, msg *pkicmp.PKIMessage) pkicmp.PKIStatusInfo {
 		return rep.Response[0].Status
 	case pkicmp.BodyTypeCP:
 		rep, err := msg.Body.CP()
+		require.NoError(t, err)
+		require.NotEmpty(t, rep.Response)
+		return rep.Response[0].Status
+	case pkicmp.BodyTypeKUP:
+		rep, err := msg.Body.KUP()
 		require.NoError(t, err)
 		require.NotEmpty(t, rep.Response)
 		return rep.Response[0].Status

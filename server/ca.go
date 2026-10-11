@@ -1,16 +1,18 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1" // #nosec G505 -- used for SKI computation (opaque identifier)
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"slices"
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
-	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // CA is the interface a certificate authority must implement.
@@ -22,6 +24,14 @@ type CA interface {
 	// The CA may modify the template before signing (e.g., enforce policy on
 	// validity period, add extensions). Return Response.Waiting to trigger
 	// the polling flow for async issuance.
+	//
+	// With [WithRawSubject] the template also carries RawSubject, which
+	// [x509.CreateCertificate] uses instead of Subject. Clear it before
+	// changing the subject.
+	//
+	// A request with an empty subject names the entity in a requested
+	// subjectAltName extension, which the template marks critical as RFC 5280
+	// §4.2.1.6 requires. A CA that supplies a subject should clear that flag.
 	//
 	// A composite ML-DSA subject key arrives as *compositemldsa.PublicKey,
 	// which only compositex509.CreateCertificate can certify.
@@ -97,19 +107,75 @@ func contextWithPollRef(ctx context.Context, pollRef string) context.Context {
 	return context.WithValue(ctx, pollRefKey{}, pollRef)
 }
 
-// sha1SignaturesKey is the context key that carries the WithSHA1Signatures
-// setting to proof of possession checks, which run inside handlers that do not
-// see the server configuration.
-type sha1SignaturesKey struct{}
+// policyConfigKey is the context key that carries the server settings for
+// request checks that run inside handlers, such as [LightweightPolicy], which
+// do not see the server configuration.
+type policyConfigKey struct{}
 
-// contextWithSHA1Signatures marks ctx so proof of possession checks accept SHA-1 signatures.
-func contextWithSHA1Signatures(ctx context.Context) context.Context {
-	return context.WithValue(ctx, sha1SignaturesKey{}, true)
+// policyConfig holds the server options that change request checks. The server
+// clears every relaxation under [WithStrictProfileValidation].
+type policyConfig struct {
+	allowSHA1Signatures      bool
+	allowPoposkInputVariants bool
+	minMACIterationCount     int
+	maxMACIterationCount     int
+	optionalSubject          bool
+	optionalRevocationReason bool
+	optionalRevocationIssuer bool
+	macRevocation            bool
+	signatureProtectionPOP   bool
 }
 
-// sha1SignaturesAllowed reports whether ctx permits SHA-1 signatures in proof of possession.
-func sha1SignaturesAllowed(ctx context.Context) bool {
-	v, _ := ctx.Value(sha1SignaturesKey{}).(bool)
+// contextWithPolicyConfig attaches the request check settings to ctx.
+func contextWithPolicyConfig(ctx context.Context, c policyConfig) context.Context {
+	return context.WithValue(ctx, policyConfigKey{}, c)
+}
+
+// policyConfigFrom returns the request check settings in ctx. A context without
+// settings yields the defaults.
+func policyConfigFrom(ctx context.Context) policyConfig {
+	c, _ := ctx.Value(policyConfigKey{}).(policyConfig)
+	return c
+}
+
+// popOptions returns the proof of possession options for a request from sender
+// under the settings in ctx.
+func popOptions(ctx context.Context, sender *SenderIdentity) pkicmp.POPOptions {
+	c := policyConfigFrom(ctx)
+	opts := pkicmp.POPOptions{
+		AllowSHA1Signatures:      c.allowSHA1Signatures,
+		AllowPoposkInputVariants: c.allowPoposkInputVariants,
+		MinMACIterationCount:     c.minMACIterationCount,
+		MaxMACIterationCount:     c.maxMACIterationCount,
+	}
+	if sender == nil {
+		return opts
+	}
+	if sender.MACVerified {
+		opts.SharedSecret = sender.secret
+	}
+	// RFC 4211 §4.1 uses the sender alternative of poposkInput only for an
+	// authenticated name, such as the subject of a valid certificate. A
+	// MAC-protected request has none and must use publicKeyMAC.
+	if sender.Certificate != nil {
+		name := pkicmp.NewDirectoryNameFromRawDER(sender.Certificate.RawSubject)
+		opts.Sender = &name
+	}
+	return opts
+}
+
+// rawSubjectKey is the context key that carries the WithRawSubject setting to
+// the CA handler, which does not see the server configuration.
+type rawSubjectKey struct{}
+
+// contextWithRawSubject marks ctx so certificate templates carry the requested subject DER.
+func contextWithRawSubject(ctx context.Context) context.Context {
+	return context.WithValue(ctx, rawSubjectKey{}, true)
+}
+
+// rawSubjectEnabled reports whether ctx asks for the requested subject DER in certificate templates.
+func rawSubjectEnabled(ctx context.Context) bool {
+	v, _ := ctx.Value(rawSubjectKey{}).(bool)
 	return v
 }
 
@@ -151,6 +217,7 @@ func (h *caHandler) HandleCMP(ctx context.Context, msg *pkicmp.PKIMessage, sende
 
 func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) (*Response, error) {
 	var subject pkix.Name
+	var rawSubject []byte
 	var pubKey any
 	var extensions []pkix.Extension
 
@@ -158,7 +225,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 	// server may be built without a policy wrapper and a certificate issued for
 	// a key the requester does not hold is an authorization failure rather than
 	// a matter of site policy.
-	if err := enforceProofOfPossession(ctx, msg); err != nil {
+	if err := enforceProofOfPossession(ctx, msg, sender); err != nil {
 		return nil, err
 	}
 
@@ -173,13 +240,13 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
 		}
-		subject, extensions = csr.Subject, csr.Extensions
+		subject, rawSubject, extensions = csr.Subject, csr.RawSubject, csr.Extensions
 	default:
 		crmf, err := parseCRMFMsg(msg)
 		if err != nil {
 			return nil, err
 		}
-		subject, pubKey, extensions = crmf.subject, crmf.publicKey, crmf.extensions
+		subject, rawSubject, pubKey, extensions = crmf.subject, crmf.rawSubject, crmf.publicKey, crmf.extensions
 	}
 
 	// An extension that cannot be decoded must not travel on to the CA in
@@ -196,6 +263,12 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 	}
 	ski := sha1.Sum(pubDER) // #nosec G401 -- SHA-1 of SPKI for SKI (opaque identifier, collision resistance not required)
 
+	// RFC 5280 §4.2.1.6: a certificate with an empty subject must mark its
+	// subjectAltName critical. Requesters often leave the flag off.
+	if len(subject.String()) == 0 {
+		extensions = criticalSubjectAltName(extensions)
+	}
+
 	// Build template with data from the request only. The CA sets serial and
 	// validity, and decides what else to honor.
 	//
@@ -211,9 +284,25 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		SubjectKeyId:    ski[:],
 		ExtraExtensions: extensions,
 	}
+	// A template without a subject field leaves RawSubject nil, so the CA can still
+	// supply one through Subject.
+	if rawSubjectEnabled(ctx) && len(rawSubject) > 0 {
+		template.RawSubject = bytes.Clone(rawSubject)
+	}
 
 	reqType := bodyTypeToRequestType(msg.Body.Type)
 	return h.ca.IssueCertificate(ctx, reqType, template, sender)
+}
+
+// criticalSubjectAltName returns a copy of extensions with the subjectAltName marked critical.
+func criticalSubjectAltName(extensions []pkix.Extension) []pkix.Extension {
+	out := slices.Clone(extensions)
+	for i := range out {
+		if out[i].Id.Equal(oidExtensionSubjectAltName) {
+			out[i].Critical = true
+		}
+	}
+	return out
 }
 
 func (h *caHandler) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage) (*Response, error) {

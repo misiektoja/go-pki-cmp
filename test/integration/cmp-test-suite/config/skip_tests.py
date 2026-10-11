@@ -10,8 +10,13 @@ as arguments to skip on top of the built-in list.
 
 from robot.api import SuiteVisitor
 
-# Known upstream test suite bugs: mapping of test name to skip reason.
+# Test suite and fixture limitations mapped to skip reasons.
 KNOWN_FAILURES = {
+    # The mock CA directly signs end entities, so this request omits only the
+    # self-signed root. RFC 9483 section 3.3 recommends omitting that root.
+    # server/interop_regression_test.go covers acceptance and invalid chains.
+    "CA MUST Reject Signature Protected PKIMessage Without Complete Certificate Chain":
+        "The test CA has no intermediate, so omitting its root is valid under RFC 9483 section 3.3",
     # Test suite bug (tests/cert_conf_tests.robot): expects badRequest but RFC 9483 §3.5
     # mandates badDataFormat for missing transactionID. The correct test in
     # tests/lwcmp.robot ("FailInfo Bit Must Be badDataFormat For Missing transactionID") passes.
@@ -26,11 +31,13 @@ KNOWN_FAILURES = {
 
 class skip_tests(SuiteVisitor):
 
+    # Combine the built-in exclusions with any caller-supplied test names.
     def __init__(self, *test_names):
         self.skip_map = {name.lower(): reason for name, reason in KNOWN_FAILURES.items()}
         for name in test_names:
             self.skip_map[name.lower()] = "Skipped via pre-run modifier argument"
 
+    # Replace excluded test bodies with an explicit skip and its reason.
     def start_suite(self, suite):
         for test in suite.tests:
             reason = self.skip_map.get(test.name.lower())
