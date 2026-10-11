@@ -16,6 +16,7 @@ import (
 type parsedCRMF struct {
 	certReqID    int64
 	subject      pkix.Name
+	rawSubject   []byte // DER Name as requested, nil when the template has no subject
 	publicKey    crypto.PublicKey
 	extensions   []pkix.Extension
 	signaturePOP bool // request carries a signature proof of possession
@@ -54,6 +55,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 		name.FillFromRDNSequence(&reqMsg.CertReq.CertTemplate.Subject.DirectoryName)
 		result.subject = name
 	}
+	result.rawSubject = reqMsg.CertReq.CertTemplate.RawSubject
 
 	// Extract public key.
 	if len(reqMsg.CertReq.CertTemplate.PublicKey) > 0 {

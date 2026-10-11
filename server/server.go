@@ -220,6 +220,9 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 	if s.cfg.allowSHA1Signatures {
 		ctx = contextWithSHA1Signatures(ctx)
 	}
+	if s.cfg.rawSubject {
+		ctx = contextWithRawSubject(ctx)
+	}
 
 	// Dispatch by body type.
 	var resp *pkicmp.PKIMessage

@@ -72,6 +72,7 @@ type serverConfig struct {
 	maxTransactionsPerCredential int
 	strictProfile                bool
 	allowSHA1Signatures          bool
+	rawSubject                   bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
 	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
@@ -181,6 +182,25 @@ func WithStrictProfileValidation() Option {
 func WithSHA1Signatures() Option {
 	return func(c *serverConfig) {
 		c.allowSHA1Signatures = true
+	}
+}
+
+// WithRawSubject sets template.RawSubject to the subject name exactly as the
+// request encoded it, in a CRMF certificate template or a PKCS#10 request. The
+// issued certificate then keeps every requested attribute with its order and
+// string type. Without it the subject is rebuilt from pkix.Name, which drops
+// attribute types pkix.Name does not model, such as domainComponent and
+// emailAddress, reorders the rest and may change their string type.
+//
+// [x509.CreateCertificate] uses RawSubject instead of Subject. A CA that
+// changes the subject must therefore clear RawSubject. A CA that checks the
+// subject must check every attribute in Subject.Names, because CommonName and
+// SerialNumber hold only the last value of their type and the raw name may
+// repeat it. Only handlers built with [NewCAHandler] or [NewCAServer] apply the
+// option.
+func WithRawSubject() Option {
+	return func(c *serverConfig) {
+		c.rawSubject = true
 	}
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1" // #nosec G505 -- used for SKI computation (opaque identifier)
@@ -22,6 +23,10 @@ type CA interface {
 	// The CA may modify the template before signing (e.g., enforce policy on
 	// validity period, add extensions). Return Response.Waiting to trigger
 	// the polling flow for async issuance.
+	//
+	// With [WithRawSubject] the template also carries RawSubject, which
+	// [x509.CreateCertificate] uses instead of Subject. Clear it before
+	// changing the subject.
 	//
 	// A composite ML-DSA subject key arrives as *compositemldsa.PublicKey,
 	// which only compositex509.CreateCertificate can certify.
@@ -113,6 +118,21 @@ func sha1SignaturesAllowed(ctx context.Context) bool {
 	return v
 }
 
+// rawSubjectKey is the context key that carries the WithRawSubject setting to
+// the CA handler, which does not see the server configuration.
+type rawSubjectKey struct{}
+
+// contextWithRawSubject marks ctx so certificate templates carry the requested subject DER.
+func contextWithRawSubject(ctx context.Context) context.Context {
+	return context.WithValue(ctx, rawSubjectKey{}, true)
+}
+
+// rawSubjectEnabled reports whether ctx asks for the requested subject DER in certificate templates.
+func rawSubjectEnabled(ctx context.Context) bool {
+	v, _ := ctx.Value(rawSubjectKey{}).(bool)
+	return v
+}
+
 // caHandler implements Handler by delegating to a CA.
 type caHandler struct {
 	ca CA
@@ -151,6 +171,7 @@ func (h *caHandler) HandleCMP(ctx context.Context, msg *pkicmp.PKIMessage, sende
 
 func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) (*Response, error) {
 	var subject pkix.Name
+	var rawSubject []byte
 	var pubKey any
 	var extensions []pkix.Extension
 
@@ -173,13 +194,13 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
 		}
-		subject, extensions = csr.Subject, csr.Extensions
+		subject, rawSubject, extensions = csr.Subject, csr.RawSubject, csr.Extensions
 	default:
 		crmf, err := parseCRMFMsg(msg)
 		if err != nil {
 			return nil, err
 		}
-		subject, pubKey, extensions = crmf.subject, crmf.publicKey, crmf.extensions
+		subject, rawSubject, pubKey, extensions = crmf.subject, crmf.rawSubject, crmf.publicKey, crmf.extensions
 	}
 
 	// An extension that cannot be decoded must not travel on to the CA in
@@ -210,6 +231,11 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		PublicKey:       pubKey,
 		SubjectKeyId:    ski[:],
 		ExtraExtensions: extensions,
+	}
+	// A request without a subject leaves RawSubject nil, so the CA can still
+	// supply one through Subject.
+	if rawSubjectEnabled(ctx) && len(rawSubject) > 0 {
+		template.RawSubject = bytes.Clone(rawSubject)
 	}
 
 	reqType := bodyTypeToRequestType(msg.Body.Type)
