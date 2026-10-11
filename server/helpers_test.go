@@ -334,6 +334,11 @@ func statusInfoOf(t *testing.T, msg *pkicmp.PKIMessage) pkicmp.PKIStatusInfo {
 		require.NoError(t, err)
 		require.NotEmpty(t, rep.Response)
 		return rep.Response[0].Status
+	case pkicmp.BodyTypeKUP:
+		rep, err := msg.Body.KUP()
+		require.NoError(t, err)
+		require.NotEmpty(t, rep.Response)
+		return rep.Response[0].Status
 	default:
 		t.Fatalf("no status in body type %s", msg.Body.Type)
 		return pkicmp.PKIStatusInfo{}

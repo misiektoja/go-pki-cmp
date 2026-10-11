@@ -60,6 +60,17 @@ func TestCertConfOptionalRecipNonce(t *testing.T) {
 		})
 	}
 
+	t.Run("MissingRejectedUnderStrictProfile", func(t *testing.T) {
+		ts, ca := newConfirmingServer(t, secret, server.WithOptionalCertConfRecipNonce(), server.WithStrictProfileValidation())
+		resp, cert := enrollForCertConf(t, ts, secret, false)
+		conf := postCMP(t, ts, omittedNonceCertConf(t, resp, cert, secret, nil))
+		require.Equal(t, pkicmp.BodyTypeError, conf.Body.Type)
+		info := statusInfoOf(t, conf)
+		assert.Equal(t, pkicmp.FailBadRecipientNonce, info.FailInfo)
+		assert.Equal(t, pkicmp.PKIFreeText{"missing recipNonce"}, info.StatusString)
+		assert.Empty(t, ca.statuses)
+	})
+
 	t.Run("MismatchRejectedWithOption", func(t *testing.T) {
 		ts, ca := newConfirmingServer(t, secret, server.WithOptionalCertConfRecipNonce())
 		resp, cert := enrollForCertConf(t, ts, secret, false)
