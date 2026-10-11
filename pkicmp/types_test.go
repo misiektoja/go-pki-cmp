@@ -1,8 +1,13 @@
 package pkicmp
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,6 +114,37 @@ func TestGeneralNameASN1(t *testing.T) {
 
 		// Compare RDN sequences by re-marshaling or deep comparison
 		assert.Equal(t, len(name), len(unmarshaled.DirectoryName))
+	})
+
+	// A name built from pkix.Name gets the string types crypto/x509 gives it in a certificate, so a
+	// subject copied from a Go-issued certificate keeps its encoding: PrintableString where the
+	// value allows it and UTF8String otherwise.
+	t.Run("DirectoryNameMatchesCertificateEncoding", func(t *testing.T) {
+		name := pkix.Name{Country: []string{"FI"}, Organization: []string{"Example"}, CommonName: "device_7"}
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: name}
+		certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+		require.NoError(t, err)
+		cert, err := x509.ParseCertificate(certDER)
+		require.NoError(t, err)
+
+		gn := NewDirectoryName(name)
+		var b cryptobyte.Builder
+		gn.marshal(&marshalContext{MinRequiredPVNO: PVNO2}, &b)
+		marshaled, err := b.Bytes()
+		require.NoError(t, err)
+		der, ok := directoryNameDER(marshaled)
+		require.True(t, ok)
+		assert.Equal(t, cert.RawSubject, der)
+	})
+
+	t.Run("UnencodableDirectoryNameValue", func(t *testing.T) {
+		gn := GeneralName{DirectoryName: pkix.RDNSequence{{{Type: asn1.ObjectIdentifier{2, 5, 4, 3}, Value: 1.5}}}}
+		var b cryptobyte.Builder
+		gn.marshal(&marshalContext{MinRequiredPVNO: PVNO2}, &b)
+		_, err := b.Bytes()
+		assert.ErrorContains(t, err, "encode directoryName")
 	})
 
 	t.Run("RFC822Name", func(t *testing.T) {
