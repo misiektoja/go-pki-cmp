@@ -4,7 +4,7 @@ Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags p
 
 ## v0.4.0 - TBD
 
-Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, requests that name the device only in subjectAltName and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation.
+Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, requests that name the device only in subjectAltName and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation. The client reports a certificate whose confirmation failed separately from a refused request.
 
 ### `pkicmp`
 
@@ -17,6 +17,7 @@ Servers can accept CMP devices that the default settings refuse. They can issue 
 ### `client`
 
 * **`WithMACIterationLimits`** sets the accepted iteration counts in MAC-protected responses. To send a count outside the default range, set it with `pkicmp.WithMACIterationCount` and widen `pkicmp.WithMACIterationLimits` on the credentials.
+* **`ConfirmationError`** reports that the CA issued a certificate but the certConf that confirms it failed, and carries that certificate. Such a failure previously looked like a refused request, although the CA may keep the certificate. `errors.As` still finds the CA's status inside it.
 
 ### `server`
 
