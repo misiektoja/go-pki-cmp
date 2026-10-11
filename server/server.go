@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -131,8 +132,9 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 	// RFC 9810 §7: Validate PVNO.
 	if msg.Header.PVNO < pkicmp.PVNO2 || msg.Header.PVNO > pkicmp.PVNO3 {
 		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
-			Status:   pkicmp.StatusRejection,
-			FailInfo: pkicmp.FailUnsupportedVersion,
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailUnsupportedVersion,
+			StatusString: pkicmp.PKIFreeText{fmt.Sprintf("unsupported pvno %d", msg.Header.PVNO)},
 		})
 		// RFC 9810 §7: Use the closest supported PVNO in the error response.
 		if msg.Header.PVNO > pkicmp.PVNO3 {
@@ -240,9 +242,11 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		// already catches invalid headers, so reaching here means the header is valid.
 		resp = s.buildResponse(msg, pkicmp.NewPKIConfBody(), sender)
 	default:
+		// Clients probe with general messages, so the text says why they fail.
 		resp = s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-			Status:   pkicmp.StatusRejection,
-			FailInfo: pkicmp.FailBadRequest,
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailBadRequest,
+			StatusString: pkicmp.PKIFreeText{"message type not supported"},
 		})
 	}
 	return resp
