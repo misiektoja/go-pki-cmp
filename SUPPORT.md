@@ -10,6 +10,11 @@ Most problems come from configuration that differs between CMP peers. Before ask
 * The MAC secret and the reference sent as `senderKID` match what the CA expects. A peer that implements only RFC 4210 may need `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)`.
 * A request refused with "MAC protection parameters not accepted" uses an iteration count outside `server.WithMACIterationLimits`, which accepts 1 to 500000 by default. `client.WithMACIterationLimits` sets the range for responses.
 * A certConf refused with "missing recipNonce" comes from a client that leaves the field out. `server.WithOptionalCertConfRecipNonce` accepts it.
+* A request refused with "poposkInput not allowed when the template contains the subject and public key" comes from a client such as the Insta Certifier 10 cmpclient. `server.WithPoposkInputVariants` accepts it.
+* A key update refused with "proof of possession by signature required" carries no proof of possession. When it keeps the key of the certificate that signs it, `server.WithSignatureProtectionPOP` accepts it.
+* A request refused with "subject required" names its identity only in subjectAltName. `server.WithOptionalSubject` accepts it.
+* A revocation request refused with "reasonCode required", "issuer required" or "revocation requires signature protection" is accepted with `server.WithOptionalRevocationReason`, `server.WithOptionalRevocationIssuer` or `server.WithMACRevocation`. A MAC-protected one also needs a CA that implements `server.RevocationAuthorizer`.
+* A request refused with "unsupported pvno 0" uses a protocol version the server does not support. No option changes that.
 * SHA-1 signatures are enabled with `WithSHA1Signatures` in the `client` or `server` package when the peer still uses them. They are off by default.
 * `Err` on a server built with `server.New` or `server.NewCAServer` returns nil. It reports a signer key that does not match its certificate.
 * `server.WithStrictProfileValidation` is set only when every client follows RFC 9483 exactly. It rejects requests that many deployed clients send.
