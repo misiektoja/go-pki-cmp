@@ -323,7 +323,11 @@ type CertTemplate struct {
 	SerialNumber *big.Int
 	Issuer       []byte // Raw DER Name, such as x509.Certificate.RawIssuer
 	// Subject is the requested certificate subject DN.
-	Subject    GeneralName
+	Subject GeneralName
+	// RawSubject is the DER Name of the subject exactly as received, which keeps
+	// the attribute order and string types that Subject loses when re-encoded.
+	// Parsing sets it. Marshalling ignores it and encodes Subject.
+	RawSubject []byte
 	PublicKey  []byte // Raw DER SubjectPublicKeyInfo
 	Extensions []byte // Raw DER Extensions
 }
@@ -422,9 +426,11 @@ func (t *CertTemplate) unmarshal(s *cryptobyte.String) error {
 			if !sub.ReadASN1(&content, tag) {
 				return &ParseError{Detail: "invalid subject tag"}
 			}
+			raw := content
 			if err := parseRDNSequence(&content, &t.Subject.DirectoryName); err != nil {
 				return err
 			}
+			t.RawSubject = raw[:len(raw)-len(content)]
 		case cbasn1.Tag(6).ContextSpecific().Constructed():
 			var content cryptobyte.String
 			if !sub.ReadASN1(&content, tag) {
