@@ -724,7 +724,7 @@ func (p *popoSigningKey) unmarshalInner(seq *cryptobyte.String) error {
 		if !seq.ReadASN1(&sub, cbasn1.Tag(0).ContextSpecific().Constructed()) {
 			return &ParseError{Detail: "invalid poposkInput tag"}
 		}
-		p.PoposkInput = &popoSigningKeyInput{}
+		p.PoposkInput = &popoSigningKeyInput{raw: append([]byte(nil), sub...)}
 		if err := p.PoposkInput.unmarshalInner(&sub); err != nil {
 			return err
 		}
@@ -755,29 +755,59 @@ func (p *popoSigningKey) unmarshalInner(seq *cryptobyte.String) error {
 //	    publicKey           SubjectPublicKeyInfo
 //	}
 type popoSigningKeyInput struct {
-	// Sender optionally identifies who produced the POP signature.
+	// Sender is the authInfo for a requester with an authenticated name.
 	Sender *GeneralName
+	// PublicKeyMAC is the authInfo for a requester that holds only a shared secret.
+	PublicKeyMAC *pkMACValue
 	// PublicKey is the key material being proven.
 	PublicKey []byte // Raw DER SubjectPublicKeyInfo
+
+	// raw is the content of the received poposkInput element, which the POP
+	// signature covers. It is nil for a value built locally.
+	raw []byte
 }
 
+// pkMACValue per RFC 4211 §4.1.
+//
+//	PKMACValue ::= SEQUENCE {
+//	    algId  AlgorithmIdentifier,
+//	    value  BIT STRING
+//	}
+type pkMACValue struct {
+	// Algorithm is PasswordBasedMac with its parameters.
+	Algorithm AlgorithmIdentifier
+	// Value is the MAC over the public key.
+	Value []byte
+}
+
+// marshal writes the popoSigningKeyInput as a SEQUENCE.
 func (p *popoSigningKeyInput) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		p.marshalInner(mctx, b)
 	})
 }
 
+// marshalInner writes the authInfo choice followed by the public key.
 func (p *popoSigningKeyInput) marshalInner(mctx *marshalContext, b *cryptobyte.Builder) {
-	if p.Sender != nil {
+	switch {
+	case p.Sender != nil:
 		// sender [0] GeneralName (EXPLICIT because GeneralName is a CHOICE)
 		b.AddASN1(cbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
 			p.Sender.marshal(mctx, b)
 		})
+	case p.PublicKeyMAC != nil:
+		b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+			p.PublicKeyMAC.Algorithm.marshal(mctx, b)
+			b.AddASN1(cbasn1.BIT_STRING, func(b *cryptobyte.Builder) {
+				b.AddUint8(0) // No unused bits
+				b.AddBytes(p.PublicKeyMAC.Value)
+			})
+		})
 	}
-	// publicKeyMAC not implemented for Phase 1
 	b.AddBytes(p.PublicKey)
 }
 
+// unmarshal reads a popoSigningKeyInput SEQUENCE.
 func (p *popoSigningKeyInput) unmarshal(s *cryptobyte.String) error {
 	var seq cryptobyte.String
 	if !s.ReadASN1(&seq, cbasn1.SEQUENCE) {
@@ -786,25 +816,50 @@ func (p *popoSigningKeyInput) unmarshal(s *cryptobyte.String) error {
 	return p.unmarshalInner(&seq)
 }
 
+// unmarshalInner reads the required authInfo choice and the public key, and
+// nothing after them.
 func (p *popoSigningKeyInput) unmarshalInner(seq *cryptobyte.String) error {
-	if !seq.Empty() {
-		tag := cbasn1.Tag((*seq)[0])
-		if tag == cbasn1.Tag(0).ContextSpecific().Constructed() {
-			var sub cryptobyte.String
-			if !seq.ReadASN1(&sub, tag) {
-				return &ParseError{Detail: "invalid sender tag"}
-			}
-			p.Sender = &GeneralName{}
-			if err := p.Sender.unmarshal(&sub); err != nil {
-				return err
-			}
+	switch {
+	case seq.PeekASN1Tag(cbasn1.Tag(0).ContextSpecific().Constructed()):
+		var sub cryptobyte.String
+		if !seq.ReadASN1(&sub, cbasn1.Tag(0).ContextSpecific().Constructed()) {
+			return &ParseError{Detail: "invalid sender tag"}
 		}
+		p.Sender = &GeneralName{}
+		if err := p.Sender.unmarshal(&sub); err != nil {
+			return err
+		}
+		if !sub.Empty() {
+			return &ParseError{Detail: "trailing data in poposkInput sender"}
+		}
+	case seq.PeekASN1Tag(cbasn1.SEQUENCE):
+		// Both alternatives after sender are SEQUENCEs, so the required
+		// authInfo is a PKMACValue exactly when another SEQUENCE follows it.
+		rest := *seq
+		var first cryptobyte.String
+		if !rest.SkipASN1(cbasn1.SEQUENCE) || !rest.PeekASN1Tag(cbasn1.SEQUENCE) {
+			return &ParseError{Detail: detailPoposkInputAuthMissing}
+		}
+		if !seq.ReadASN1(&first, cbasn1.SEQUENCE) {
+			return &ParseError{Detail: "invalid publicKeyMAC"}
+		}
+		p.PublicKeyMAC = &pkMACValue{}
+		if err := p.PublicKeyMAC.Algorithm.unmarshal(&first); err != nil {
+			return err
+		}
+		var bitString cryptobyte.String
+		var unused uint8
+		if !first.ReadASN1(&bitString, cbasn1.BIT_STRING) || !bitString.ReadUint8(&unused) || unused != 0 || !first.Empty() {
+			return &ParseError{Detail: "invalid publicKeyMAC value"}
+		}
+		p.PublicKeyMAC.Value = bitString
+	default:
+		return &ParseError{Detail: detailPoposkInputAuthMissing}
 	}
 
 	var pub cryptobyte.String
-	var pubTag cbasn1.Tag
-	if !seq.ReadAnyASN1Element(&pub, &pubTag) {
-		return &ParseError{Detail: "missing publicKey"}
+	if !seq.ReadASN1Element(&pub, cbasn1.SEQUENCE) || !seq.Empty() {
+		return &ParseError{Detail: "invalid poposkInput publicKey"}
 	}
 	p.PublicKey = pub
 	return nil
