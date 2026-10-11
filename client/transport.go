@@ -708,10 +708,12 @@ func (c *Client) verifyResponse(req *pkicmp.PKIMessage, resp *pkicmp.PKIMessage,
 			}
 			return nil
 		}(),
-		TrustPool:           trustedCAs,
-		ExtraCerts:          candidates,
-		SenderKID:           resp.Header.SenderKID,
-		AllowSHA1Signatures: c.allowSHA1Signatures,
+		TrustPool:            trustedCAs,
+		ExtraCerts:           candidates,
+		SenderKID:            resp.Header.SenderKID,
+		AllowSHA1Signatures:  c.allowSHA1Signatures,
+		MinMACIterationCount: c.minMACIterations,
+		MaxMACIterationCount: c.maxMACIterations,
 	})
 	if err != nil {
 		if hint := c.verificationHint(err, trustedCAs); hint != "" {
