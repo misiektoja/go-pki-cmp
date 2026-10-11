@@ -1,10 +1,10 @@
 # Release Notes
 
-Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
+Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
 ## v0.4.0 - TBD
 
-Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, certificate templates without a subject field and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation. The client reports a certificate whose confirmation failed separately from a refused request. Key updates repeat the old certificate's subject with its original encoding. A device named only in subjectAltName can enroll with the default settings.
+The library is renamed to go-pki-cmp and its module path is now `github.com/misiektoja/go-pki-cmp`. Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, certificate templates without a subject field and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation. The client reports a certificate whose confirmation failed separately from a refused request. Key updates repeat the old certificate's subject with its original encoding. A device named only in subjectAltName can enroll with the default settings.
 
 ### `pkicmp`
 
@@ -37,6 +37,10 @@ Servers can accept CMP devices that the default settings refuse. They can issue 
 * **Status texts for two rejections.** A request with an unsupported protocol version gets "unsupported pvno" with the version. A message type the server does not handle, such as `genm`, gets "message type not supported". Both previously had no text.
 * **Key updates that keep the key are confirmed.** The server refused the certConf of a `kur` or `cr` for the key of its signer certificate with `badMessageCheck` and "certConf signed with newly issued certificate", although the client signed it with the certificate of the request. A certConf signed with the newly issued certificate is still refused.
 * **Responses to MAC-protected requests repeat the request's senderKID** when the server also has a signer. They carried the signer's key identifier, which clients that check it refuse.
+
+### Requirements
+
+* **Import the library as `github.com/misiektoja/go-pki-cmp`.** The repository was renamed from go-pkicmp-ng, so update the import paths and the `require` line in `go.mod`. Package names are unchanged. Releases up to v0.3.2 remain available under `github.com/misiektoja/go-pkicmp-ng`.
 
 ## v0.3.2 - 9 Oct 2026
 
