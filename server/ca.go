@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"slices"
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
@@ -27,6 +28,10 @@ type CA interface {
 	// With [WithRawSubject] the template also carries RawSubject, which
 	// [x509.CreateCertificate] uses instead of Subject. Clear it before
 	// changing the subject.
+	//
+	// A request with an empty subject names the entity in a requested
+	// subjectAltName extension, which the template marks critical as RFC 5280
+	// §4.2.1.6 requires. A CA that supplies a subject should clear that flag.
 	//
 	// A composite ML-DSA subject key arrives as *compositemldsa.PublicKey,
 	// which only compositex509.CreateCertificate can certify.
@@ -258,6 +263,12 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 	}
 	ski := sha1.Sum(pubDER) // #nosec G401 -- SHA-1 of SPKI for SKI (opaque identifier, collision resistance not required)
 
+	// RFC 5280 §4.2.1.6: a certificate with an empty subject must mark its
+	// subjectAltName critical. Requesters often leave the flag off.
+	if len(subject.String()) == 0 {
+		extensions = criticalSubjectAltName(extensions)
+	}
+
 	// Build template with data from the request only. The CA sets serial and
 	// validity, and decides what else to honor.
 	//
@@ -273,7 +284,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		SubjectKeyId:    ski[:],
 		ExtraExtensions: extensions,
 	}
-	// A request without a subject leaves RawSubject nil, so the CA can still
+	// A template without a subject field leaves RawSubject nil, so the CA can still
 	// supply one through Subject.
 	if rawSubjectEnabled(ctx) && len(rawSubject) > 0 {
 		template.RawSubject = bytes.Clone(rawSubject)
@@ -281,6 +292,17 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 
 	reqType := bodyTypeToRequestType(msg.Body.Type)
 	return h.ca.IssueCertificate(ctx, reqType, template, sender)
+}
+
+// criticalSubjectAltName returns a copy of extensions with the subjectAltName marked critical.
+func criticalSubjectAltName(extensions []pkix.Extension) []pkix.Extension {
+	out := slices.Clone(extensions)
+	for i := range out {
+		if out[i].Id.Equal(oidExtensionSubjectAltName) {
+			out[i].Critical = true
+		}
+	}
+	return out
 }
 
 func (h *caHandler) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage) (*Response, error) {

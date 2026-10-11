@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"slices"
 
 	"github.com/misiektoja/go-pkicmp-ng/pkicmp"
 )
@@ -89,7 +90,8 @@ func validateP10CR(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderId
 	if err := enforceProofOfPossession(ctx, msg, sender); err != nil {
 		return err
 	}
-	if err := checkSubject(ctx, csr.Subject, csr.Extensions); err != nil {
+	// A PKCS#10 request always has a subject field, which may be a NULL-DN.
+	if err := checkSubject(ctx, csr.Subject, true, csr.Extensions); err != nil {
 		return err
 	}
 	// RFC 5280 §4.2.1.9 path-length rules, plus the policy decision to refuse a
@@ -136,7 +138,7 @@ func validateCRMF(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIde
 		return err
 	}
 
-	if err := checkSubject(ctx, crmf.subject, crmf.extensions); err != nil {
+	if err := checkSubject(ctx, crmf.subject, crmf.rawSubject != nil, crmf.extensions); err != nil {
 		return err
 	}
 
@@ -148,20 +150,26 @@ func validateCRMF(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIde
 // oidExtensionSubjectAltName identifies the RFC 5280 §4.2.1.6 subjectAltName extension.
 var oidExtensionSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 
-// checkSubject enforces the RFC 9483 §4.1.1 subject requirement. With
-// WithOptionalSubject a request may instead carry its identity in a requested
-// subjectAltName extension, as RFC 5280 §4.1.2.6 allows.
-func checkSubject(ctx context.Context, subject pkix.Name, extensions []pkix.Extension) error {
+// checkSubject enforces the RFC 9483 §4.1.1 identity rule: the subject names the
+// entity, or it is a NULL-DN and a requested subjectAltName extension does.
+// present reports whether the request has a subject field at all. A CRMF
+// template may omit it, which only WithOptionalSubject accepts.
+func checkSubject(ctx context.Context, subject pkix.Name, present bool, extensions []pkix.Extension) error {
 	if len(subject.String()) > 0 {
 		return nil
 	}
-	if policyConfigFrom(ctx).optionalSubject {
-		for _, ext := range extensions {
-			if ext.Id.Equal(oidExtensionSubjectAltName) {
-				return nil
-			}
-		}
+	if !present && !policyConfigFrom(ctx).optionalSubject {
+		return rejection(pkicmp.FailBadCertTemplate, "subject required")
+	}
+	if !hasSubjectAltName(extensions) {
 		return rejection(pkicmp.FailBadCertTemplate, "subject or subjectAltName required")
 	}
-	return rejection(pkicmp.FailBadCertTemplate, "subject required")
+	return nil
+}
+
+// hasSubjectAltName reports whether extensions request a subjectAltName.
+func hasSubjectAltName(extensions []pkix.Extension) bool {
+	return slices.ContainsFunc(extensions, func(ext pkix.Extension) bool {
+		return ext.Id.Equal(oidExtensionSubjectAltName)
+	})
 }
