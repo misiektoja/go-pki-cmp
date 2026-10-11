@@ -467,15 +467,13 @@ func validateProfileExtraCerts(msg *pkicmp.PKIMessage, sender *SenderIdentity) e
 	if sender.Certificate != nil && !certs[0].Equal(sender.Certificate) {
 		return errors.New("first certificate in extraCerts is not the CMP protection certificate")
 	}
+	// §3.3 says self-signed certificates should be omitted, so the chain may end
+	// below its root. Whether it reaches a trust anchor is for the
+	// CertificateLookup that authenticates the signer to decide.
 	for i := 0; i < len(certs)-1; i++ {
 		if err := compositex509.CheckSignatureFrom(certs[i], certs[i+1]); err != nil {
 			return errors.New("extraCerts is not an ordered certificate chain")
 		}
-	}
-	// The chain is only complete once it reaches a self-issued certificate.
-	last := certs[len(certs)-1]
-	if err := compositex509.CheckSignatureFrom(last, last); err != nil {
-		return errors.New("incomplete certificate chain in extraCerts")
 	}
 	return nil
 }
