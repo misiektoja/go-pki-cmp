@@ -249,6 +249,14 @@ func (c *Client) rejectCertificate(ctx context.Context, conf *certConfirmation, 
 	return reason
 }
 
+// certificateSubject returns a certificate's subject as a directoryName with its original encoding.
+func certificateSubject(cert *x509.Certificate) pkicmp.GeneralName {
+	if len(cert.RawSubject) > 0 {
+		return pkicmp.NewDirectoryNameFromRawDER(cert.RawSubject)
+	}
+	return pkicmp.NewDirectoryName(cert.Subject)
+}
+
 // newRequest builds and protects the first message of an operation.
 func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, opts *requestOptions) (*pkicmp.PKIMessage, error) {
 	if creds == nil {
@@ -258,8 +266,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	if opts.sender != nil {
 		sender = pkicmp.NewDirectoryName(*opts.sender)
 	} else if sc, ok := creds.(*pkicmp.SignatureCredentials); ok && sc.Certificate() != nil {
-		// RFC 9810 §C.5/C.6: sender name SHOULD be present for CR/KUR.
-		sender = pkicmp.NewDirectoryName(sc.Certificate().Subject)
+		// RFC 9810 §C.5/C.6: sender name SHOULD be present for CR/KUR. RFC 9483 §3.1 makes it the
+		// protection certificate's subject, sent as encoded so a CA comparing bytes finds it.
+		sender = certificateSubject(sc.Certificate())
 	}
 
 	recipient := pkicmp.GeneralName{}
