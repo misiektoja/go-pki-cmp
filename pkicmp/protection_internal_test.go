@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/hmac"
 	"encoding/asn1"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,11 +34,13 @@ func TestPBMParameterASN1(t *testing.T) {
 		assert.Equal(t, p.Salt, unmarshaled.Salt)
 	})
 
-	t.Run("RejectsOutOfRangeIterationCount", func(t *testing.T) {
+	// The configured limits are only known to the verifier, so parsing accepts
+	// any count that fits an int.
+	t.Run("LeavesIterationRangeToVerifier", func(t *testing.T) {
 		p := pbmParameter{
 			Salt:           []byte{0x01, 0x02},
 			OWF:            AlgorithmIdentifier{Algorithm: oidSHA256},
-			IterationCount: defaultPBMMaxIterationCount + 1,
+			IterationCount: DefaultMaxMACIterationCount + 1,
 			MAC:            AlgorithmIdentifier{Algorithm: oidHMACWithSHA256},
 		}
 		var b cryptobyte.Builder
@@ -46,10 +49,26 @@ func TestPBMParameterASN1(t *testing.T) {
 
 		var unmarshaled pbmParameter
 		s := cryptobyte.String(marshaled)
-		err := unmarshaled.unmarshal(&s)
+		require.NoError(t, unmarshaled.unmarshal(&s))
+		assert.Equal(t, DefaultMaxMACIterationCount+1, unmarshaled.IterationCount)
+	})
+
+	t.Run("RejectsIterationCountBeyondInt", func(t *testing.T) {
+		var b cryptobyte.Builder
+		b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+			b.AddASN1OctetString([]byte{0x01, 0x02})
+			(&AlgorithmIdentifier{Algorithm: oidSHA256}).marshal(nil, b)
+			b.AddASN1BigInt(new(big.Int).Lsh(big.NewInt(1), 70))
+			(&AlgorithmIdentifier{Algorithm: oidHMACWithSHA256}).marshal(nil, b)
+		})
+		marshaled, err := b.Bytes()
+		require.NoError(t, err)
+
+		var unmarshaled pbmParameter
+		s := cryptobyte.String(marshaled)
 		var pe *ParseError
-		require.ErrorAs(t, err, &pe)
-		assert.Contains(t, pe.Detail, "iterationCount too large")
+		require.ErrorAs(t, unmarshaled.unmarshal(&s), &pe)
+		assert.Contains(t, pe.Detail, "invalid iterationCount")
 	})
 }
 
@@ -60,21 +79,38 @@ func TestDerivePBMKey(t *testing.T) {
 }
 
 func TestValidatePBMIterationCount(t *testing.T) {
-	t.Run("TooSmall", func(t *testing.T) {
-		err := validatePBMIterationCount(0)
-		var pe *ParseError
-		require.ErrorAs(t, err, &pe)
-		assert.Contains(t, pe.Detail, "iterationCount too small")
-	})
-	t.Run("TooLarge", func(t *testing.T) {
-		err := validatePBMIterationCount(defaultPBMMaxIterationCount + 1)
-		var pe *ParseError
-		require.ErrorAs(t, err, &pe)
-		assert.Contains(t, pe.Detail, "iterationCount too large")
-	})
-	t.Run("Valid", func(t *testing.T) {
-		assert.NoError(t, validatePBMIterationCount(1000))
-	})
+	for _, tc := range []struct {
+		name            string
+		count, min, max int
+		detail          string
+	}{
+		{"ZeroIsBelowDefaultMinimum", 0, 0, 0, "iterationCount too small"},
+		{"AboveDefaultMaximum", DefaultMaxMACIterationCount + 1, 0, 0, "iterationCount too large"},
+		{"BelowConfiguredMinimum", 99, 100, 0, "iterationCount too small: 99 (minimum 100)"},
+		{"AboveConfiguredMaximum", 1001, 0, 1000, "iterationCount too large: 1001 (maximum 1000)"},
+		{"NegativeMinimumSelectsDefault", 0, -5, 0, "iterationCount too small"},
+		{"MaximumBelowMinimumIsRaised", 2001, 2000, 10, "iterationCount too large: 2001 (maximum 2000)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pe *ParseError
+			require.ErrorAs(t, validatePBMIterationCount(tc.count, tc.min, tc.max), &pe)
+			assert.Contains(t, pe.Detail, tc.detail)
+		})
+	}
+	for _, tc := range []struct {
+		name            string
+		count, min, max int
+	}{
+		{"WithinDefaults", 1000, 0, 0},
+		{"DefaultMinimum", DefaultMinMACIterationCount, 0, 0},
+		{"DefaultMaximum", DefaultMaxMACIterationCount, 0, 0},
+		{"RaisedMaximum", 1048575, 0, 1048575},
+		{"MaximumBelowMinimumIsRaised", 2000, 2000, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.NoError(t, validatePBMIterationCount(tc.count, tc.min, tc.max))
+		})
+	}
 }
 
 func TestValidatePBKDF2KeyLength(t *testing.T) {
@@ -268,7 +304,7 @@ func TestProtectWithMACAlgorithmRejectsHostileKeyLength(t *testing.T) {
 			alg := &AlgorithmIdentifier{Algorithm: oidPBMAC1, Parameters: params}
 
 			msg := &PKIMessage{Body: NewPKIConfBody()}
-			err := msg.protectWithMACAlgorithm([]byte("shared-secret"), alg)
+			err := msg.protectWithMACAlgorithm([]byte("shared-secret"), alg, 0, 0)
 			var pe *ParseError
 			require.ErrorAs(t, err, &pe)
 			assert.Contains(t, pe.Detail, tc.detail)
@@ -282,7 +318,7 @@ func TestProtectWithMACAlgorithmRejectsHostileKeyLength(t *testing.T) {
 		alg := &AlgorithmIdentifier{Algorithm: oidPBMAC1, Parameters: params}
 
 		msg := &PKIMessage{Body: NewPKIConfBody()}
-		require.NoError(t, msg.protectWithMACAlgorithm([]byte("shared-secret"), alg))
+		require.NoError(t, msg.protectWithMACAlgorithm([]byte("shared-secret"), alg, 0, 0))
 		assert.NotEmpty(t, msg.Protection)
 	})
 }
@@ -329,11 +365,23 @@ func TestProtectWithMACErrors(t *testing.T) {
 		err := msg.protectWithMACOptions(macOptions{
 			Secret:         []byte("secret"),
 			Algorithm:      oidPasswordBasedMac,
-			IterationCount: defaultPBMMaxIterationCount + 1,
+			IterationCount: DefaultMaxMACIterationCount + 1,
 		})
 		var pe *ParseError
 		require.ErrorAs(t, err, &pe)
 		assert.Contains(t, pe.Detail, "iterationCount too large")
+	})
+	t.Run("IterationCountBelowConfiguredMinimum", func(t *testing.T) {
+		msg := &PKIMessage{Body: NewPKIConfBody()}
+		err := msg.protectWithMACOptions(macOptions{
+			Secret:            []byte("secret"),
+			Algorithm:         oidPasswordBasedMac,
+			IterationCount:    99,
+			MinIterationCount: 100,
+		})
+		var pe *ParseError
+		require.ErrorAs(t, err, &pe)
+		assert.Contains(t, pe.Detail, "iterationCount too small")
 	})
 }
 
@@ -403,7 +451,18 @@ func TestProtectWithPBMAC1Errors(t *testing.T) {
 		msg := &PKIMessage{Body: NewPKIConfBody()}
 		err := msg.protectWithPBMAC1Options(pbmac1Options{
 			Secret:         []byte("secret"),
-			IterationCount: defaultPBMMaxIterationCount + 1,
+			IterationCount: DefaultMaxMACIterationCount + 1,
+		})
+		var pe *ParseError
+		require.ErrorAs(t, err, &pe)
+		assert.Contains(t, pe.Detail, "iterationCount too large")
+	})
+	t.Run("IterationCountAboveConfiguredMaximum", func(t *testing.T) {
+		msg := &PKIMessage{Body: NewPKIConfBody()}
+		err := msg.protectWithPBMAC1Options(pbmac1Options{
+			Secret:            []byte("secret"),
+			IterationCount:    1001,
+			MaxIterationCount: 1000,
 		})
 		var pe *ParseError
 		require.ErrorAs(t, err, &pe)
