@@ -49,14 +49,14 @@
 //	c := client.NewClient("http://ca.example.com/.well-known/cmp/p/ca/",
 //	    client.WithTrustedCAs(trustedCAPool),
 //	)
-//	result, err := c.SendKUR(context.Background(), newKey, newCreds,
-//	    client.WithSender(oldCert.Subject),
-//	    client.WithTemplateSubject(oldCert.Subject),
-//	)
+//	result, err := c.SendKUR(context.Background(), newKey, newCreds)
 //
 // SendKUR automatically identifies oldCert through the CRMF oldCertID control
 // when newCreds is a [pkicmp.SignatureCredentials]. Custom credential types can
-// provide the certificate with [WithOldCertificate].
+// provide the certificate with [WithOldCertificate]. The request repeats the
+// subject of oldCert in the sender and the certificate template with the bytes
+// oldCert encodes, so a CA comparing names byte by byte finds them unchanged.
+// [WithSender] and [WithTemplateSubject] override either name.
 //
 // # Revocation
 //

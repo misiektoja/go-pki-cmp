@@ -16,7 +16,8 @@ type requestOptions struct {
 // RequestOption configures a specific enrollment request.
 type RequestOption func(*requestOptions)
 
-// WithSender sets the sender name in the PKIHeader.
+// WithSender sets the sender name in the PKIHeader. Without it, a signed request names the
+// subject of its protection certificate, encoded as in that certificate.
 func WithSender(name pkix.Name) RequestOption {
 	return func(o *requestOptions) { o.sender = &name }
 }
@@ -29,7 +30,9 @@ func WithSenderKID(kid []byte) RequestOption {
 	return func(o *requestOptions) { o.senderKID = kid }
 }
 
-// WithTemplateSubject sets the subject name in the CRMF CertTemplate.
+// WithTemplateSubject sets the subject name in the CRMF CertTemplate. Without it, a key update
+// repeats the old certificate's subject as encoded in that certificate, as RFC 9483 §4.1.3
+// requires, and leaves the subject out when that certificate has an empty subject.
 func WithTemplateSubject(subject pkix.Name) RequestOption {
 	return func(o *requestOptions) { o.templateSubject = &subject }
 }
