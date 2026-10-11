@@ -118,7 +118,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
 	}
 	if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
-		return nil, err
+		return nil, &ConfirmationError{Certificate: cert, Err: err}
 	}
 
 	return &EnrollResult{
