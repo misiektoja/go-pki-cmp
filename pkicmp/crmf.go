@@ -297,6 +297,35 @@ func directoryNameDER(raw []byte) ([]byte, bool) {
 	return inner, true
 }
 
+// OldCertID returns the certificate the request names in an oldCertID control
+// (RFC 4211 §6.5). It returns nil when the request carries none.
+//
+// The requester chooses the value. RFC 9483 §4.1.3 expects a key update to be
+// signed with the certificate it names. Before acting on the value, a caller
+// must check that with [CertID.Identifies] or authorize the signer in another
+// way. A repeated or undecodable control is an error.
+func (r *CertRequest) OldCertID() (*CertID, error) {
+	var found *CertID
+	for i := range r.Controls {
+		if !r.Controls[i].Type.Equal(oidRegCtrlOldCertID) {
+			continue
+		}
+		if found != nil {
+			return nil, &ParseError{Detail: "more than one oldCertID control"}
+		}
+		value := cryptobyte.String(r.Controls[i].Value)
+		var id CertID
+		if err := id.unmarshal(&value); err != nil {
+			return nil, err
+		}
+		if !value.Empty() {
+			return nil, &ParseError{Detail: "trailing data in oldCertID"}
+		}
+		found = &id
+	}
+	return found, nil
+}
+
 // marshal encodes one AttributeTypeAndValue.
 func (a *AttributeTypeAndValue) marshal(_ *marshalContext, b *cryptobyte.Builder) {
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
