@@ -158,7 +158,9 @@ func WithImplicitConfirm() Option {
 //   - a signature-protected request or nested message that carries no
 //     extraCerts (§3.3, §5.2.2),
 //   - a signature-protected request whose extraCerts do not lead with the CMP
-//     protection certificate followed by its issuer chain (§3.3),
+//     protection certificate or that hold a certificate not certifying the one
+//     before it (§3.3). The chain may stop below a self-signed root, which §3.3
+//     recommends leaving out,
 //   - a certConf whose senderNonce repeats one used earlier in the transaction (§3.1),
 //   - a request without a transactionID (§3.5), which RFC 4210 and RFC 9810
 //     let the server assign instead,
@@ -175,11 +177,11 @@ func WithImplicitConfirm() Option {
 // [WithSignatureProtectionPOP].
 //
 // Off by default because deployed clients fail them: Nokia ssh-cmpclient
-// sends a NULL-DN sender, omits its own certificate and reuses the senderNonce,
-// openssl cmp omits a self-signed issuer and RFC 4210 clients may omit the
-// transactionID or send a shorter senderNonce. None of them affects
-// authentication, which comes from senderKID or CertificateLookup plus
-// recipNonce. Turn it on for a conformance suite or a known-conforming fleet.
+// sends a NULL-DN sender, omits its own certificate and reuses the senderNonce.
+// RFC 4210 clients may omit the transactionID or send a shorter senderNonce.
+// None of them affects authentication, which comes from senderKID or
+// CertificateLookup plus recipNonce. Turn it on for a conformance suite or a
+// known-conforming fleet.
 func WithStrictProfileValidation() Option {
 	return func(c *serverConfig) {
 		c.strictProfile = true
