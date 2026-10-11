@@ -4,12 +4,15 @@ Notable changes to go-pkicmp-ng. Versions follow the `vMAJOR.MINOR.PATCH` tags p
 
 ## v0.4.0 - TBD
 
-Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range.
+Servers can accept CMP devices that the default settings refuse. They can issue the subject exactly as a device requested it, accept a certConf without recipNonce and accept MAC iteration counts outside the default range. Further options accept the Insta Certifier 10 cmpclient, key updates that keep the key without a proof of possession, requests that name the device only in subjectAltName and revocation requests without a reason code, without an issuer or protected with a shared secret. `WithStrictProfileValidation` turns these options off. Key updates that keep the key now complete their confirmation.
 
 ### `pkicmp`
 
 * **MAC iteration count limits are configurable.** **`VerifyOptions.MinMACIterationCount`** and **`MaxMACIterationCount`** bound the PasswordBasedMac or PBMAC1 iteration count the sender chose. The defaults are unchanged at 1 and 500000, exported as `DefaultMinMACIterationCount` and `DefaultMaxMACIterationCount`. **`WithMACIterationLimits`** applies a range when protecting, including when echoing a peer's parameters with `WithProtectionAlgorithm`. `VerifyResult.ProtectionParams` carries the range the message was verified against, so echoing it needs no extra option.
 * **`CertTemplate.RawSubject`** holds the subject name exactly as received. Marshalling still encodes `Subject`.
+* **poposkInput proofs of possession.** `VerifyPOPWithOptions` verifies a signature proof that carries poposkInput, which RFC 4211 §4.1 allows when the template has no subject. It checks the publicKeyMAC against **`POPOptions.SharedSecret`** within the MAC iteration limits or the sender against **`POPOptions.Sender`**. Such a proof previously failed verification. A malformed poposkInput is now a parse error. **`POPOptions.AllowPoposkInputVariants`** accepts the poposkInput that the Insta Certifier 10 cmpclient sends, which does not follow RFC 4211. Its signature does not cover the template.
+* **`CertRequest.OldCertID`** returns the certificate that a key update names in its oldCertID control. **`CertID.Identifies`** reports whether a CertID names a given certificate.
+* **A template subject from `NewDirectoryNameFromRawDER` is encoded.** `CertTemplate` previously dropped it, so the request carried no subject.
 
 ### `client`
 
@@ -20,6 +23,14 @@ Servers can accept CMP devices that the default settings refuse. They can issue 
 * **`WithMACIterationLimits`** sets the accepted iteration counts in MAC-protected requests, and responses echo the request's count. A request outside the range is rejected with `badMessageCheck` before any key derivation. A request whose MAC parameters are not accepted, for example an iteration count out of range or a PBMAC1 key length out of range, now gets the status text "MAC protection parameters not accepted" instead of "MAC verification failed".
 * **`WithRawSubject`** sets `template.RawSubject` to the subject a CRMF or PKCS#10 request asked for, so the issued certificate keeps every attribute, such as domainComponent and emailAddress, with its order and string type. It is off by default. `x509.CreateCertificate` prefers `RawSubject` to `Subject`, so a CA that changes the subject must clear it and a CA that checks the subject must check every attribute in `Subject.Names`.
 * **`WithOptionalCertConfRecipNonce`** accepts a certConf without recipNonce, which the server otherwise rejects with `badRecipientNonce`. A recipNonce that is present must still match. The certificate hash in each CertStatus still binds the confirmation to the issued certificate.
+* **`WithPoposkInputVariants`** accepts the proof of possession that the Insta Certifier 10 cmpclient sends with `ir`, `cr` and `kur`. The server refuses it with `badPOP` by default. The signature and the publicKeyMAC are still verified, but the proof does not cover the template, so only the message protection binds the requested names to the key holder.
+* **`WithSignatureProtectionPOP`** accepts a CRMF request without a proof of possession when its protection signature was made with a certificate for the requested key. Nokia ssh-cmpclient sends such a key update when it keeps the key. A MAC-protected request still needs a proof.
+* **`WithOptionalSubject`** accepts a request without a subject when it requests a subjectAltName extension. The CA must mark that extension critical, as RFC 5280 §4.2.1.6 requires for an empty subject.
+* **Revocation options.** **`WithOptionalRevocationReason`** accepts an `rr` without reasonCode, which reaches the CA as reason unspecified. **`WithOptionalRevocationIssuer`** accepts an `rr` without an issuer. When the request is signed with the certificate it names, the server takes the issuer from that certificate. Otherwise `RevocationRequest.RawIssuer` is empty and the CA must find the certificate by serial number. **`WithMACRevocation`** passes a MAC-protected `rr` to `RevocationAuthorizer`, which decides whether the shared secret may revoke the certificate.
+* **`WithStrictProfileValidation` turns these options off**, including `WithOptionalCertConfRecipNonce`. It also refuses every poposkInput, as RFC 9483 §4.1.1 requires.
+* **Status texts for two rejections.** A request with an unsupported protocol version gets "unsupported pvno" with the version. A message type the server does not handle, such as `genm`, gets "message type not supported". Both previously had no text.
+* **Key updates that keep the key are confirmed.** The server refused the certConf of a `kur` or `cr` for the key of its signer certificate with `badMessageCheck` and "certConf signed with newly issued certificate", although the client signed it with the certificate of the request. A certConf signed with the newly issued certificate is still refused.
+* **Responses to MAC-protected requests repeat the request's senderKID** when the server also has a signer. They carried the signer's key identifier, which clients that check it refuse.
 
 ## v0.3.2 - 9 Oct 2026
 
