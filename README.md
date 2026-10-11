@@ -62,6 +62,13 @@ Requires Go 1.27.2 or newer.
   requested, `WithOptionalCertConfRecipNonce` accepts a certConf without recipNonce and
   `WithMACIterationLimits` sets the accepted MAC iteration counts. `client.WithMACIterationLimits`
   sets the range for responses.
+* **Request rule options** in `server` accept requests that break an RFC 9483 rule:
+  `WithPoposkInputVariants` for the proof of possession of the Insta Certifier 10 cmpclient,
+  `WithOptionalSubject` for a request that names its identity only in subjectAltName and
+  `WithSignatureProtectionPOP` for a key update that keeps its key and is signed with it.
+  `WithOptionalRevocationReason`, `WithOptionalRevocationIssuer` and `WithMACRevocation` accept
+  revocation requests without a reason code, without an issuer or protected with a shared secret.
+  `WithStrictProfileValidation` turns all of these off, as well as `WithOptionalCertConfRecipNonce`.
 
 ## Package structure
 
