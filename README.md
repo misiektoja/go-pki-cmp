@@ -49,32 +49,6 @@ go get github.com/misiektoja/go-pki-cmp
 Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 `github.com/misiektoja/go-pkicmp-ng`.
 
-* **ML-DSA-44, ML-DSA-65 and ML-DSA-87** cover certificate keys, CRMF proof of possession and message
-  signatures. Under CMPv3 the client confirms an ML-DSA-signed certificate with an explicit SHA-512
-  hash. Build a manual confirmation with `pkicmp.NewCertStatus`, because `pkicmp.CertHash` cannot carry
-  that hash identifier. Older Dilithium encodings are not supported.
-* **Composite ML-DSA keys** from [go-composite-mldsa](https://github.com/misiektoja/go-composite-mldsa)
-  sign CMP messages and issued certificates and can be the key a device enrolls. `ir`, `cr`, `kur` and
-  `p10cr` carry a composite key with a composite proof of possession, and `rr` revokes its certificate.
-  The client confirms a certificate signed by a composite CA with the hash the composite algorithm uses
-  and an explicit hash identifier. A composite issuer is trusted only when its certificate arrives in
-  extraCerts or caPubs and no certificate in the path has name constraints.
-* **RFC 4210 peers** are supported. The server accepts their requests without a transactionID or with
-  a short senderNonce. `server.WithStrictProfileValidation` rejects them as RFC 9483 requires. SHA-1 is
-  off by default. `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)` selects the RFC 4210
-  PasswordBasedMac profile and `WithSHA1Signatures` in `client` and `server` accepts SHA-1 signatures.
-* **Device compatibility options** in `server`: `WithRawSubject` issues the subject exactly as
-  requested, `WithOptionalCertConfRecipNonce` accepts a certConf without recipNonce and
-  `WithMACIterationLimits` sets the accepted MAC iteration counts. `client.WithMACIterationLimits`
-  sets the range for responses.
-* **Request rule options** in `server` accept requests that break an RFC 9483 rule:
-  `WithPoposkInputVariants` for the proof of possession of the Insta Certifier 10 cmpclient,
-  `WithOptionalSubject` for a template without a subject field that names its identity in subjectAltName and
-  `WithSignatureProtectionPOP` for a key update that keeps its key and is signed with it.
-  `WithOptionalRevocationReason`, `WithOptionalRevocationIssuer` and `WithMACRevocation` accept
-  revocation requests without a reason code, without an issuer or protected with a shared secret.
-  `WithStrictProfileValidation` turns all of these off, as well as `WithOptionalCertConfRecipNonce`.
-
 ## Package structure
 
 * **[`pkicmp`](./pkicmp/)**: CMP and CRMF ASN.1 types with parsing, serialization and MAC or signature
@@ -84,6 +58,21 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 * **[`server`](./server/)**: an `http.Handler` that authenticates clients, tracks transactions,
   supports deferred issuance and revocation, accepts requests a registration authority forwards in
   nested messages and applies policy middleware such as the lightweight profile.
+
+## Compatibility
+
+* **Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
+  [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) support enrollment and CMP
+  signatures. Older Dilithium encodings are not supported.
+* **RFC 4210 peers** are supported by default. SHA-1 signatures and additional device compatibility
+  options are opt-in. [Server options](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#Option)
+  describe these exceptions and the stricter `WithStrictProfileValidation` checks.
+
+For manual certificate confirmation, use
+[`pkicmp.NewCertStatus`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/pkicmp#NewCertStatus).
+Composite certificate chains have additional
+[verification limits](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/pkicmp#VerifyOptions) and
+[client trust requirements](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTrustedCAs).
 
 ## Usage
 
@@ -190,32 +179,12 @@ go run ./examples/mockclient/cmd
 ## Credits and relationship to go-pkicmp
 
 This project began as a fork of [tsaarni/go-pkicmp](https://github.com/tsaarni/go-pkicmp) by
-[@tsaarni](https://github.com/tsaarni). Its package layout, ASN.1 types and client and server design
-are still the base of this library and made everything here possible. The credit for that
-foundation belongs to its author.
+[Tero Saarni (@tsaarni)](https://github.com/tsaarni). Its package layout, ASN.1 types and client and
+server design come from that project.
 
-Development continued here because the changes are security relevant and needed a faster cycle than
-upstream review allowed. The early hardening work is offered upstream in
-[tsaarni/go-pkicmp#3](https://github.com/tsaarni/go-pkicmp/pull/3), which is still open. This fork
-adds:
-
-* **Stricter verification.** Signatures are bound to the sender they claim. Issued certificates must
-  certify the requested key and carry the request's certReqId. PBKDF2 parameters and poll intervals
-  from peers are bounded.
-* **Post-quantum signatures**: ML-DSA with SHA-512 certificate confirmation plus composite ML-DSA
-  keys for both CAs and enrolling devices.
-* **Revocation** in the client and the server, plus nested requests from a registration authority.
-* **Certificate confirmation checks** on both sides, with `SnapshotTransactions` and
-  `RestoreTransactions` to keep server transactions across a restart.
-* **Support for RFC 4210 peers**, with the SHA-1 options off by default.
-* **Server hardening**: required proof of possession, an optional `messageTime` tolerance, no handler
-  error text on the wire, MAC-protected errors for shared-secret clients and `Server.Err` for a
-  misconfigured signer.
-* **Interoperability fixes** for EJBCA, OpenSSL, Nokia NCM and vendor CMP clients. Key update names
-  the replaced certificate in `oldCertID`, enrollment works with Ed25519-signing CAs and
-  `client.WithServerCerts` verifies responses from CAs that do not attach their certificate.
-
-The [release notes](RELEASE_NOTES.md) list every change.
+Early hardening changes were submitted in
+[tsaarni/go-pkicmp#3](https://github.com/tsaarni/go-pkicmp/pull/3). This fork is maintained separately.
+See the [release notes](RELEASE_NOTES.md) for changes and [NOTICE](NOTICE) for attribution.
 
 ## Contributing and support
 
