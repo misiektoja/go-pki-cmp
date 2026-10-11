@@ -34,6 +34,12 @@
 // A CA that means to decide an extension itself must drop it from
 // ExtraExtensions first, as the example below does for keyUsage.
 //
+// The subject is rebuilt from [crypto/x509/pkix.Name], which drops attribute
+// types it does not model, such as domainComponent and emailAddress. It may
+// also change the order and string types of the rest. [WithRawSubject] also sets
+// template.RawSubject to the requested name, which [x509.CreateCertificate]
+// issues unchanged instead of Subject.
+//
 // # Basic example
 //
 //	type myCA struct {
@@ -139,6 +145,10 @@
 // RFC 9810 and RFC 9483 disagree on it and deployed peers use both. A certConf
 // without any CertStatus rejects the certificate (RFC 9810 §5.3.18) and reaches
 // the CA as [ConfirmRejected].
+//
+// A certConf must repeat the senderNonce of the certificate response in its
+// recipNonce. [WithOptionalCertConfRecipNonce] accepts a certConf that leaves
+// recipNonce out. One that carries a different value is still rejected.
 //
 // # Revocation
 //
@@ -249,6 +259,12 @@
 // A request protected with an algorithm the server does not implement is
 // rejected with badAlg. This includes SHA-1 signatures, which RFC 9481 §7.1
 // deprecates. [WithSHA1Signatures] accepts them from RFC 4210 era devices.
+//
+// A MAC-protected request whose iteration count lies outside
+// [WithMACIterationLimits] is rejected with badMessageCheck and the status text
+// "MAC protection parameters not accepted", before any key derivation. The
+// default range is [pkicmp.DefaultMinMACIterationCount] to
+// [pkicmp.DefaultMaxMACIterationCount].
 //
 // # Middleware
 //
