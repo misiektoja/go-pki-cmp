@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [package documentation](https://pkg.go.dev/github.com/misiektoja/go-pkicmp-ng) and [SUPPORT.md](https://github.com/misiektoja/go-pkicmp-ng/blob/main/SUPPORT.md) first.
+        Check the [package documentation](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp) and [SUPPORT.md](https://github.com/misiektoja/go-pki-cmp/blob/main/SUPPORT.md) first.
 
         Never paste shared secrets, private keys, full CSRs or CMP messages captured from a production system into an issue.
 
@@ -21,7 +21,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: go-pkicmp-ng version and CMP peer
+      label: go-pki-cmp version and CMP peer
       placeholder: v0.1.0, EJBCA 9.6.3
     validations:
       required: false

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a vulnerability
-    url: https://github.com/misiektoja/go-pkicmp-ng/security/advisories/new
+    url: https://github.com/misiektoja/go-pki-cmp/security/advisories/new
     about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
   - name: Package documentation
-    url: https://pkg.go.dev/github.com/misiektoja/go-pkicmp-ng
+    url: https://pkg.go.dev/github.com/misiektoja/go-pki-cmp
     about: Every exported type, the client and server options and the runnable examples.

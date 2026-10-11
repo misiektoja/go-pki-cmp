@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/go-pkicmp-ng/blob/main/SECURITY.md) instead.
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/go-pki-cmp/blob/main/SECURITY.md) instead.
 
         Never paste shared secrets, private keys, full CSRs or CMP messages captured from a production system into an issue.
 
@@ -39,7 +39,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: go-pkicmp-ng version
+      label: go-pki-cmp version
       placeholder: v0.1.0 or commit
     validations:
       required: true
