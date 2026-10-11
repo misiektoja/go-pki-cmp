@@ -279,23 +279,6 @@ func TestCompositeDeviceKeyRejections(t *testing.T) {
 		require.Equal(t, pkicmp.FailBadPOP, status.FailInfo)
 	})
 
-	t.Run("certConf signed with a certificate for the new key", func(t *testing.T) {
-		macCreds, err := pkicmp.NewMACCredentials(secret)
-		require.NoError(t, err)
-		device := pkix.Name{CommonName: "composite-certconf"}
-		c := client.NewClient(ts.URL, client.WithTrustedCAs(x509pool(ca.cert)))
-		ir, err := c.SendIR(context.Background(), key, macCreds, client.WithTemplateSubject(device), client.WithSender(device))
-		require.NoError(t, err)
-
-		// A CR for the key that signs it makes the client confirm with a certificate for the issued key.
-		creds, err := pkicmp.NewSignatureCredentials(key, ir.Certificate, ca.cert)
-		require.NoError(t, err)
-		confirmed := len(ca.confirmed)
-		_, err = c.SendCR(context.Background(), key, creds, client.WithTemplateSubject(pkix.Name{CommonName: "composite-same-key"}), client.WithSender(device))
-		require.ErrorContains(t, err, "badMessageCheck")
-		require.Len(t, ca.confirmed, confirmed)
-	})
-
 	t.Run("revocation naming another key", func(t *testing.T) {
 		macCreds, err := pkicmp.NewMACCredentials(secret)
 		require.NoError(t, err)
@@ -320,4 +303,31 @@ func TestCompositeDeviceKeyRejections(t *testing.T) {
 		require.NoError(t, creds.Protect(msg))
 		require.Equal(t, pkicmp.StatusAccepted, rpStatus(t, postCMP(t, ts, msg)).Status)
 	})
+}
+
+// A CR for the key of the certificate that signs it is confirmed with that
+// certificate, which also certifies the issued key. RFC 9483 §4.1.1 requires
+// the certConf to use the credentials of the request.
+func TestCompositeSameKeyRequestConfirmed(t *testing.T) {
+	secret := []byte("composite-device-secret")
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	ca := newDeviceCA(t, caKey)
+	ts := ca.serve(t, secret)
+	key, err := compositemldsa.GenerateKey(compositemldsa.MLDSA44ECDSAP256SHA256)
+	require.NoError(t, err)
+	macCreds, err := pkicmp.NewMACCredentials(secret)
+	require.NoError(t, err)
+	device := pkix.Name{CommonName: "composite-certconf"}
+	c := client.NewClient(ts.URL, client.WithTrustedCAs(x509pool(ca.cert)))
+	ir, err := c.SendIR(context.Background(), key, macCreds, client.WithTemplateSubject(device), client.WithSender(device))
+	require.NoError(t, err)
+
+	creds, err := pkicmp.NewSignatureCredentials(key, ir.Certificate, ca.cert)
+	require.NoError(t, err)
+	confirmed := len(ca.confirmed)
+	cr, err := c.SendCR(context.Background(), key, creds, client.WithTemplateSubject(pkix.Name{CommonName: "composite-same-key"}), client.WithSender(device))
+	require.NoError(t, err)
+	requireCertifies(t, cr.Certificate, key, ca.cert)
+	require.Len(t, ca.confirmed, confirmed+1)
 }

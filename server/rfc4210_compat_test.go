@@ -38,7 +38,7 @@ func (c *confirmingCA) ConfirmCertificate(_ context.Context, _ *x509.Certificate
 	return nil
 }
 
-// issuedCertificate returns the certificate carried in an ip or cp.
+// issuedCertificate returns the certificate carried in an ip, cp or kup.
 func issuedCertificate(t *testing.T, msg *pkicmp.PKIMessage) *x509.Certificate {
 	t.Helper()
 	var rep *pkicmp.CertRepMessage
@@ -48,8 +48,10 @@ func issuedCertificate(t *testing.T, msg *pkicmp.PKIMessage) *x509.Certificate {
 		rep, err = msg.Body.IP()
 	case pkicmp.BodyTypeCP:
 		rep, err = msg.Body.CP()
+	case pkicmp.BodyTypeKUP:
+		rep, err = msg.Body.KUP()
 	default:
-		t.Fatalf("expected ip or cp, got %s", msg.Body.Type)
+		t.Fatalf("expected ip, cp or kup, got %s", msg.Body.Type)
 	}
 	require.NoError(t, err)
 	require.Len(t, rep.Response, 1)
