@@ -41,6 +41,8 @@ make teardown          # Stop and remove the EJBCA container
 
 `make test-integration-ncm` runs the client against a Nokia NCM instance. It needs the endpoint and credentials in `NCM_CMP_*` variables and skips without them. [test/integration/ncm/README.md](test/integration/ncm/README.md) lists the variables. CI runs these tests for pushes to `dev` and `main` and once a week when the repository has the NCM secrets.
 
+`make test-integration-certifier` runs the server against the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient. The clients are proprietary, so the tests need a local image built from your own copies and skip without it. CI does not run them. [test/integration/certifier/README.md](test/integration/certifier/README.md) describes the image.
+
 Protocol changes need negative tests and an RFC citation. A change must keep working against real CMP peers and against clients that implement only RFC 4210. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments and the README.
 
 Every change must comply with the Developer Certificate of Origin 1.1. Use `git commit -s` only when you intend to provide that certification.

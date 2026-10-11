@@ -36,6 +36,10 @@ CI runs the library against independent CMP implementations:
 * **[Siemens CMP test suite](https://github.com/siemens/cmp-test-suite)**: runs its conformance tests
   against the server.
 
+Local tests also run the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient against the server.
+Both clients are proprietary, so CI does not run them. See
+[test/integration/certifier](test/integration/certifier/README.md).
+
 ## Install
 
 ```bash
