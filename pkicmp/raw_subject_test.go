@@ -70,4 +70,22 @@ func TestCertTemplateRawSubject(t *testing.T) {
 	t.Run("AbsentSubject", func(t *testing.T) {
 		assert.Nil(t, parsedTemplate(t, pkicmp.CertTemplate{}).RawSubject)
 	})
+
+	// A subject built from DER, such as a certificate's RawSubject, is encoded
+	// with its original bytes rather than dropped.
+	t.Run("SubjectFromRawDER", func(t *testing.T) {
+		want, err := asn1.Marshal(unusualSubject())
+		require.NoError(t, err)
+		template := parsedTemplate(t, pkicmp.CertTemplate{Subject: pkicmp.NewDirectoryNameFromRawDER(want)})
+		assert.Equal(t, want, template.RawSubject)
+	})
+
+	t.Run("SubjectNotDirectoryName", func(t *testing.T) {
+		request := pkicmp.CertReqMsg{CertReq: pkicmp.CertRequest{CertTemplate: pkicmp.CertTemplate{
+			Subject: pkicmp.GeneralName{Raw: []byte{0x81, 0x01, 'a'}},
+		}}}
+		msg := pkicmp.NewPKIMessage(pkicmp.NewIRBody(&pkicmp.CertReqMessages{request}), pkicmp.MessageOptions{})
+		_, err := msg.MarshalBinary()
+		assert.ErrorContains(t, err, "certificate template subject is not a directoryName")
+	})
 }
