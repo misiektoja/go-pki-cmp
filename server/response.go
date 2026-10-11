@@ -49,11 +49,15 @@ func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIB
 		Body: body,
 	}
 
-	// RFC 9810 §5.1.1: Set SenderKID in responses.
-	if s.cfg.signerCert != nil {
-		resp.Header.SenderKID = s.cfg.signerCert.SubjectKeyId
-	} else if sender != nil && sender.MACVerified {
+	// RFC 9810 §5.1.1: senderKID names the key that protects the response.
+	// protectResponseWithOptions MAC-protects the response to a MAC-protected
+	// request even when a signer is configured, so that response repeats the
+	// client's shared-secret reference. Clients that check it refuse the
+	// signer's key identifier.
+	if sender != nil && sender.MACVerified && len(sender.secret) > 0 {
 		resp.Header.SenderKID = sender.SenderKID
+	} else if s.cfg.signerCert != nil {
+		resp.Header.SenderKID = s.cfg.signerCert.SubjectKeyId
 	}
 
 	for _, c := range s.cfg.extraCerts {
