@@ -283,6 +283,20 @@ func NewOldCertIDControl(certificate *x509.Certificate) (AttributeTypeAndValue, 
 	return AttributeTypeAndValue{Type: oidRegCtrlOldCertID, Value: value}, nil
 }
 
+// directoryNameDER returns the DER Name inside a directoryName [4] GeneralName element.
+func directoryNameDER(raw []byte) ([]byte, bool) {
+	s := cryptobyte.String(raw)
+	var inner cryptobyte.String
+	if !s.ReadASN1(&inner, cbasn1.Tag(tagDirectoryName).ContextSpecific().Constructed()) || !s.Empty() {
+		return nil, false
+	}
+	rest := inner
+	if !rest.SkipASN1(cbasn1.SEQUENCE) || !rest.Empty() {
+		return nil, false
+	}
+	return inner, true
+}
+
 // marshal encodes one AttributeTypeAndValue.
 func (a *AttributeTypeAndValue) marshal(_ *marshalContext, b *cryptobyte.Builder) {
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
@@ -351,12 +365,23 @@ func (t *CertTemplate) marshal(_ *marshalContext, b *cryptobyte.Builder) {
 				b.AddBytes(t.Issuer)
 			})
 		}
-		if len(t.Subject.DirectoryName) > 0 {
+		switch {
+		case len(t.Subject.DirectoryName) > 0:
 			// subject [5] Name OPTIONAL
 			// Name is CHOICE { rdnSequence RDNSequence }
 			// Tagging a CHOICE is always EXPLICIT, so we keep it as is.
 			b.AddASN1(cbasn1.Tag(5).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
 				marshalRDNSequence(b, t.Subject.DirectoryName)
+			})
+		case len(t.Subject.Raw) > 0:
+			// A subject from NewDirectoryNameFromRawDER keeps its Name encoding.
+			name, ok := directoryNameDER(t.Subject.Raw)
+			if !ok {
+				b.SetError(fmt.Errorf("pkicmp: certificate template subject is not a directoryName"))
+				return
+			}
+			b.AddASN1(cbasn1.Tag(5).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+				b.AddBytes(name)
 			})
 		}
 		if len(t.PublicKey) > 0 {
