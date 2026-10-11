@@ -85,14 +85,15 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	}
 
 	// RFC 9483 §3.5: recipNonce MUST equal the senderNonce of the previous message.
-	if len(msg.Header.RecipNonce) == 0 {
+	missingRecipNonce := len(msg.Header.RecipNonce) == 0
+	if missingRecipNonce && !s.cfg.optionalCertConfRecipNonce {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"missing recipNonce"},
 		})
 	}
-	if !bytes.Equal(msg.Header.RecipNonce, entry.issuedSenderNonce) {
+	if !missingRecipNonce && !bytes.Equal(msg.Header.RecipNonce, entry.issuedSenderNonce) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRecipientNonce,
@@ -104,7 +105,7 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	// RFC 9483 §3.1 tells the sender to generate a fresh nonce, but the
 	// receiver-side checks §3.5 requires are just that senderNonce is present
 	// and long enough, which validateHeader applies under the same option, and
-	// that recipNonce matches, which is enforced above for every client.
+	// that recipNonce matches, which is enforced above whenever it is present.
 	// Rejecting a repeat by default would discard an already-issued certificate
 	// over a peer-side generation defect that deployed clients exhibit.
 	if s.cfg.strictProfile {

@@ -71,6 +71,7 @@ type serverConfig struct {
 	maxTransactions              int
 	maxTransactionsPerCredential int
 	strictProfile                bool
+	optionalCertConfRecipNonce   bool
 	allowSHA1Signatures          bool
 	rawSubject                   bool
 	messageTimeTolerance         time.Duration
@@ -168,6 +169,21 @@ func WithImplicitConfirm() Option {
 func WithStrictProfileValidation() Option {
 	return func(c *serverConfig) {
 		c.strictProfile = true
+	}
+}
+
+// WithOptionalCertConfRecipNonce accepts a certConf that carries no recipNonce.
+// RFC 9810 Appendix C.4 and RFC 9483 §3.5 require certConf to repeat the
+// senderNonce of the certificate response, so the server answers a certConf
+// without one with badRecipientNonce by default. Use the option for clients
+// that leave the field out.
+//
+// A recipNonce that is present must still match. The confirmation stays bound
+// to the issued certificate by its protection, its transactionID and the
+// certificate hash in every CertStatus, which the server checks either way.
+func WithOptionalCertConfRecipNonce() Option {
+	return func(c *serverConfig) {
+		c.optionalCertConfRecipNonce = true
 	}
 }
 
