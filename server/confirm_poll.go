@@ -120,16 +120,11 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 		}
 	}
 
-	// certConf MUST NOT be signed with the newly issued certificate (security best practice).
-	if sender != nil && sender.Certificate != nil && entry.cert != nil {
-		if publicKeysEqual(certificatePublicKey(sender.Certificate), certificatePublicKey(entry.cert)) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-				Status:       pkicmp.StatusRejection,
-				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{"certConf signed with newly issued certificate"},
-			})
-		}
-	}
+	// RFC 9483 §4.1.1: certConf MUST use the same credentials as the first
+	// request. getIssued enforces this, because the transaction is keyed by the
+	// request's credential, so a certConf signed with the newly issued
+	// certificate finds no transaction. The public keys are not compared,
+	// because a key update may keep the signer's key.
 
 	// Notify handler about the confirmation, passing issuance details via context.
 	ctx = context.WithValue(ctx, issuedInfoContextKey{}, issuedInfo{cert: entry.cert, issueRef: entry.issueRef})
@@ -191,19 +186,6 @@ func certReqIDMatches(entry *transactionEntry, certReqID int64) bool {
 // certStatusRejects reports whether a CertStatus rejects its certificate, an absent statusInfo meaning acceptance.
 func certStatusRejects(cs *pkicmp.CertStatus) bool {
 	return cs.StatusInfo != nil && cs.StatusInfo.Status == pkicmp.StatusRejection
-}
-
-// publicKeysEqual compares two public keys by their PKIX-encoded form.
-func publicKeysEqual(a, b crypto.PublicKey) bool {
-	aDER, err := compositex509.MarshalPKIXPublicKey(a)
-	if err != nil {
-		return false
-	}
-	bDER, err := compositex509.MarshalPKIXPublicKey(b)
-	if err != nil {
-		return false
-	}
-	return bytes.Equal(aDER, bDER)
 }
 
 // certificatePublicKey returns the key a certificate certifies. crypto/x509
