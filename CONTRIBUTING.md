@@ -32,6 +32,7 @@ The integration tests run the library against independent CMP implementations: t
 
 > [!IMPORTANT]
 > **Prerequisites**: Docker, OpenSSL 3.2 or newer, Git and `uv`.
+> The certificate request template test against the OpenSSL mock server needs OpenSSL 4.0 or newer, because the OpenSSL 3 server crashes on that request.
 
 ```bash
 make setup             # Start the EJBCA container and clone the CMP test suite
