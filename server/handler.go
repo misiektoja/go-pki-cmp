@@ -43,6 +43,9 @@ type Response struct {
 	Certificate *x509.Certificate
 	CACerts     []*x509.Certificate
 	Waiting     *WaitingResponse
+	// GeneralResponse holds the items of the genp that answers a general
+	// message (RFC 9810 §5.3.20). Other requests ignore it.
+	GeneralResponse []pkicmp.InfoTypeAndValue
 	// IssueRef is an opaque value set by the CA during issuance and passed back
 	// to [CertificateConfirmer.ConfirmCertificate] when the certificate is
 	// confirmed, rejected, or expires. Use it to correlate the confirmation

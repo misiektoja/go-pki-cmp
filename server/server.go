@@ -196,6 +196,9 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 				StatusString: pkicmp.PKIFreeText{err.Error()},
 			})
 		}
+		if err := validateProfileGenM(msg); err != nil {
+			return s.buildErrorResponse(msg, sender, errorToStatusInfo(err))
+		}
 	}
 
 	// RFC 9483 §5.2.2.1: other header fields of a nested message can be
@@ -242,6 +245,8 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		resp = s.handlePollReq(ctx, msg, sender)
 	case pkicmp.BodyTypeRR:
 		resp = s.handleRevocation(ctx, msg, sender)
+	case pkicmp.BodyTypeGenM:
+		resp = s.handleGenM(ctx, msg, sender)
 	case pkicmp.BodyTypeError:
 		// RFC 9810 §5.3.21: Respond with PKIConf. Protection verification above
 		// already catches invalid headers, so reaching here means the header is valid.
@@ -391,7 +396,8 @@ func (s *Server) validateHeader(msg *pkicmp.PKIMessage, sender *SenderIdentity) 
 // isInitialRequest returns true if the body type starts a new transaction.
 func isInitialRequest(bodyType pkicmp.BodyType) bool {
 	switch bodyType {
-	case pkicmp.BodyTypeIR, pkicmp.BodyTypeCR, pkicmp.BodyTypeKUR, pkicmp.BodyTypeP10CR, pkicmp.BodyTypeRR:
+	case pkicmp.BodyTypeIR, pkicmp.BodyTypeCR, pkicmp.BodyTypeKUR, pkicmp.BodyTypeP10CR,
+		pkicmp.BodyTypeRR, pkicmp.BodyTypeGenM:
 		return true
 	default:
 		return false
