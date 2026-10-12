@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,9 @@ func TestOpenSSLSupportMessages(t *testing.T) {
 	})
 
 	t.Run("CertReqTemplate", func(t *testing.T) {
+		if opensslMajorVersion(t) < 4 {
+			t.Skip("the OpenSSL 3 mock server crashes on a certReqTemplate request")
+		}
 		// The mock server names the issuer of the reference certificate and
 		// accepts EC keys and 4096-bit RSA keys.
 		tmpl, err := c.GetCertReqTemplate(ctx, creds)
@@ -170,6 +174,20 @@ func TestOpenSSLSupportMessages(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, got, "the CRL held is current")
 	})
+}
+
+// opensslMajorVersion returns the major version of the openssl binary in PATH.
+func opensslMajorVersion(t *testing.T) int {
+	t.Helper()
+	out, err := exec.Command("openssl", "version").Output()
+	require.NoError(t, err)
+	// The output starts with "OpenSSL 3.5.6 7 Apr 2026".
+	fields := strings.Fields(string(out))
+	require.GreaterOrEqual(t, len(fields), 2, "openssl version output %q", out)
+	major, _, _ := strings.Cut(fields[1], ".")
+	n, err := strconv.Atoi(major)
+	require.NoError(t, err, "openssl version output %q", out)
+	return n
 }
 
 // supportCA answers general messages and authenticates its one end entity.
