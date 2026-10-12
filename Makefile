@@ -154,22 +154,28 @@ SOURCE_ZIP = dist/go-pki-cmp-$(VERSION)-source.zip
 SOURCE_TAR_GZ = dist/go-pki-cmp-$(VERSION)-source.tar.gz
 SBOM_FILE = dist/go-pki-cmp-$(SBOM_VERSION)-sbom.cdx.json
 RELEASE_CHECKSUMS = dist/go-pki-cmp-$(VERSION)_SHA256SUMS.txt
-# RELEASE_CHECK_DIR holds the exported tree and the consumer module of a release check.
-RELEASE_CHECK_DIR ?= $(CURDIR)/.cache/release-check
+# RELEASE_CHECK_DIR holds the exported tree and the consumer module of a release check and must not exist yet.
+# Empty selects a new directory under the system temporary directory, which the operating system cleans up.
+RELEASE_CHECK_DIR ?=
 
 .PHONY: require-version
 require-version:
 	@test -n "$(VERSION)" || { echo "Set VERSION, for example VERSION=v0.2.0" >&2; exit 1; }
 
 .PHONY: release-check
-release-check: ## Build, vet and test an export of HEAD and import it from a separate module. Set VERSION to check the release notes heading.
+release-check: ## Build, vet and test an export of HEAD in a new directory and import it from a separate module. Set VERSION to check the release notes heading.
 	@if grep -q '^replace ' go.mod; then echo "error: go.mod has a replace directive"; exit 1; fi
 	@if [ -n "$(VERSION)" ]; then \
 		grep -q "^## $(VERSION) - " RELEASE_NOTES.md || { echo "error: RELEASE_NOTES.md has no heading for $(VERSION)"; exit 1; }; \
 		if grep -q '^## v.* - TBD$$' RELEASE_NOTES.md; then echo "error: RELEASE_NOTES.md still has a section dated TBD"; exit 1; fi; \
 	fi
 	@export="$(RELEASE_CHECK_DIR)"; \
-	if [ -e "$$export" ]; then echo "error: $$export exists, move it aside first"; exit 1; fi; \
+	if [ -z "$$export" ]; then \
+		tmp="$${TMPDIR:-/tmp}"; export="$$(mktemp -d "$${tmp%/}/go-pki-cmp-release-check.XXXXXX")"; \
+	elif [ -e "$$export" ]; then \
+		echo "error: $$export exists, move it aside first"; exit 1; \
+	fi; \
+	echo "release check directory: $$export"; \
 	mkdir -p "$$export/export" "$$export/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$export/export"; \
 	cd "$$export/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
