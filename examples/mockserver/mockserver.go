@@ -2,9 +2,10 @@
 // to build a CMP certificate authority server.
 //
 // Read [CA.IssueCertificate], [CA.LookupSecret], and [CA.LookupCertificate]
-// to see the three methods a CA backend must provide, and [CA.RevokeCertificate]
-// for optional revocation support. Then look at cmd/main.go to see how they are
-// wired into a running HTTP server.
+// to see the three methods a CA backend must provide, [CA.RevokeCertificate]
+// for optional revocation support and support.go for the optional answers to
+// general messages. Then look at cmd/main.go to see how they are wired into a
+// running HTTP server.
 package mockserver
 
 import (
@@ -32,16 +33,20 @@ import (
 // oidKeyUsage identifies the RFC 5280 §4.2.1.3 keyUsage extension.
 var oidKeyUsage = asn1.ObjectIdentifier{2, 5, 29, 15}
 
-// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], and [server.CertificateLookup].
+// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], [server.CertificateLookup]
+// and the general message interfaces [server.CACertificatesProvider], [server.RootCAUpdateProvider],
+// [server.CertReqTemplateProvider] and [server.CRLProvider].
 type MockCA struct {
 	key  *ecdsa.PrivateKey // CA private key used to sign issued certificates
 	cert *x509.Certificate // CA certificate returned in caPubs on IR responses
 
-	mu          sync.Mutex                  // guards issuedCerts and revoked against concurrent HTTP requests
-	issuedCerts []*x509.Certificate         // certificates issued so far; used by LookupCertificate
-	revoked     map[string]pkicmp.CRLReason // serial number -> reason for revoked certificates
-	secrets     map[string][]byte           // senderKID -> IAK, used by LookupSecret for MAC-protected requests
-	nextIssueID atomic.Uint64               // monotonic counter; used as IssueRef
+	mu          sync.Mutex            // guards issuedCerts, revoked and the CRL state against concurrent HTTP requests
+	issuedCerts []*x509.Certificate   // certificates issued so far; used by LookupCertificate
+	revoked     map[string]revocation // serial number -> revocation of that certificate
+	crlNumber   int64                 // CRL number of the current revocation list, raised on every change
+	crlUpdated  time.Time             // thisUpdate of the current revocation list
+	secrets     map[string][]byte     // senderKID -> IAK, used by LookupSecret for MAC-protected requests
+	nextIssueID atomic.Uint64         // monotonic counter; used as IssueRef
 
 	Log *slog.Logger
 }
@@ -59,11 +64,13 @@ func New(secrets map[string][]byte, log *slog.Logger) (*MockCA, error) {
 		return nil, err
 	}
 	return &MockCA{
-		key:     key,
-		cert:    cert,
-		Log:     log,
-		secrets: secrets,
-		revoked: map[string]pkicmp.CRLReason{},
+		key:        key,
+		cert:       cert,
+		Log:        log,
+		secrets:    secrets,
+		revoked:    map[string]revocation{},
+		crlNumber:  1,
+		crlUpdated: time.Now().UTC().Truncate(time.Second),
 	}, nil
 }
 
@@ -247,7 +254,8 @@ func (c *MockCA) RevokeCertificate(_ context.Context, req *server.RevocationRequ
 			StatusText:  "certificate already revoked",
 		}
 	}
-	c.revoked[serial] = req.Reason
+	c.revoked[serial] = revocation{serial: cert.SerialNumber, reason: req.Reason, at: time.Now()}
+	c.crlChanged()
 
 	c.Log.Info("certificate revoked",
 		"subject", cert.Subject.String(),
