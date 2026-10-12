@@ -19,9 +19,10 @@ issuer, is built on this library. The library implements:
 - **RFC 4211**: Certificate Request Message Format (CRMF)
 - **RFC 9811** (obsoletes RFC 6712): HTTP Transfer for the Certificate Management Protocol (CMP)
 
-Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq` and `nested` with
-their responses. Key recovery, cross-certification, proof-of-possession challenges, announcements and
-general messages (`genm`) are not implemented.
+Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, `genm` and `nested`
+with their responses. General messages carry the RFC 9483 support requests for CA certificates, a root
+CA update, a certificate request template and CRL updates. Key recovery, cross-certification,
+proof-of-possession challenges and announcements are not implemented.
 
 ## Interoperability and testing
 
@@ -29,7 +30,8 @@ CI runs the library against independent CMP implementations:
 
 * **[EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp)**: the client enrolls and updates certificates.
 * **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)**: the client enrolls,
-  updates and revokes against the mock server. OpenSSL as a client revokes at the server.
+  updates, revokes and sends support messages against the mock server. OpenSSL as a client revokes at
+  the server and sends support messages to it.
 * **[Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)**:
   the client enrolls, re-enrolls, updates and revokes certificates against a hosted instance on every push to
   `dev` and `main` and once a week.
@@ -53,11 +55,11 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 
 * **[`pkicmp`](./pkicmp/)**: CMP and CRMF ASN.1 types with parsing, serialization and MAC or signature
   protection.
-* **[`client`](./client/)**: IR, CR, KUR, P10CR and RR flows with polling, response verification and
-  certificate confirmation.
+* **[`client`](./client/)**: IR, CR, KUR, P10CR, RR and support message flows with polling, response
+  verification and certificate confirmation.
 * **[`server`](./server/)**: an `http.Handler` that authenticates clients, tracks transactions,
-  supports deferred issuance and revocation, accepts requests a registration authority forwards in
-  nested messages and applies policy middleware such as the lightweight profile.
+  supports deferred issuance, revocation and support messages, accepts requests a registration
+  authority forwards in nested messages and applies policy middleware such as the lightweight profile.
 
 ## Compatibility
 
@@ -122,6 +124,23 @@ c := client.NewClient("http://localhost:8080/cmp",
 err := c.SendRR(context.Background(), cert, pkicmp.CRLReasonKeyCompromise, creds)
 ```
 
+Root CA update (RFC 9483 §4.3.2):
+
+```go
+update, err := c.GetRootCAUpdate(context.Background(), currentRoot, creds)
+switch {
+case errors.Is(err, client.ErrInfoTypeNotSupported):
+	// The CA does not offer root updates. RFC 4210 CAs often ignore the request.
+case err != nil:
+	return err
+case update != nil:
+	// update.NewWithNew is the new root. The client has checked that currentRoot
+	// signed update.NewWithOld.
+}
+```
+
+`GetCACertificates`, `GetCertReqTemplate`, `GetCRLUpdate` and `GetCurrentCRL` follow the same pattern.
+
 ### Server
 
 Implement the `server.CA` interface and the credential lookups:
@@ -143,6 +162,10 @@ func (ca *MyCA) RevokeCertificate(ctx, req, sender) {
 	// Implement server.RevocationAuthorizer to also accept requests from other signers.
 }
 ```
+
+Support messages are answered by optional interfaces: `server.CACertificatesProvider`,
+`server.RootCAUpdateProvider`, `server.CertReqTemplateProvider` and `server.CRLProvider`. The server
+lists a requested type without a provider as unsupported.
 
 Then serve it:
 
