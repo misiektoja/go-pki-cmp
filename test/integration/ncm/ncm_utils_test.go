@@ -127,6 +127,7 @@ type transport struct {
 type ncmConfig struct {
 	transports     []transport
 	recipient      pkix.Name
+	anchors        []*x509.Certificate
 	trust          *x509.CertPool
 	httpsTrust     *x509.CertPool
 	pbmReference   []byte
@@ -175,6 +176,7 @@ func loadConfig(t *testing.T) *ncmConfig {
 
 	trust, err := parseCertificates(os.Getenv("NCM_CMP_RESPONSE_TRUST"))
 	require.NoError(t, err, "parse NCM_CMP_RESPONSE_TRUST")
+	cfg.anchors = trust
 	cfg.trust = certPool(trust)
 
 	if value := os.Getenv("NCM_CMP_HTTPS_TRUST"); value != "" {
