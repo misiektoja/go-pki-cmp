@@ -2,7 +2,7 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.5.0 - TBD
+## v0.5.0 - 12 Oct 2026
 
 This release adds the RFC 9483 support messages. Clients can ask a CA for its CA certificates, a root CA update, a certificate request template and newer CRLs. Servers can answer these requests.
 
