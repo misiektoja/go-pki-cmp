@@ -33,6 +33,7 @@ type configData struct {
 	RAKey   string // PEM private key of the trusted registration authority
 	RACert  string // PEM certificate of the trusted registration authority
 	RAChain string // PEM chain from the RA certificate to the CA certificate
+	CRLFile string // PEM CRL the CA serves, for the CRL update tests
 }
 
 // renderConfig renders the custom.robot.tmpl template into the config directory.

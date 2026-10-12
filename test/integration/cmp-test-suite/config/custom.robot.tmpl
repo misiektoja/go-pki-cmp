@@ -28,7 +28,6 @@ ${DEFAULT_MAC_ALGORITHM}   password_based_mac
 
 ##### Disabled features
 ${ALLOW_KGA}               ${False}
-${ALLOW_SUPPORT_MESSAGES}  ${False}
 ${ALLOW_IMPLICIT_CONFIRM}  ${True}
 ${ALLOW_KUR_SAME_KEY}      ${False}
 ${ALLOW_ONLY_ONE_SENDER}   ${False}
@@ -40,6 +39,12 @@ ${ALLOW_IR_SAME_KEY}       ${True}
 ${ALLOW_CERT_CONF}         ${False}
 ${ALLOW_ISSUING_OF_CA_CERTS}    ${False}
 ${ALLOW_CMP_EKU_EXTENSION}     ${False}
+
+##### Support messages (RFC 9483 §4.3)
+${ALLOW_SUPPORT_MESSAGES}  ${True}
+${ALLOW_MAC_PROTECTED_SUPPORT_MSG}    ${True}
+${CRL_FILEPATH}            {{.CRLFile}}
+${CRL_CERT_IDP}            ${None}
 
 ##### Pre-issued credentials (None = suite performs initial IR)
 ${ISSUED_KEY}              ${None}
@@ -68,7 +73,7 @@ ${TRUSTED_CA_KEY_PASSWORD}    ${None}
 ${TRUSTED_CA_DIR}          ${None}
 ${RR_CERT_FOR_TRUSTED}     ${None}
 ${OLD_ROOT_CERT}           ${None}
-${CERT_PROFILE}            ${EMPTY}
+${CERT_PROFILE}            device
 
 ${PQ_ISSUING_SUFFIX}       ${None}
 ${ISSUING_SUFFIX}          ${None}

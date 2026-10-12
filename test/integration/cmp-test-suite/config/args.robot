@@ -10,12 +10,12 @@ minimal
 pbmac1
 --include
 adding-protection
+--include
+support-messages
 --exclude
 revocation
 --exclude
 kga
---exclude
-genm
 --exclude
 batching
 --exclude
