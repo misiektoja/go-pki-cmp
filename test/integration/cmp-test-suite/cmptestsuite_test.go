@@ -34,9 +34,9 @@ func TestCMPTestSuite(t *testing.T) {
 		t.Skip("uv not found in PATH")
 	}
 
-	port, ra := startMockServer(t)
+	port, ra, crlPath := startMockServer(t)
 
-	configDir := renderConfig(t, configData{Port: port, RAKey: ra.keyPath, RACert: ra.certPath, RAChain: ra.chainPath})
+	configDir := renderConfig(t, configData{Port: port, RAKey: ra.keyPath, RACert: ra.certPath, RAChain: ra.chainPath, CRLFile: crlPath})
 
 	reportsDir, err := filepath.Abs("reports")
 	require.NoError(t, err)
@@ -53,8 +53,9 @@ func TestCMPTestSuite(t *testing.T) {
 	require.NoError(t, runErr, "cmp-test-suite run failed")
 }
 
-// startMockServer starts the CMP mock server in a goroutine and returns the port and the registration authority it trusts.
-func startMockServer(t *testing.T) (int, raCredentials) {
+// startMockServer starts the CMP mock server in a goroutine. It returns the
+// port, the registration authority it trusts and a file holding its current CRL.
+func startMockServer(t *testing.T) (int, raCredentials, string) {
 	t.Helper()
 
 	logger := slog.New(slog.NewTextHandler(newPrefixWriter(os.Stdout, "[mockserver] "), &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -65,6 +66,7 @@ func startMockServer(t *testing.T) (int, raCredentials) {
 	require.NoError(t, err)
 
 	ra := newRACredentials(t, ca)
+	crlPath := writeCurrentCRL(t, ca)
 	lookup := server.CertificateLookupFunc(func(issuer, subject pkix.Name, senderKID []byte) (*x509.Certificate, error) {
 		if bytes.Equal(senderKID, ra.cert.SubjectKeyId) {
 			return ra.cert, nil
@@ -116,12 +118,22 @@ func startMockServer(t *testing.T) (int, raCredentials) {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
-			return port, ra
+			return port, ra, crlPath
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("mockserver did not become ready")
-	return 0, ra
+	return 0, ra, crlPath
+}
+
+// writeCurrentCRL writes the CRL the mock CA serves now to a PEM file, for the suite's CRL update tests.
+func writeCurrentCRL(t *testing.T, ca *mockserver.MockCA) string {
+	t.Helper()
+	crl, err := ca.LatestCRL(context.Background(), pkicmp.CRLSource{}, nil)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "current_crl.pem")
+	require.NoError(t, os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: crl.Raw}), 0o644))
+	return path
 }
 
 // raCredentials is the registration authority the suite signs nested messages with.

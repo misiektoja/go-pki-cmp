@@ -2,6 +2,25 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.5.0 - 12 Oct 2026
+
+This release adds the RFC 9483 support messages. Clients can ask a CA for its CA certificates, a root CA update, a certificate request template and newer CRLs. Servers can answer these requests.
+
+### `pkicmp`
+
+* **General messages** (`genm` and `genp`) are built with `NewGenMBody` and `NewGenPBody` and read with `PKIBody.GenM` and `PKIBody.GenP`. Typed helpers encode and parse CA certificates, root CA key updates, certificate request templates, CRL status lists, CRLs, the current CRL and unsupported OIDs. `RootCAKeyUpdate.Verify` checks that the old root certified the new one.
+* **`NewCertProfileInfo`** builds the certProfile header item.
+
+### `client`
+
+* **Support messages:** `GetCACertificates`, `GetRootCAUpdate`, `GetCertReqTemplate`, `GetCRLUpdate` and `GetCurrentCRL` ask the CA for information. `SendGenM` sends other info types. A root CA update is returned only if the current root signed the new one. A CRL update is returned only if it is newer than the CRL the caller holds. **`ErrInfoTypeNotSupported`** reports a type the CA lists as unsupported or leaves out of its answer. Nokia NCM leaves all of them out. EJBCA Community Edition rejects general messages with `badRequest`.
+* **`WithCertProfile`** names a certificate profile in the request header, for enrollment or for `GetCertReqTemplate`.
+
+### `server`
+
+* **Support messages** are answered by the optional **`CACertificatesProvider`**, **`RootCAUpdateProvider`**, **`CertReqTemplateProvider`** and **`CRLProvider`** interfaces. The server lists every requested type without a provider as unsupported. It refuses a root CA update that lacks a valid newWithOld certificate with `systemFailure`. A custom `Handler` answers through `Response.GeneralResponse`.
+* **`WithStrictProfileValidation`** requires one item per general message and no value where RFC 9483 defines none.
+
 ## v0.4.0 - 11 Oct 2026
 
 The library is now **go-pki-cmp**, with a new module path. This release adds device compatibility options, configurable MAC iteration limits and exact subject preservation. It fixes same-key update confirmation and enrollment with only a subjectAltName. Clients can distinguish failed certificate confirmation from a refused request.

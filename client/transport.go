@@ -288,6 +288,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
 	// For MAC-protected requests it carries the reference number of the shared secret.
 	msg.Header.SenderKID = opts.senderKID
+	if opts.certProfile != "" {
+		msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, pkicmp.NewCertProfileInfo(opts.certProfile))
+	}
 
 	if err := creds.Protect(msg); err != nil {
 		return nil, &Error{Op: "protect request", Err: err}

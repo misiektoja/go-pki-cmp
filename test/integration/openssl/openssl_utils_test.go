@@ -5,11 +5,13 @@ package openssl
 import (
 	"crypto"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +41,17 @@ type opensslCMPServerOpts struct {
 	FailureBits *int
 	// StatusString: human readable status string to include in response.
 	StatusString string
+
+	// RefCert passes the enrolled certificate as -ref_cert. The OpenSSL 4.0.3
+	// mock server crashes on a certReqTemplate request without it, but it also
+	// makes the server expect that certificate in the oldCertID of a kur.
+	RefCert bool
+
+	// Root CA key update and CRL returned in general responses.
+	RspNewWithNew *x509.Certificate
+	RspNewWithOld *x509.Certificate
+	RspOldWithNew *x509.Certificate
+	RspCRL        *x509.RevocationList
 }
 
 // opensslCMPServer represents a running OpenSSL CMP server.
@@ -153,6 +166,28 @@ func newOpenSSLCMPServer(t *testing.T, opts opensslCMPServerOpts) *opensslCMPSer
 	if opts.StatusString != "" {
 		args = append(args, "-statusstring", opts.StatusString)
 	}
+	if opts.RefCert {
+		args = append(args, "-ref_cert", rspCertFile)
+	}
+	for _, rsp := range []struct {
+		flag string
+		cert *x509.Certificate
+	}{
+		{"-rsp_newwithnew", opts.RspNewWithNew},
+		{"-rsp_newwithold", opts.RspNewWithOld},
+		{"-rsp_oldwithnew", opts.RspOldWithNew},
+	} {
+		if rsp.cert != nil {
+			file := filepath.Join(dir, strings.TrimPrefix(rsp.flag, "-")+".pem")
+			writePEM(t, file, "CERTIFICATE", rsp.cert.Raw)
+			args = append(args, rsp.flag, file)
+		}
+	}
+	if opts.RspCRL != nil {
+		file := filepath.Join(dir, "rsp_crl.pem")
+		writePEM(t, file, "X509 CRL", opts.RspCRL.Raw)
+		args = append(args, "-rsp_crl", file)
+	}
 
 	// -------------------------------------------------------------------
 	// 3. Start the server and register cleanup.
@@ -241,4 +276,10 @@ func writeKeyPEM(t *testing.T, c *certyaml.Certificate, file string) {
 	_, keyPEM, err := c.PEM()
 	require.NoError(t, err, "PEM for %s", c.Subject)
 	require.NoError(t, os.WriteFile(file, keyPEM, 0600))
+}
+
+// writePEM writes der to file as one PEM block of the given type.
+func writePEM(t *testing.T, file, blockType string, der []byte) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(file, pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}), 0600))
 }

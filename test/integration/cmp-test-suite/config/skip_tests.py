@@ -28,6 +28,25 @@ KNOWN_FAILURES = {
         "NOTE: seems like pyasn1 bug (pyasn1/pyasn1#53): encoder.encode() mutates objects",
 }
 
+# General messages of RFC 4210 that RFC 9483 does not use. The server lists
+# them in an unsupportedOIDs item (RFC 9810 §5.3.19.7) and has no rule about
+# their values to enforce, while these tests expect an answer or a rejection.
+for _name in (
+    "CA MUST Accept CA Protocol Encryption Certificate Request",
+    "CA MUST Reject CA Protocol Encryption Certificate Request with Set InfoValue",
+    "CA MUST Accept Signing Key Pair Types Request",
+    "CA MUST Reject Signing Key Pair Types Request with Set InfoValue",
+    "CA MUST Accept Encryption KeyAgreement Key Pair Types Request",
+    "CA MUST Reject Encryption KeyAgreement Key Pair Types Request with Set InfoValue",
+    "CA MUST Accept Preferred Symmetric Algorithm Request",
+    "CA MUST Reject Preferred Symmetric Algorithm Request with Set InfoValue",
+    "CA MUST Accept Revocation Passphrase",
+    "CA MUST Respond to Supported Language Tags Message",
+    "CA MUST Reject Supported Language Tags without a value",
+    "CA MUST Reject Supported Language Tags with only invalid Tags",
+):
+    KNOWN_FAILURES[_name] = "RFC 4210 general message the server does not support"
+
 
 class skip_tests(SuiteVisitor):
 

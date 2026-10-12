@@ -5,7 +5,9 @@
 // registration), [Client.SendCR] (certification), [Client.SendKUR] (key update),
 // and [Client.SendP10CR] (PKCS#10 request). All handle the full lifecycle
 // transparently: protection, response verification, polling, and certificate
-// confirmation. [Client.SendRR] asks the CA to revoke a certificate.
+// confirmation. [Client.SendRR] asks the CA to revoke a certificate. The
+// support messages of RFC 9483 §4.3, such as [Client.GetRootCAUpdate], ask the
+// CA for information.
 //
 // # Initial enrollment with MAC protection
 //
@@ -77,6 +79,33 @@
 // [pkicmp.CRLReasonCertificateHold] suspends a certificate and
 // [pkicmp.CRLReasonRemoveFromCRL] releases it, if the CA supports holds. A CA
 // that delays its answer is polled as described below, without certConf.
+//
+// # Support messages
+//
+// General messages ask the CA for information rather than a certificate:
+// [Client.GetCACertificates], [Client.GetRootCAUpdate],
+// [Client.GetCertReqTemplate], [Client.GetCRLUpdate] and
+// [Client.GetCurrentCRL]. [Client.SendGenM] sends any other info type.
+//
+//	update, err := c.GetRootCAUpdate(ctx, currentRoot, creds)
+//	switch {
+//	case errors.Is(err, client.ErrInfoTypeNotSupported):
+//	    // The CA does not offer root updates.
+//	case err != nil:
+//	    log.Fatal(err)
+//	case update != nil:
+//	    // update.NewWithNew is the new root. The current root has signed
+//	    // update.NewWithOld, which the client has checked.
+//	}
+//
+// A nil result with a nil error means the CA has nothing to send, such as no
+// newer root or CRL.
+// [ErrInfoTypeNotSupported] covers both a CA that lists the type as
+// unsupported and one that leaves it out of its answer, as RFC 4210 CAs do. A
+// CA that refuses general messages altogether answers with an error message,
+// returned as [*pkicmp.PKIStatusError]. [WithCertProfile] names a
+// certificate profile in the request header, for example to ask for the
+// template of that profile.
 //
 // # Asynchronous enrollment and polling
 //

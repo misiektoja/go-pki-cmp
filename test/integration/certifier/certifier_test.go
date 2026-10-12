@@ -136,10 +136,18 @@ func TestCmpclient(t *testing.T) {
 		assert.Contains(t, out, "MAC verification failed")
 		assert.Nil(t, c.get(t, dir, "out/cert-0.pem"))
 	})
-	t.Run("GeneralMessageRefused", func(t *testing.T) {
+	t.Run("GeneralMessageAnswered", func(t *testing.T) {
 		dir, _, _ := setup(t)
 		out := cmpclient(t, c, ts, dir, "out", append([]string{"--type", "info"}, macArgs...)...)
-		assert.Contains(t, out, "message type not supported")
+		assert.Contains(t, out, "message verified ok")
+		resp, err := pkicmp.ParsePKIMessage(c.get(t, dir, "out/cmp-genp.bin"))
+		require.NoError(t, err)
+		require.Equal(t, pkicmp.BodyTypeGenP, resp.Body.Type)
+		// cmpclient sends an empty genm, which RFC 9810 §5.3.19 lets the server
+		// answer with any information it wishes. The server sends none.
+		items, err := resp.Body.GenP()
+		require.NoError(t, err)
+		assert.Empty(t, *items)
 	})
 }
 

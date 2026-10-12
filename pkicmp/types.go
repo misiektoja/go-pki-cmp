@@ -85,6 +85,7 @@ var (
 const (
 	tagRFC822Name    = 1
 	tagDirectoryName = 4
+	tagURI           = 6
 )
 
 // NewDirectoryName creates a GeneralName of type directoryName from a pkix.Name.

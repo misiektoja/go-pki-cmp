@@ -3,10 +3,13 @@
 package ncm
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/asn1"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -139,4 +142,54 @@ func keyUpdate(t *testing.T, cfg *ncmConfig, cl *client.Client, creds pkicmp.Cre
 	// update is the key of the certificate it replaces.
 	verifyIssued(t, cfg, result, newKey.Public())
 	assert.NotEqual(t, oldCert.SerialNumber, result.Certificate.SerialNumber, "key update returned the serial number it replaced")
+}
+
+// NCM may answer a support message or ignore it, as RFC 9810 §5.3.19 allows for info types a server
+// does not recognize. Either way the response must verify, and an ignored request must read as an
+// unsupported info type rather than as an empty answer.
+func TestNCMSupportMessages(t *testing.T) {
+	cfg := loadConfig(t)
+	creds, opts := cfg.macCredentials(t)
+	issuer, err := asn1.Marshal(cfg.recipient.ToRDNSequence())
+	require.NoError(t, err)
+	var root *x509.Certificate
+	for _, anchor := range cfg.anchors {
+		if bytes.Equal(anchor.RawSubject, anchor.RawIssuer) {
+			root = anchor
+			break
+		}
+	}
+
+	cfg.forEachTransport(t, func(t *testing.T, cl *client.Client) {
+		ctx := context.Background()
+		calls := []struct {
+			name string
+			call func() error
+		}{
+			{"CACertificates", func() error { _, err := cl.GetCACertificates(ctx, creds, opts...); return err }},
+			{"RootCAUpdate", func() error {
+				if root == nil {
+					t.Skip("NCM_CMP_RESPONSE_TRUST holds no self-signed root")
+				}
+				_, err := cl.GetRootCAUpdate(ctx, root, creds, opts...)
+				return err
+			}},
+			{"CertReqTemplate", func() error { _, err := cl.GetCertReqTemplate(ctx, creds, opts...); return err }},
+			{"CRLUpdate", func() error {
+				_, err := cl.GetCRLUpdate(ctx, pkicmp.CRLStatus{Source: pkicmp.NewCRLIssuerSource(issuer)}, creds, opts...)
+				return err
+			}},
+			{"CurrentCRL", func() error { _, err := cl.GetCurrentCRL(ctx, creds, opts...); return err }},
+		}
+		for _, c := range calls {
+			t.Run(c.name, func(t *testing.T) {
+				err := c.call()
+				if errors.Is(err, client.ErrInfoTypeNotSupported) {
+					t.Logf("not supported: %v", err)
+					return
+				}
+				require.NoError(t, err)
+			})
+		}
+	})
 }

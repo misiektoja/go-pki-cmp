@@ -795,3 +795,32 @@ func TestEJBCAInitializeFailNoTrustedCAs(t *testing.T) {
 
 	t.Logf("Expected error: %v", err)
 }
+
+// EJBCA Community Edition does not implement general messages. It answers
+// with a protected rejection, which the client must verify and return as a
+// status error, not as an unsupported info type.
+func TestEJBCAGeneralMessageRejected(t *testing.T) {
+	admin := newEJBCAAdminClient(t)
+	name := "integration-test-genm"
+	secret := "enrollment-secret"
+	admin.CreateEndEntity(t, name, secret)
+
+	creds, err := pkicmp.NewMACCredentials([]byte(secret))
+	require.NoError(t, err)
+
+	c := client.NewClient(admin.Endpoint,
+		client.WithRecipient(admin.CACert.Subject),
+		client.WithTrustedCAs(admin.TrustedCAs()),
+	)
+	_, err = c.GetCACertificates(context.Background(), creds,
+		client.WithSender(pkix.Name{CommonName: name}),
+	)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, client.ErrInfoTypeNotSupported)
+
+	var statusErr *pkicmp.PKIStatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, pkicmp.StatusRejection, statusErr.Status)
+	assert.NotZero(t, statusErr.FailInfo&pkicmp.FailBadRequest, "failInfo should indicate bad request")
+	t.Logf("Expected error: %v", err)
+}
