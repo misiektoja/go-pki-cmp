@@ -59,7 +59,7 @@ A release is started by pushing a version tag that is reachable from `main` and 
 Release headings use `## vX.Y.Z - D Mon YYYY`, for example `## v0.4.0 - 11 Oct 2026`. Use an unpadded day and an abbreviated English month. Keep `TBD` until the release date is set.
 
 1. Set the release date in `RELEASE_NOTES.md` and merge `dev` into `main`.
-2. Run `make release-check VERSION=vX.Y.Z` on `main`. It builds, vets and tests an export of the tree, imports it from a separate module and checks the release notes heading.
+2. Run `make release-check VERSION=vX.Y.Z` on `main`. It builds, vets and tests an export of the tree in a new temporary directory, imports it from a separate module and checks the release notes heading. Set `RELEASE_CHECK_DIR` to a path that does not exist yet to keep the export somewhere else.
 3. Tag the release commit on `main` and push the tag with `git push origin vX.Y.Z`.
 4. The Release workflow repeats the check and creates a draft release. The draft carries the release notes section, complete source archives, a CycloneDX SBOM, SHA-256 checksums and a signed build provenance bundle.
 5. Review the draft and publish it.
