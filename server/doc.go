@@ -107,6 +107,8 @@
 //   - [CertificateConfirmer]: notification when a client accepts or rejects a certificate.
 //   - [Revoker]: revocation requests (rr).
 //   - [RevocationAuthorizer]: revocation by signers other than the certificate holder.
+//   - [CACertificatesProvider], [RootCAUpdateProvider], [CertReqTemplateProvider]
+//     and [CRLProvider]: general messages (genm), described under Support messages.
 //
 // # Asynchronous issuance (polling)
 //
@@ -183,6 +185,34 @@
 // Revocation is synchronous. The server answers with an rp that reports either
 // acceptance or the rejection RevokeCertificate returned. A custom [Handler]
 // that returns a [WaitingResponse] for an rr gets systemFailure.
+//
+// # Support messages
+//
+// RFC 9483 §4.3 defines general messages that ask the CA for information: its
+// CA certificates, an update of the root CA certificate, a certificate request
+// template or a newer CRL. Implement the matching provider to answer each one.
+// The server answers a genm with a genp, and lists every requested type without
+// a provider in an unsupportedOIDs item (RFC 9810 §5.3.19.7). The client then
+// knows the CA does not offer it, rather than reading an absent value as "no
+// update".
+//
+//	func (c *myCA) LatestCRL(ctx context.Context, source pkicmp.CRLSource,
+//	    sender *server.SenderIdentity) (*x509.RevocationList, error) {
+//
+//	    // A zero source asks for the current CRL of the CA's choice.
+//	    if !source.IsZero() && !slices.ContainsFunc(source.DirectoryNames(), c.issues) {
+//	        return nil, nil // no CRL from this source
+//	    }
+//	    return c.store.LatestCRL()
+//	}
+//
+// A root CA update must carry newWithOld, the new root certified by the old
+// one, and the server checks it with [pkicmp.RootCAKeyUpdate.Verify] before
+// sending it. A CRL is sent only if it is newer than the thisUpdate the client
+// reported. A general message completes its transaction at once and is never
+// delayed, so a custom [Handler] that returns a [WaitingResponse] for a genm
+// gets systemFailure. [WithStrictProfileValidation] enforces one item per
+// request and an absent value where RFC 9483 defines none.
 //
 // # Registration authorities
 //
