@@ -69,6 +69,8 @@ type PKIBody struct {
 	pollRep  *PollRepContent
 	errorMsg *ErrorMsgContent
 	nested   []*PKIMessage
+	genm     *GenMsgContent
+	genp     *GenRepContent
 }
 
 type BodyType cbasn1.Tag
@@ -90,6 +92,8 @@ const (
 	BodyTypeRP       = BodyType(12 | classContextSpecific | classConstructed)
 	BodyTypePKIConf  = BodyType(19 | classContextSpecific | classConstructed)
 	BodyTypeNested   = BodyType(20 | classContextSpecific | classConstructed) // RFC 9810 §5.1.2: NestedMessageContent
+	BodyTypeGenM     = BodyType(21 | classContextSpecific | classConstructed) // RFC 9810 §5.3.19: GenMsgContent
+	BodyTypeGenP     = BodyType(22 | classContextSpecific | classConstructed) // RFC 9810 §5.3.20: GenRepContent
 	BodyTypeError    = BodyType(23 | classContextSpecific | classConstructed)
 	BodyTypeCertConf = BodyType(24 | classContextSpecific | classConstructed)
 	BodyTypePollReq  = BodyType(25 | classContextSpecific | classConstructed)
@@ -121,6 +125,10 @@ func (t BodyType) String() string {
 		return "pkiconf"
 	case BodyTypeNested:
 		return "nested"
+	case BodyTypeGenM:
+		return "genm"
+	case BodyTypeGenP:
+		return "genp"
 	case BodyTypeError:
 		return "error"
 	case BodyTypeCertConf:
@@ -184,6 +192,10 @@ func (b *PKIBody) marshal(mctx *marshalContext, builder *cryptobyte.Builder) {
 			b.pollRep.marshal(mctx, builder)
 		case BodyTypeError:
 			b.errorMsg.marshal(mctx, builder)
+		case BodyTypeGenM:
+			b.genm.marshal(mctx, builder)
+		case BodyTypeGenP:
+			b.genp.marshal(mctx, builder)
 		case BodyTypeNested:
 			if len(b.nested) == 0 {
 				builder.SetError(&ParseError{Detail: "nested body requires at least one message"})
@@ -402,6 +414,30 @@ func (b *PKIBody) Error() (*ErrorMsgContent, error) {
 	return b.errorMsg, b.err
 }
 
+// GenM returns the general message content (RFC 9810 §5.3.19).
+func (b *PKIBody) GenM() (*GenMsgContent, error) {
+	if b.Type != BodyTypeGenM {
+		return nil, &ParseError{Detail: fmt.Sprintf("body is not genm (type %s)", b.Type)}
+	}
+	if b.genm == nil && b.err == nil {
+		b.genm = &GenMsgContent{}
+		b.err = b.unmarshalBodyContent(b.genm)
+	}
+	return b.genm, b.err
+}
+
+// GenP returns the general response content (RFC 9810 §5.3.20).
+func (b *PKIBody) GenP() (*GenRepContent, error) {
+	if b.Type != BodyTypeGenP {
+		return nil, &ParseError{Detail: fmt.Sprintf("body is not genp (type %s)", b.Type)}
+	}
+	if b.genp == nil && b.err == nil {
+		b.genp = &GenRepContent{}
+		b.err = b.unmarshalBodyContent(b.genp)
+	}
+	return b.genp, b.err
+}
+
 // Nested returns the messages carried by a nested [20] body.
 //
 // RFC 9810 §5.1.3.5 and RFC 4210 §5.1.3.4 both define NestedMessageContent as
@@ -521,6 +557,19 @@ func NewPollRepBody(rep *PollRepContent) *PKIBody {
 
 func NewErrorBody(err *ErrorMsgContent) *PKIBody {
 	return &PKIBody{Type: BodyTypeError, errorMsg: err, dirty: true}
+}
+
+// NewGenMBody creates a general message body (RFC 9810 §5.3.19). RFC 9483 §4.3
+// sends exactly one item.
+func NewGenMBody(items ...InfoTypeAndValue) *PKIBody {
+	content := GenMsgContent(items)
+	return &PKIBody{Type: BodyTypeGenM, genm: &content, dirty: true}
+}
+
+// NewGenPBody creates a general response body (RFC 9810 §5.3.20).
+func NewGenPBody(items ...InfoTypeAndValue) *PKIBody {
+	content := GenRepContent(items)
+	return &PKIBody{Type: BodyTypeGenP, genp: &content, dirty: true}
 }
 
 // NewNestedBody creates a nested [20] body carrying one or more messages (RFC 9810 §5.1.3.5).

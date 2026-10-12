@@ -521,6 +521,21 @@ func (h *PKIHeader) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
 	})
 }
 
+// NewCertProfileInfo returns the id-it-certProfile generalInfo item naming
+// the requested certificate profiles (RFC 9810 §5.1.1.4). RFC 9483 §3.1
+// sends one name.
+func NewCertProfileInfo(names ...string) InfoTypeAndValue {
+	var b cryptobyte.Builder
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		for _, name := range names {
+			b.AddASN1(cbasn1.UTF8String, func(b *cryptobyte.Builder) {
+				b.AddBytes([]byte(name))
+			})
+		}
+	})
+	return InfoTypeAndValue{InfoType: oidCertProfile, InfoValue: b.BytesOrPanic()}
+}
+
 // CertProfile extracts the first certProfile name from the generalInfo header field.
 // RFC 9810 §5.1.1.4: id-it-certProfile carries a SEQUENCE OF UTF8String.
 // Returns empty string if not present.
