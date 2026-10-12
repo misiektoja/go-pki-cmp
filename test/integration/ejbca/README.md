@@ -19,6 +19,8 @@ Integration tests for the CMP client using EJBCA Community Edition.
    go test -v ./test/integration/ejbca/...
    ```
 
+EJBCA Community Edition does not implement general messages and rejects them with `badRequest`. One test checks that the client reports this signed rejection as a status error.
+
 ## Configuration profiles
 
 The tests use custom profiles in `testdata/` imported by `setup.sh`.

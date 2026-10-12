@@ -8,6 +8,7 @@ Integration tests for the CMP client against a [Nokia NCM](https://www.nokia.com
 * KUR with a new key
 * KUR with the existing key
 * RR of a newly enrolled certificate, then a second RR that must draw a verified rejection
+* Support messages for CA certificates, a root CA update, a certificate request template and CRLs. NCM may ignore them, as RFC 9810 allows, and the test then expects the client to report an unsupported info type
 
 Every certificate must certify the requested key and chain to the configured trust anchor. The client confirms each one with `certConf` and verifies the `pkiConf`.
 

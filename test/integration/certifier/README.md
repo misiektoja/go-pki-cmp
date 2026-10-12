@@ -14,6 +14,7 @@ Both clients deviate from RFC 4211 and RFC 9483 in places. The tests check that 
 | cmpclient `ir`, `cr` and `kur` with a signature proof of possession | `WithPoposkInputVariants` |
 | cmpclient `p10cr` and `ir` from a CSR template | none |
 | cmpclient `rr` | `WithOptionalRevocationReason` |
+| cmpclient `genm` (`--type info`), which sends no items | none |
 | ssh-cmpclient `INITIALIZE`, `ENROLL`, `P10CR` and `UPDATE` with a new key | none |
 | ssh-cmpclient `UPDATE` without `-P`, which keeps the key and sends no proof of possession | `WithSignatureProtectionPOP` |
 | ssh-cmpclient `REVOKE` | not accepted, because it sends pvno 0 |
