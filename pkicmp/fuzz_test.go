@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -46,8 +47,26 @@ func fuzzSeeds(tb testing.TB) [][]byte {
 		tb.Fatal(err)
 	}
 
+	crlStatus, err := pkicmp.NewCRLStatusListInfo(pkicmp.CRLStatus{Source: pkicmp.NewCRLDistributionPointSource("http://a/c"), ThisUpdate: time.Now()})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	rootUpdate, err := pkicmp.NewRootCAKeyUpdateInfo(&pkicmp.RootCAKeyUpdate{NewWithNew: cert, NewWithOld: cert, OldWithNew: cert})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	template, err := pkicmp.NewCertReqTemplateInfo(&pkicmp.CertReqTemplate{
+		Template: pkicmp.CertTemplate{Subject: pkicmp.NewDirectoryNameFromRawDER(cert.RawSubject)},
+		KeySpec:  []pkicmp.AttributeTypeAndValue{{Type: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 5, 1, 12}, Value: []byte{0x02, 0x02, 0x08, 0x00}}},
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+
 	checkAfter := int64(60)
 	bodies := []*pkicmp.PKIBody{
+		pkicmp.NewGenMBody(crlStatus, pkicmp.NewRootCACertInfo(cert), pkicmp.InfoTypeAndValue{InfoType: pkicmp.InfoTypeCACerts}),
+		pkicmp.NewGenPBody(pkicmp.NewCACertsInfo([]*x509.Certificate{cert}), rootUpdate, template, pkicmp.NewUnsupportedOIDsInfo(pkicmp.InfoTypeCRLs)),
 		pkicmp.NewRRBody(&pkicmp.RevReqContent{revDetails}),
 		pkicmp.NewPKIConfBody(),
 		pkicmp.NewIPBody(&pkicmp.CertRepMessage{
@@ -189,6 +208,14 @@ func exerciseBody(msg *pkicmp.PKIMessage) {
 		_, _ = msg.Body.RP()
 	case pkicmp.BodyTypeError:
 		_, _ = msg.Body.Error()
+	case pkicmp.BodyTypeGenM:
+		if content, err := msg.Body.GenM(); err == nil {
+			exerciseInfoItems(*content)
+		}
+	case pkicmp.BodyTypeGenP:
+		if content, err := msg.Body.GenP(); err == nil {
+			exerciseInfoItems(*content)
+		}
 	case pkicmp.BodyTypeNested:
 		// Each level of nesting costs input bytes, so the recursion is bounded.
 		if msgs, err := msg.Body.Nested(); err == nil {
@@ -273,4 +300,33 @@ func FuzzVerifySignatureProtection(f *testing.F) {
 		})
 		_, _ = msg.Verify(pkicmp.VerifyOptions{TrustedCert: anchor})
 	})
+}
+
+// exerciseInfoItems runs every general message value parser on each item, whatever its info type.
+func exerciseInfoItems(items []pkicmp.InfoTypeAndValue) {
+	for _, item := range items {
+		// The parsers check the info type first, so each item is relabelled to reach the value decoding.
+		for _, infoType := range []asn1.ObjectIdentifier{
+			pkicmp.InfoTypeCACerts, pkicmp.InfoTypeRootCACert, pkicmp.InfoTypeRootCAKeyUpdate,
+			pkicmp.InfoTypeCertReqTemplate, pkicmp.InfoTypeCRLStatusList, pkicmp.InfoTypeCRLs,
+			pkicmp.InfoTypeCurrentCRL, pkicmp.InfoTypeUnsupportedOIDs,
+		} {
+			item.InfoType = infoType
+			_, _ = pkicmp.ParseCACertsInfo(item)
+			_, _ = pkicmp.ParseRootCACertInfo(item)
+			if update, err := pkicmp.ParseRootCAKeyUpdateInfo(item); err == nil && update != nil {
+				_ = update.Verify(update.NewWithNew)
+			}
+			_, _ = pkicmp.ParseCertReqTemplateInfo(item)
+			if statuses, err := pkicmp.ParseCRLStatusListInfo(item); err == nil {
+				for _, status := range statuses {
+					_ = status.Source.DistributionPointURIs()
+					_ = status.Source.DirectoryNames()
+				}
+			}
+			_, _ = pkicmp.ParseCRLsInfo(item)
+			_, _ = pkicmp.ParseCurrentCRLInfo(item)
+			_, _ = pkicmp.ParseUnsupportedOIDsInfo(item)
+		}
+	}
 }
