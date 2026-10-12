@@ -11,6 +11,7 @@ type requestOptions struct {
 	templateSubject *pkix.Name
 	templateExts    []pkix.Extension
 	oldCertificate  *x509.Certificate
+	certProfile     string
 }
 
 // RequestOption configures a specific enrollment request.
@@ -43,6 +44,13 @@ func WithTemplateSubject(subject pkix.Name) RequestOption {
 // certificate with an empty subject adds that certificate's subjectAltName unless one is set.
 func WithTemplateExtension(ext pkix.Extension) RequestOption {
 	return func(o *requestOptions) { o.templateExts = append(o.templateExts, ext) }
+}
+
+// WithCertProfile names the certificate profile in the id-it-certProfile
+// generalInfo header field (RFC 9483 §3.1). It selects the profile of an
+// enrollment or the template [Client.GetCertReqTemplate] asks for.
+func WithCertProfile(name string) RequestOption {
+	return func(o *requestOptions) { o.certProfile = name }
 }
 
 // WithOldCertificate overrides the certificate identified by the oldCertID control in a KUR.
