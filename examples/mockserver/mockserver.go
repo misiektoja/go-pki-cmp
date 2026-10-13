@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/misiektoja/go-composite-mldsa/compositex509"
+
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/misiektoja/go-pki-cmp/server"
 )
@@ -80,7 +82,8 @@ func (c *MockCA) Key() *ecdsa.PrivateKey { return c.key }
 // Cert returns the CA certificate.
 func (c *MockCA) Cert() *x509.Certificate { return c.cert }
 
-// IssueCertificate implements server.CA.
+// IssueCertificate implements server.CA. It certifies composite ML-DSA keys
+// as well as the key types crypto/x509 supports.
 func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType, tmpl *x509.Certificate, sender *server.SenderIdentity) (*server.Response, error) {
 	// Log who is requesting a certificate and how their request was authenticated.
 	// SenderIdentity is populated by the server after verifying the request's
@@ -126,11 +129,16 @@ func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType,
 		"serial", serial.String(),
 	)
 
-	// Sign the certificate.
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, tmpl.PublicKey, c.key)
+	// Sign the certificate. A composite ML-DSA subject key arrives as
+	// *compositemldsa.PublicKey, which x509.CreateCertificate rejects.
+	// compositex509.CreateCertificate certifies it and passes every other key
+	// to x509.CreateCertificate unchanged.
+	der, err := compositex509.CreateCertificate(rand.Reader, tmpl, c.cert, tmpl.PublicKey, c.key)
 	if err != nil {
 		return nil, fmt.Errorf("signing certificate: %w", err)
 	}
+	// crypto/x509 parses a composite certificate but leaves PublicKey nil.
+	// compositex509.ParsePKIXPublicKey reads the key from RawSubjectPublicKeyInfo.
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
