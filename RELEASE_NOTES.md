@@ -4,7 +4,11 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.5.1 - TBD
 
-The example mock CA enrolls composite ML-DSA keys.
+Verification tells a signer outside the trusted CAs apart from a bad signature. The example mock CA enrolls composite ML-DSA keys.
+
+### `pkicmp`
+
+* **`ReasonUntrustedSigner`** reports a signature-protected message whose protection certificate does not chain to the trusted CAs. The error keeps the chain error. Such a message previously failed with `ReasonSignatureFailed`, so code that checks for that reason no longer sees it in this case.
 
 ### `examples/mockserver`
 
