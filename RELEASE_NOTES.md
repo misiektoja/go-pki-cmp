@@ -4,11 +4,13 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.5.1 - TBD
 
-Verification tells a signer outside the trusted CAs apart from a bad signature. The example mock CA enrolls composite ML-DSA keys.
+Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs, and can check certificates at a chosen time. The example mock CA enrolls composite ML-DSA keys.
 
 ### `pkicmp`
 
 * **`ReasonUntrustedSigner`** reports a signature-protected message whose protection certificate does not chain to the trusted CAs. The error keeps the chain error. Such a message previously failed with `ReasonSignatureFailed`, so code that checks for that reason no longer sees it in this case.
+* **Verification reports the failure of the certificate that has the sender's name.** A response that carries its CA certificates without a senderKID, as Nokia NCM sends them, used to fail with `ReasonSenderMismatch` when its signature was damaged or its signer was untrusted or not allowed to sign. It now fails with `ReasonSignatureFailed`, `ReasonUntrustedSigner` or `ReasonKeyUsageNotPermitted`. `ReasonSenderMismatch` now means that no candidate certificate has the sender's name.
+* **`VerifyOptions.CurrentTime`** sets the time at which the protection certificate and its chain must be valid. Use it to check a recorded message at the time it was received, after its signer certificate expired. The zero value keeps the time of the call. Do not take the time from the message itself when the result decides whether to act on that message, because the sender chooses its `messageTime`.
 
 ### `examples/mockserver`
 
