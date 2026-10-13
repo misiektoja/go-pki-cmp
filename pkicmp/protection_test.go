@@ -267,7 +267,9 @@ func TestVerifyRejectsUntrustedCA(t *testing.T) {
 	})
 	var ve *pkicmp.VerificationError
 	require.ErrorAs(t, err, &ve)
-	assert.Equal(t, pkicmp.ReasonSignatureFailed, ve.Reason)
+	assert.Equal(t, pkicmp.ReasonUntrustedSigner, ve.Reason)
+	var unknownAuthority x509.UnknownAuthorityError
+	assert.ErrorAs(t, err, &unknownAuthority, "the chain error is kept")
 }
 
 func TestVerifyRejectsNoProtection(t *testing.T) {

@@ -71,6 +71,41 @@ func TestVerifyReportsNoCandidateSigner(t *testing.T) {
 	})
 }
 
+// A message whose candidate signers all fail the chain is reported as untrusted, because no signature was
+// checked. A trusted candidate with the wrong key still makes it a signature failure.
+func TestVerifyReportsUntrustedSigner(t *testing.T) {
+	msg, _, pool := signedWithoutExtraCerts(t)
+	// Each hierarchy has a signer with the same name and senderKID as the message signer but its own key.
+	otherCA, _, otherSigner := generateCAAndSigner(t)
+	_, _, untrustedSigner := generateCAAndSigner(t)
+
+	t.Run("no candidate chains", func(t *testing.T) {
+		_, err := msg.Verify(pkicmp.VerifyOptions{
+			TrustPool:  pool,
+			ExtraCerts: []pkicmp.CMPCertificate{{Raw: untrustedSigner.Raw}},
+			SenderKID:  msg.Header.SenderKID,
+		})
+		var ve *pkicmp.VerificationError
+		require.ErrorAs(t, err, &ve)
+		assert.Equal(t, pkicmp.ReasonUntrustedSigner, ve.Reason)
+		var unknownAuthority x509.UnknownAuthorityError
+		assert.ErrorAs(t, err, &unknownAuthority)
+	})
+
+	t.Run("a trusted candidate with another key", func(t *testing.T) {
+		both := pool.Clone()
+		both.AddCert(otherCA)
+		_, err := msg.Verify(pkicmp.VerifyOptions{
+			TrustPool:  both,
+			ExtraCerts: []pkicmp.CMPCertificate{{Raw: untrustedSigner.Raw}, {Raw: otherSigner.Raw}},
+			SenderKID:  msg.Header.SenderKID,
+		})
+		var ve *pkicmp.VerificationError
+		require.ErrorAs(t, err, &ve)
+		assert.Equal(t, pkicmp.ReasonSignatureFailed, ve.Reason)
+	})
+}
+
 // otherCertificate returns a certificate whose SubjectKeyId differs from the signer's.
 func otherCertificate(t *testing.T) *x509.Certificate {
 	t.Helper()
