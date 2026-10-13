@@ -2,6 +2,14 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.5.1 - TBD
+
+The example mock CA enrolls composite ML-DSA keys.
+
+### `examples/mockserver`
+
+* **`MockCA` certifies composite ML-DSA keys** through `compositex509.CreateCertificate` and keeps using crypto/x509 for other keys. Its composite certificates authenticate `kur`, `certConf` and `rr` messages like any other. Enrolling a composite key previously failed with `systemFailure`.
+
 ## v0.5.0 - 12 Oct 2026
 
 This release adds the RFC 9483 support messages. Clients can ask a CA for its CA certificates, a root CA update, a certificate request template and newer CRLs. Servers can answer these requests.
