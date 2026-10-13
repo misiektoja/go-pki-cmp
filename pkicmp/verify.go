@@ -419,18 +419,20 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		intermediates = append(intermediates, x509Cert)
 	}
 
-	// senderMismatch records that a candidate was rejected only because it did
-	// not belong to the named sender, so the caller can tell an identity problem
-	// apart from a cryptographic one. keyUsageRejected does the same for a
-	// certificate that is trusted and correctly named but not allowed to sign.
-	senderMismatch := false
-	keyUsageRejected := false
 	candidates := 0
-	// chained counts the candidates that reach a trust anchor. untrusted keeps
-	// the chain error of the first one that does not, which is the reported
-	// cause when none does.
+	// named counts the candidates whose subject is the sender, the only ones
+	// that may be the protection certificate. The failure of a named candidate
+	// is reported, so the CA certificates a server sends along with its own do
+	// not hide why its certificate was refused. With no named candidate the
+	// failure is an identity problem rather than a cryptographic one.
+	named := 0
+	// chained counts the named candidates that reach a trust anchor. untrusted
+	// keeps the chain error of the first one that does not, which is the
+	// reported cause when none does. keyUsageRejected records a trusted named
+	// certificate that is not allowed to sign.
 	chained := 0
 	var untrusted error
+	keyUsageRejected := false
 
 	// RFC 9810 §5.1.3.3: Verify the signature using certificates from extraCerts.
 	for _, cert := range opts.ExtraCerts {
@@ -445,6 +447,14 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 			}
 		}
 		candidates++
+		// RFC 9483 §3.5: the sender field must match the subject of the CMP
+		// protection certificate. Chaining to a trust anchor only proves the
+		// certificate is trusted, not that it belongs to the claimed sender, so
+		// without this any certificate under any configured anchor would pass.
+		if !senderMatchesCertificate(m.Header.Sender, x509Cert) {
+			continue
+		}
+		named++
 		// Verify trust chain. Any extended key usage is accepted because
 		// crypto/x509 otherwise demands serverAuth, which no CMP specification
 		// asks for and which rejects the RFC 9810 §4.5 certificates
@@ -456,14 +466,6 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 			continue
 		}
 		chained++
-		// RFC 9483 §3.5: the sender field must match the subject of the CMP
-		// protection certificate. Chaining to a trust anchor only proves the
-		// certificate is trusted, not that it belongs to the claimed sender, so
-		// without this any certificate under any configured anchor would pass.
-		if !senderMatchesCertificate(m.Header.Sender, x509Cert) {
-			senderMismatch = true
-			continue
-		}
 		if opts.RequireDigitalSignatureKeyUsage && !permittedToSign(x509Cert) {
 			keyUsageRejected = true
 			continue
@@ -481,14 +483,14 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 	if candidates == 0 {
 		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
 	}
+	if named == 0 {
+		return nil, &VerificationError{Reason: ReasonSenderMismatch}
+	}
 	// A signature is checked only with a trusted certificate, so a message
 	// signed by a certificate outside the trust pool is reported as untrusted
 	// rather than as a bad signature.
 	if chained == 0 {
 		return nil, &VerificationError{Reason: ReasonUntrustedSigner, Err: untrusted}
-	}
-	if senderMismatch {
-		return nil, &VerificationError{Reason: ReasonSenderMismatch}
 	}
 	if keyUsageRejected {
 		return nil, &VerificationError{Reason: ReasonKeyUsageNotPermitted}

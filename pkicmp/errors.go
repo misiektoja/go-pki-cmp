@@ -26,8 +26,9 @@ const (
 	// mechanism than the caller required. RFC 9810 §5.2.3 defines the matching
 	// failInfo bit wrongIntegrity, "password based instead of signature or vice versa".
 	ReasonUnexpectedProtection
-	// ReasonSenderMismatch indicates the protection certificate subject does not
-	// match the sender named in the header (RFC 9483 §3.5).
+	// ReasonSenderMismatch indicates that the subject of the protection
+	// certificate, or of every candidate for it, is not the sender named in the
+	// header (RFC 9483 §3.5).
 	ReasonSenderMismatch
 	// ReasonKeyUsageNotPermitted indicates the CMP protection certificate carries
 	// a keyUsage extension without the digitalSignature bit, which RFC 9483 §3.5
@@ -42,8 +43,8 @@ const (
 	// certificate matching the senderKID.
 	ReasonNoCandidateSigner
 	// ReasonUntrustedSigner indicates that no candidate protection certificate
-	// chains to [VerifyOptions.TrustPool], so no signature was checked. Err
-	// holds the chain error of the first candidate.
+	// with the sender's name chains to [VerifyOptions.TrustPool], so no
+	// signature was checked. Err holds the chain error of the first of them.
 	ReasonUntrustedSigner
 )
 
