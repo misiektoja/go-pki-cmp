@@ -73,6 +73,13 @@ type VerifyOptions struct {
 	// be within its validity period and match the sender named in the header.
 	TrustedCert *x509.Certificate
 
+	// CurrentTime is the time at which the protection certificate and its chain
+	// must be valid. The zero value means the time of the call. Set it to check a
+	// recorded message at the time it was received. Do not take it from the
+	// message being verified when the result decides whether to act on that
+	// message, because the sender chooses its messageTime.
+	CurrentTime time.Time
+
 	// ExtraCerts provides candidate signer certificates (typically from
 	// msg.ExtraCerts) for signature chain building. Certificates the caller
 	// knows out of band may be appended, and each must pass the same chain,
@@ -370,12 +377,13 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		return nil, err
 	}
 
+	now := opts.verificationTime()
+
 	// Direct verification against a pre-trusted certificate (server-side lookup).
 	if opts.TrustedCert != nil {
 		// The chain path gets expiry checking from x509.Verify. This path does
 		// not, so without this an expired certificate left in the verifier's
 		// database would keep authenticating forever.
-		now := time.Now()
 		if now.Before(opts.TrustedCert.NotBefore) || now.After(opts.TrustedCert.NotAfter) {
 			return nil, &VerificationError{Reason: ReasonCertificateExpired}
 		}
@@ -441,7 +449,7 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		// crypto/x509 otherwise demands serverAuth, which no CMP specification
 		// asks for and which rejects the RFC 9810 §4.5 certificates
 		// id-kp-cmcCA, id-kp-cmcRA and id-kp-cmKGA.
-		if err := certpath.Verify(x509Cert, opts.TrustPool, intermediates, time.Now()); err != nil {
+		if err := certpath.Verify(x509Cert, opts.TrustPool, intermediates, now); err != nil {
 			if untrusted == nil {
 				untrusted = err
 			}
@@ -486,6 +494,14 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		return nil, &VerificationError{Reason: ReasonKeyUsageNotPermitted}
 	}
 	return nil, &VerificationError{Reason: ReasonSignatureFailed}
+}
+
+// verificationTime returns the time at which certificates must be valid.
+func (o *VerifyOptions) verificationTime() time.Time {
+	if o.CurrentTime.IsZero() {
+		return time.Now()
+	}
+	return o.CurrentTime
 }
 
 // signatureChecker returns the check of a protection signature made with the

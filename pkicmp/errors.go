@@ -33,8 +33,9 @@ const (
 	// a keyUsage extension without the digitalSignature bit, which RFC 9483 §3.5
 	// requires for signature-based protection.
 	ReasonKeyUsageNotPermitted
-	// ReasonCertificateExpired indicates the CMP protection certificate is outside
-	// its validity period.
+	// ReasonCertificateExpired indicates that [VerifyOptions.TrustedCert] is
+	// outside its validity period at [VerifyOptions.CurrentTime]. An expired
+	// certificate on the chain path gives [ReasonUntrustedSigner] instead.
 	ReasonCertificateExpired
 	// ReasonNoCandidateSigner indicates that no certificate was available to
 	// verify a signature: [VerifyOptions.ExtraCerts] was empty or held no
