@@ -20,10 +20,12 @@ This directory contains a complete, runnable demonstration of the `client` and `
 3. Server verifies the MAC via `MockCA.LookupSecret`, builds a certificate
    template from the request, and calls `MockCA.IssueCertificate`.
 4. MockCA sets serial number, validity, and signs the certificate with its key.
-5. Server returns the signed certificate and the MockCA CA certificate in `caPubs`
-   Implicit confirm is enabled, so no certConf round-trip is needed.
+5. Server returns the signed certificate and the MockCA CA certificate in `caPubs`.
 6. Client verifies the issued certificate against the MockCA CA certificate from
-   `caPubs` and installs it as a trust anchor for future operations.
+   `caPubs` and confirms it with certConf. The server answers with pkiConf and
+   passes the confirmation to `MockCA.ConfirmCertificate`.
+7. Client installs the MockCA CA certificate as a trust anchor for future
+   operations.
 
 **Step 2 — Key update (KUR, signature-protected)**
 
@@ -37,6 +39,8 @@ This directory contains a complete, runnable demonstration of the `client` and `
 4. MockCA issues a new certificate for the new public key.
 5. Server returns the renewed certificate. The client verifies the response
    signature using the trust anchor established in step 1.
+6. Client confirms the renewed certificate with a certConf signed like the KUR,
+   so the server finds the signer through `MockCA.LookupCertificate` again.
 
 **Step 3 — Revocation (RR, signature-protected)**
 
