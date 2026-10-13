@@ -35,9 +35,6 @@ func main() {
 	//   - WithSigner: signs every outgoing response with the CA key; a crypto.Signer
 	//     so an HSM-backed signer can be used in production.
 	//   - WithExtraCerts: appends the CA cert to outgoing response extraCerts.
-	//   - WithConfirmWaitTime: how long to keep transactions waiting for certConf
-	//   - WithConfirmWaitTime: how long to keep transactions waiting for certConf
-	//     before CleanupExpired considers them stale. Default is 10 seconds.
 	//   - WithSecretLookup: enables MAC (shared-secret) protection for IR/CR.
 	//   - WithCertificateLookup: enables signature protection for KUR/certConf/RR.
 	srv := server.NewCAServer(ca,
@@ -53,6 +50,8 @@ func main() {
 	}
 
 	// Periodically remove stale transactions from clients that never send certConf.
+	// A transaction is stale once the confirm wait time has passed, 10 seconds
+	// unless the server is built with WithConfirmWaitTime.
 	go func() {
 		for range time.Tick(30 * time.Second) {
 			srv.CleanupExpired()
