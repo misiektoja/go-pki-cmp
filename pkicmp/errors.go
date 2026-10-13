@@ -40,6 +40,10 @@ const (
 	// verify a signature: [VerifyOptions.ExtraCerts] was empty or held no
 	// certificate matching the senderKID.
 	ReasonNoCandidateSigner
+	// ReasonUntrustedSigner indicates that no candidate protection certificate
+	// chains to [VerifyOptions.TrustPool], so no signature was checked. Err
+	// holds the chain error of the first candidate.
+	ReasonUntrustedSigner
 )
 
 func (r InvalidReason) String() string {
@@ -66,6 +70,8 @@ func (r InvalidReason) String() string {
 		return "protection certificate is outside its validity period"
 	case ReasonNoCandidateSigner:
 		return "no candidate signer certificate"
+	case ReasonUntrustedSigner:
+		return "protection certificate is not trusted"
 	default:
 		return "unknown"
 	}

@@ -418,6 +418,11 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 	senderMismatch := false
 	keyUsageRejected := false
 	candidates := 0
+	// chained counts the candidates that reach a trust anchor. untrusted keeps
+	// the chain error of the first one that does not, which is the reported
+	// cause when none does.
+	chained := 0
+	var untrusted error
 
 	// RFC 9810 §5.1.3.3: Verify the signature using certificates from extraCerts.
 	for _, cert := range opts.ExtraCerts {
@@ -437,8 +442,12 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		// asks for and which rejects the RFC 9810 §4.5 certificates
 		// id-kp-cmcCA, id-kp-cmcRA and id-kp-cmKGA.
 		if err := certpath.Verify(x509Cert, opts.TrustPool, intermediates, time.Now()); err != nil {
+			if untrusted == nil {
+				untrusted = err
+			}
 			continue
 		}
+		chained++
 		// RFC 9483 §3.5: the sender field must match the subject of the CMP
 		// protection certificate. Chaining to a trust anchor only proves the
 		// certificate is trusted, not that it belongs to the claimed sender, so
@@ -463,6 +472,12 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 	// RFC 9810 §5.1 leaves them optional and some CAs omit them.
 	if candidates == 0 {
 		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
+	}
+	// A signature is checked only with a trusted certificate, so a message
+	// signed by a certificate outside the trust pool is reported as untrusted
+	// rather than as a bad signature.
+	if chained == 0 {
+		return nil, &VerificationError{Reason: ReasonUntrustedSigner, Err: untrusted}
 	}
 	if senderMismatch {
 		return nil, &VerificationError{Reason: ReasonSenderMismatch}
