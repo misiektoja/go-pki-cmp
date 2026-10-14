@@ -9,6 +9,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
@@ -88,8 +89,19 @@ type VerifyOptions struct {
 	ExtraCerts []CMPCertificate
 
 	// SenderKID filters candidate signer certificates by SubjectKeyId
-	// (typically msg.Header.SenderKID).
+	// (typically msg.Header.SenderKID). When it names none of them,
+	// verification fails with [ReasonSenderKIDMismatch].
 	SenderKID []byte
+
+	// AllowSenderKIDMismatch tries every candidate when SenderKID names none
+	// of them. A candidate that SenderKID names is still the only one tried.
+	//
+	// RFC 9483 §3.1 requires senderKID to hold the SubjectKeyIdentifier of the
+	// CMP protection certificate, but some CAs copy the senderKID of the
+	// request into the response. Each candidate still faces the chain, sender
+	// and signature checks, so this only stops senderKID from excluding the
+	// real signer. Enable it only for such a peer.
+	AllowSenderKIDMismatch bool
 
 	// RequireDigitalSignatureKeyUsage rejects a CMP protection certificate that
 	// carries a keyUsage extension without the digitalSignature bit, as
@@ -418,8 +430,31 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		}
 		intermediates = append(intermediates, x509Cert)
 	}
+	// A message without a certificate to try says nothing about its signature,
+	// so it is reported apart from one whose signature did not verify. RFC 9483
+	// §3.3 requires extraCerts on the first response of an operation, but
+	// RFC 9810 §5.1 leaves them optional and some CAs omit them.
+	if len(intermediates) == 0 {
+		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
+	}
 
-	candidates := 0
+	// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
+	signers := intermediates
+	if len(opts.SenderKID) > 0 {
+		signers = slices.DeleteFunc(slices.Clone(intermediates), func(cert *x509.Certificate) bool {
+			return !bytes.Equal(cert.SubjectKeyId, opts.SenderKID)
+		})
+		if len(signers) == 0 {
+			if !opts.AllowSenderKIDMismatch {
+				return nil, &VerificationError{
+					Reason: ReasonSenderKIDMismatch,
+					Err:    fmt.Errorf("no certificate has subject key identifier %X", opts.SenderKID),
+				}
+			}
+			signers = intermediates
+		}
+	}
+
 	// named counts the candidates whose subject is the sender, the only ones
 	// that may be the protection certificate. The failure of a named candidate
 	// is reported, so the CA certificates a server sends along with its own do
@@ -435,18 +470,7 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 	keyUsageRejected := false
 
 	// RFC 9810 §5.1.3.3: Verify the signature using certificates from extraCerts.
-	for _, cert := range opts.ExtraCerts {
-		x509Cert, err := cert.Parse()
-		if err != nil {
-			continue
-		}
-		// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
-		if len(opts.SenderKID) > 0 {
-			if len(x509Cert.SubjectKeyId) == 0 || !bytes.Equal(x509Cert.SubjectKeyId, opts.SenderKID) {
-				continue
-			}
-		}
-		candidates++
+	for _, x509Cert := range signers {
 		// RFC 9483 §3.5: the sender field must match the subject of the CMP
 		// protection certificate. Chaining to a trust anchor only proves the
 		// certificate is trusted, not that it belongs to the claimed sender, so
@@ -476,13 +500,6 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		}
 	}
 
-	// A message without a certificate to try says nothing about its signature,
-	// so it is reported apart from one whose signature did not verify. RFC 9483
-	// §3.3 requires extraCerts on the first response of an operation, but
-	// RFC 9810 §5.1 leaves them optional and some CAs omit them.
-	if candidates == 0 {
-		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
-	}
 	if named == 0 {
 		return nil, &VerificationError{Reason: ReasonSenderMismatch}
 	}

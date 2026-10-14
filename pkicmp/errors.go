@@ -39,13 +39,19 @@ const (
 	// certificate on the chain path gives [ReasonUntrustedSigner] instead.
 	ReasonCertificateExpired
 	// ReasonNoCandidateSigner indicates that no certificate was available to
-	// verify a signature: [VerifyOptions.ExtraCerts] was empty or held no
-	// certificate matching the senderKID.
+	// verify a signature: [VerifyOptions.ExtraCerts] held no certificate that
+	// could be parsed.
 	ReasonNoCandidateSigner
 	// ReasonUntrustedSigner indicates that no candidate protection certificate
 	// with the sender's name chains to [VerifyOptions.TrustPool], so no
 	// signature was checked. Err holds the chain error of the first of them.
 	ReasonUntrustedSigner
+	// ReasonSenderKIDMismatch indicates that [VerifyOptions.SenderKID] names
+	// the subject key identifier of none of the candidate certificates. Either
+	// the signer's certificate is missing from [VerifyOptions.ExtraCerts] or
+	// the sender filled senderKID with another value, which
+	// [VerifyOptions.AllowSenderKIDMismatch] tolerates.
+	ReasonSenderKIDMismatch
 )
 
 func (r InvalidReason) String() string {
@@ -74,6 +80,8 @@ func (r InvalidReason) String() string {
 		return "no candidate signer certificate"
 	case ReasonUntrustedSigner:
 		return "protection certificate is not trusted"
+	case ReasonSenderKIDMismatch:
+		return "senderKID names no candidate signer certificate"
 	default:
 		return "unknown"
 	}
