@@ -169,6 +169,11 @@
 // [pkicmp.ReasonNoCandidateSigner] unless the certificate is configured with
 // [WithServerCerts]. It is tried last and must pass the same checks.
 //
+// Only candidates whose subject key identifier equals the senderKID of the
+// response are tried. A response whose senderKID names none of them fails with
+// [pkicmp.ReasonSenderKIDMismatch]. Some CAs copy the senderKID of the request
+// into the response. [WithSenderKIDMismatch] accepts that.
+//
 // A certificate response must hold exactly one CertResponse with the certReqId
 // of the request. A p10cr has no certReqId, so both -1 (RFC 9810 §5.3.4) and 0
 // are accepted. A rejection is reported whatever certReqId it carries.
