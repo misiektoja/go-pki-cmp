@@ -16,6 +16,7 @@ Most problems come from configuration that differs between CMP peers. Before ask
 * A revocation request refused with "reasonCode required", "issuer required" or "revocation requires signature protection" is accepted with `server.WithOptionalRevocationReason`, `server.WithOptionalRevocationIssuer` or `server.WithMACRevocation`. A MAC-protected one also needs a CA that implements `server.RevocationAuthorizer`.
 * A request refused with "unsupported pvno 0" uses a protocol version the server does not support. No option changes that.
 * SHA-1 signatures are enabled with `WithSHA1Signatures` in the `client` or `server` package when the peer still uses them. They are off by default.
+* A signed response refused with "senderKID names no candidate signer certificate" lacks the certificate its senderKID names. `client.WithServerCerts` supplies a certificate the CA leaves out. Some CAs copy the senderKID of the request into their responses instead. `client.WithSenderKIDMismatch` accepts that.
 * `Err` on a server built with `server.New` or `server.NewCAServer` returns nil. It reports a signer key that does not match its certificate.
 * `server.WithStrictProfileValidation` is set only when every client follows RFC 9483 exactly. It rejects requests that many deployed clients send.
 
