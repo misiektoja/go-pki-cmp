@@ -720,12 +720,13 @@ func (c *Client) verifyResponse(req *pkicmp.PKIMessage, resp *pkicmp.PKIMessage,
 			}
 			return nil
 		}(),
-		TrustPool:            trustedCAs,
-		ExtraCerts:           candidates,
-		SenderKID:            resp.Header.SenderKID,
-		AllowSHA1Signatures:  c.allowSHA1Signatures,
-		MinMACIterationCount: c.minMACIterations,
-		MaxMACIterationCount: c.maxMACIterations,
+		TrustPool:              trustedCAs,
+		ExtraCerts:             candidates,
+		SenderKID:              resp.Header.SenderKID,
+		AllowSenderKIDMismatch: c.allowKIDMismatch,
+		AllowSHA1Signatures:    c.allowSHA1Signatures,
+		MinMACIterationCount:   c.minMACIterations,
+		MaxMACIterationCount:   c.maxMACIterations,
 	})
 	if err != nil {
 		if hint := c.verificationHint(err, trustedCAs); hint != "" {
@@ -753,6 +754,11 @@ func (c *Client) verificationHint(err error, trustedCAs *x509.CertPool) string {
 	case verifyErr.Reason == pkicmp.ReasonNoCandidateSigner && len(c.serverCerts) == 0:
 		return "the response does not carry its protection certificate in extraCerts, " +
 			"so configure the certificate the server signs with through WithServerCerts"
+	case verifyErr.Reason == pkicmp.ReasonSenderKIDMismatch && len(c.serverCerts) == 0:
+		return "configure the certificate the server signs with through WithServerCerts " +
+			"or use WithSenderKIDMismatch if the server puts another value in senderKID"
+	case verifyErr.Reason == pkicmp.ReasonSenderKIDMismatch:
+		return "use WithSenderKIDMismatch if the server puts another value in senderKID"
 	default:
 		return ""
 	}

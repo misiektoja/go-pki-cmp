@@ -24,6 +24,7 @@ type Client struct {
 	minCheckAfter       time.Duration
 	maxCheckAfter       time.Duration
 	allowSHA1Signatures bool
+	allowKIDMismatch    bool
 	minMACIterations    int
 	maxMACIterations    int
 }
@@ -147,6 +148,20 @@ func WithServerCerts(certs []*x509.Certificate) Option {
 // which rejects SHA-1 certificate signatures.
 func WithSHA1Signatures() Option {
 	return func(c *Client) { c.allowSHA1Signatures = true }
+}
+
+// WithSenderKIDMismatch accepts a signed response whose senderKID names none
+// of the candidate signer certificates, by trying all of them.
+//
+// RFC 9483 §3.1 requires senderKID to hold the subject key identifier of the
+// certificate that signed the response, but some CAs copy the senderKID of the
+// request instead. Such a response fails with [pkicmp.ReasonSenderKIDMismatch]
+// by default. The candidates are those the response carries, the one
+// authenticated earlier in the operation and [WithServerCerts]. Each must
+// still chain to [WithTrustedCAs], match the sender in the response header and
+// verify the signature. See [pkicmp.VerifyOptions.AllowSenderKIDMismatch].
+func WithSenderKIDMismatch() Option {
+	return func(c *Client) { c.allowKIDMismatch = true }
 }
 
 // WithMACIterationLimits sets the range of PasswordBasedMac and PBMAC1
