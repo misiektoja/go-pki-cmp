@@ -43,9 +43,8 @@ func TestVerifyReportsNoCandidateSigner(t *testing.T) {
 	msg, signerCert, pool := signedWithoutExtraCerts(t)
 
 	cases := map[string][]pkicmp.CMPCertificate{
-		"no certificates":        nil,
-		"unparseable only":       {{Raw: []byte{0x30, 0x00}}},
-		"senderKID matches none": {{Raw: otherCertificate(t).Raw}},
+		"no certificates":  nil,
+		"unparseable only": {{Raw: []byte{0x30, 0x00}}},
 	}
 	for name, extraCerts := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -72,6 +71,83 @@ func TestVerifyReportsNoCandidateSigner(t *testing.T) {
 		require.ErrorAs(t, err, &ve)
 		assert.Equal(t, pkicmp.ReasonMissingTrustAnchors, ve.Reason)
 	})
+}
+
+// A senderKID that names none of the candidates is reported as such, also when the message carries the right
+// certificate. AllowSenderKIDMismatch then tries every candidate under the same chain, sender and signature
+// checks. When senderKID names a candidate, that candidate is still the only one tried.
+func TestVerifySenderKIDMismatch(t *testing.T) {
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	caCert := selfSignedCA(t, caKey, "Test CA")
+	signerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	signerCert := issueSigner(t, caCert, caKey, signerKey, x509.KeyUsageDigitalSignature)
+	require.Empty(t, signerCert.SubjectKeyId)
+
+	// The senderKID of the request, copied into the response by the CA that signs it with signerCert.
+	requestKID := []byte("request-kid")
+	msg := pkicmp.NewPKIMessage(pkicmp.NewPKIConfBody(), pkicmp.MessageOptions{
+		Sender: pkicmp.NewDirectoryNameFromRawDER(signerCert.RawSubject),
+	})
+	msg.Header.SenderKID = requestKID
+	mustProtectSig(t, msg, signerKey, signerCert)
+	der, err := msg.MarshalBinary()
+	require.NoError(t, err)
+	msg, err = pkicmp.ParsePKIMessage(der)
+	require.NoError(t, err)
+	require.Equal(t, requestKID, msg.Header.SenderKID)
+
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	sameNameOtherKey := issueSigner(t, caCert, caKey, otherKey, x509.KeyUsageDigitalSignature)
+	namedByKIDOtherKey := issueSignerWithKeyID(t, caCert, caKey, otherKey, requestKID)
+
+	verify := func(allow bool, certs ...*x509.Certificate) (*pkicmp.VerifyResult, error) {
+		extraCerts := make([]pkicmp.CMPCertificate, 0, len(certs))
+		for _, cert := range certs {
+			extraCerts = append(extraCerts, pkicmp.CMPCertificate{Raw: cert.Raw})
+		}
+		return msg.Verify(pkicmp.VerifyOptions{
+			TrustPool:              pool,
+			ExtraCerts:             extraCerts,
+			SenderKID:              msg.Header.SenderKID,
+			AllowSenderKIDMismatch: allow,
+		})
+	}
+
+	t.Run("refused by default", func(t *testing.T) {
+		_, err := verify(false, signerCert)
+		var ve *pkicmp.VerificationError
+		require.ErrorAs(t, err, &ve)
+		assert.Equal(t, pkicmp.ReasonSenderKIDMismatch, ve.Reason)
+	})
+
+	t.Run("accepted when allowed", func(t *testing.T) {
+		vr, err := verify(true, caCert, signerCert)
+		require.NoError(t, err)
+		assert.Equal(t, signerCert.Raw, vr.ProtectionCertificate.Raw)
+	})
+
+	cases := []struct {
+		name   string
+		certs  []*x509.Certificate
+		reason pkicmp.InvalidReason
+	}{
+		{"allowed with another key", []*x509.Certificate{sameNameOtherKey}, pkicmp.ReasonSignatureFailed},
+		{"allowed with a trusted certificate of another name", []*x509.Certificate{caCert}, pkicmp.ReasonSenderMismatch},
+		{"allowed while senderKID names another candidate", []*x509.Certificate{namedByKIDOtherKey, signerCert}, pkicmp.ReasonSignatureFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := verify(true, tc.certs...)
+			var ve *pkicmp.VerificationError
+			require.ErrorAs(t, err, &ve)
+			assert.Equal(t, tc.reason, ve.Reason)
+		})
+	}
 }
 
 // A message whose candidate signers all fail the chain is reported as untrusted, because no signature was
@@ -190,6 +266,26 @@ func issueSigner(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.Privat
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(30 * time.Minute),
 		KeyUsage:     usage,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return cert
+}
+
+// issueSignerWithKeyID returns a signing certificate named Signer whose SubjectKeyId is keyID.
+func issueSignerWithKeyID(t *testing.T, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey, key *ecdsa.PrivateKey, keyID []byte) *x509.Certificate {
+	t.Helper()
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "Signer"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(30 * time.Minute),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		SubjectKeyId: keyID,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
 	require.NoError(t, err)
