@@ -93,7 +93,8 @@
 //
 // Retain the protection certificate across a transaction. extraCerts may appear
 // only on the first response (RFC 9810 §5.1), so a later pkiConf can arrive with
-// no candidate signer and fail with [ReasonNoCandidateSigner]. Offer
+// no candidate signer and fail with [ReasonNoCandidateSigner] or
+// [ReasonSenderKIDMismatch]. Offer
 // [VerifyResult.ProtectionCertificate] back through [VerifyOptions.ExtraCerts]
 // or [VerifyOptions.TrustedCert]. A peer certificate known out of band can be
 // appended to ExtraCerts the same way.
