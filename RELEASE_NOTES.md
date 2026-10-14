@@ -4,13 +4,18 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.5.1 - TBD
 
-Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs, and can check certificates at a chosen time. The example mock CA enrolls composite ML-DSA keys.
+Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. The example mock CA enrolls composite ML-DSA keys.
 
 ### `pkicmp`
 
 * **`ReasonUntrustedSigner`** reports a signature-protected message whose protection certificate does not chain to the trusted CAs. The error keeps the chain error. Such a message previously failed with `ReasonSignatureFailed`, so code that checks for that reason no longer sees it in this case.
 * **Verification reports the failure of the certificate that has the sender's name.** A response that carries its CA certificates without a senderKID, as Nokia NCM sends them, used to fail with `ReasonSenderMismatch` when its signature was damaged or its signer was untrusted or not allowed to sign. It now fails with `ReasonSignatureFailed`, `ReasonUntrustedSigner` or `ReasonKeyUsageNotPermitted`. `ReasonSenderMismatch` now means that no candidate certificate has the sender's name.
 * **`VerifyOptions.CurrentTime`** sets the time at which the protection certificate and its chain must be valid. Use it to check a recorded message at the time it was received, after its signer certificate expired. The zero value keeps the time of the call. Do not take the time from the message itself when the result decides whether to act on that message, because the sender chooses its `messageTime`.
+* **`ReasonSenderKIDMismatch`** reports a signature-protected message whose senderKID names none of the candidate certificates. Such a message previously failed with `ReasonNoCandidateSigner`, which now means that no certificate was available at all. **`VerifyOptions.AllowSenderKIDMismatch`** tries every candidate in that case, for a CA that copies the senderKID of the request into its responses. Each candidate must still chain to the trusted CAs, have the sender's name and verify the signature.
+
+### `client`
+
+* **`WithSenderKIDMismatch`** accepts signed responses whose senderKID names none of the candidate signer certificates. It is off by default. Without it, such a response fails with `ReasonSenderKIDMismatch` and the error names `WithServerCerts` and this option, instead of reporting that the response carries no certificate.
 
 ### `examples/mockserver`
 
