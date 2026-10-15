@@ -99,6 +99,11 @@
 // The CA must support the method. RFC 9483 §4.1.1 lets it refuse both for a key
 // that can sign.
 //
+// These requests are sent as version 3 (cmp2021), because the EnvelopedData the
+// CA answers with is cmp2021 syntax (RFC 9810 §7). Every later message of the
+// transaction keeps that version. A CMP version 2 CA may still send an RSA
+// certificate in the older EncryptedValue, which the client decrypts as well.
+//
 // # Support messages
 //
 // General messages ask the CA for information rather than a certificate:
