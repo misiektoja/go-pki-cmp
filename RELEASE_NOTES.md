@@ -4,7 +4,7 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.5.1 - TBD
 
-Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. CAs can answer grantedWithMods when they change a request. The example mock CA enrolls composite ML-DSA keys.
+Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. CAs can answer grantedWithMods when they change a request. CAs can hold enrollment and revocation requests until someone decides them, for example an operator who approves or rejects them. The example mock CA enrolls composite ML-DSA keys.
 
 ### `pkicmp`
 
@@ -20,6 +20,10 @@ Verification reports why the sender's certificate was refused, including a signe
 ### `server`
 
 * **`Response.GrantedWithMods`** answers an issued certificate with grantedWithMods instead of accepted, for a CA that left out or changed part of the request. **`Response.StatusText`** is sent as the statusString of the issued certificate. Both are off by default, so existing CAs still answer accepted.
+* **Waiting requests end the way immediate ones do.** When `PendingChecker.CheckPending` rejects a request, the client gets the `ip`, `cp` or `kup` it would have got at once, with the request's certReqId, instead of an error message. The final response grants implicit confirmation when the original request asked for it. Waiting and rejected responses no longer grant it. The waiting response carries `WaitingResponse.Reason` as its statusString.
+* **Polling follows RFC 9483 section 4.4 more closely.** A pollReq that arrives before checkAfter gets another pollRep with the time left. It used to fail the request with "polling too frequently". A pollReq must name the waiting request by its certReqId or by -1. Any other value is refused with badRequest.
+* **`WaitingError`** lets a `Revoker` or `RevocationAuthorizer` delay a revocation. The client gets an error message with status waiting, polls and receives the rp once `PendingChecker.CheckPending` decides. A delayed revocation was previously refused with systemFailure.
+* **`WithWaitingLifetime`** sets how long a waiting request stays after its last poll. The default is 24 hours. Waiting requests used to expire with the confirmation wait, 10 seconds by default. **`WaitingExpirer`** tells the CA about each waiting request that `CleanupExpired` removes, and **`WithWaitingExpirer`** sets it for a custom `Handler`.
 
 ### `examples/mockserver`
 
