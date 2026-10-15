@@ -179,15 +179,25 @@ func TestOpenSSLSupportMessages(t *testing.T) {
 // opensslMajorVersion returns the major version of the openssl binary in PATH.
 func opensslMajorVersion(t *testing.T) int {
 	t.Helper()
+	major, _ := opensslVersion(t)
+	return major
+}
+
+// opensslVersion returns the major and minor version of the openssl binary in PATH.
+func opensslVersion(t *testing.T) (int, int) {
+	t.Helper()
 	out, err := exec.Command("openssl", "version").Output()
 	require.NoError(t, err)
 	// The output starts with "OpenSSL 3.5.6 7 Apr 2026".
 	fields := strings.Fields(string(out))
 	require.GreaterOrEqual(t, len(fields), 2, "openssl version output %q", out)
-	major, _, _ := strings.Cut(fields[1], ".")
-	n, err := strconv.Atoi(major)
+	parts := strings.SplitN(fields[1], ".", 3)
+	require.GreaterOrEqual(t, len(parts), 2, "openssl version output %q", out)
+	major, err := strconv.Atoi(parts[0])
 	require.NoError(t, err, "openssl version output %q", out)
-	return n
+	minor, err := strconv.Atoi(parts[1])
+	require.NoError(t, err, "openssl version output %q", out)
+	return major, minor
 }
 
 // supportCA answers general messages and authenticates its one end entity.

@@ -92,17 +92,21 @@ func (c *encryptionCA) recorded() ([]server.ConfirmStatus, []server.POPMethod) {
 
 // RFC 9810 §5.2.8.3.2: OpenSSL requests a certificate for a key that cannot
 // sign with -popo 2, decrypts the encrypted certificate and proves possession
-// by confirming its hash.
+// by confirming its hash. OpenSSL sends pvno 2, so an RSA certificate comes
+// back as the EncryptedValue of CMP version 2 and other keys as EnvelopedData.
 func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 	if _, err := exec.LookPath("openssl"); err != nil {
 		t.Skip("openssl not found in PATH, skipping OpenSSL integration test")
 	}
-	major := opensslMajorVersion(t)
+	major, minor := opensslVersion(t)
 	cases := []struct {
 		name    string
 		genpkey []string
 		// mlkem keys need ML-KEM support in CMS, which OpenSSL has from 4.0.
 		mlkem bool
+		// envelopedData keys get the certificate in EnvelopedData, which OpenSSL
+		// 3.0 and 3.2 cannot parse in a CMP message. 3.5 can.
+		envelopedData bool
 		// options are additional openssl cmp options.
 		options []string
 		// confirmed is false when the client sends no certConf.
@@ -111,7 +115,7 @@ func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 		{name: "ML-KEM-768", genpkey: []string{"-algorithm", "ML-KEM-768"}, mlkem: true},
 		{name: "ML-KEM-1024", genpkey: []string{"-algorithm", "ML-KEM-1024"}, mlkem: true},
 		{name: "RSA", genpkey: []string{"-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"}},
-		{name: "EC P-256", genpkey: []string{"-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"}},
+		{name: "EC P-256", genpkey: []string{"-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"}, envelopedData: true},
 		// The server refuses implicit confirmation, so the client still sends certConf.
 		{name: "ML-KEM-768 implicit confirm requested", genpkey: []string{"-algorithm", "ML-KEM-768"}, mlkem: true, options: []string{"-implicit_confirm"}},
 		// Without certConf the certificate expires unconfirmed.
@@ -121,6 +125,9 @@ func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.mlkem && major < 4 {
 				t.Skip("ML-KEM in CMS needs OpenSSL 4.0 or newer")
+			}
+			if tc.envelopedData && major == 3 && minor < 5 {
+				t.Skip("an encrypted certificate in EnvelopedData needs OpenSSL 3.5 or newer")
 			}
 			dir := t.TempDir()
 			ca := &certyaml.Certificate{Subject: "cn=openssl-encryption-ca"}
@@ -141,6 +148,7 @@ func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 			caFile := filepath.Join(dir, "ca.pem")
 			writeCertPEM(t, ca, caFile)
 			certOut := filepath.Join(dir, "issued.pem")
+			ipFile := filepath.Join(dir, "ip.der")
 			args := append([]string{
 				"-cmd", "ir",
 				"-server", strings.TrimPrefix(ts.URL, "http://"),
@@ -152,9 +160,11 @@ func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 				"-subject", "/CN=openssl-" + strings.ReplaceAll(tc.name, " ", "-"),
 				"-out_trusted", caFile,
 				"-certout", certOut,
+				"-rspout", ipFile + "," + filepath.Join(dir, "pkiconf.der"),
 			}, tc.options...)
 			_, err := runOpenSSLCMPClient(t, args...)
 			require.NoError(t, err, "openssl cmp ir with -popo 2")
+			assertEncryptedForm(t, ipFile, tc.name == "RSA")
 
 			pemBytes, err := os.ReadFile(certOut)
 			require.NoError(t, err)
@@ -179,4 +189,24 @@ func TestOpenSSLClientEncryptedCertificatePOP(t *testing.T) {
 			assert.Equal(t, []server.POPMethod{server.POPEncryptedCertificate, server.POPEncryptedCertificate}, methods)
 		})
 	}
+}
+
+// assertEncryptedForm checks that the ip in file carries an EncryptedValue at
+// pvno 2 when value is set, and EnvelopedData at pvno 3 otherwise.
+func assertEncryptedForm(t *testing.T, file string, value bool) {
+	t.Helper()
+	der, err := os.ReadFile(file)
+	require.NoError(t, err)
+	msg, err := pkicmp.ParsePKIMessage(der)
+	require.NoError(t, err)
+	ip, err := msg.Body.IP()
+	require.NoError(t, err)
+	encrypted := ip.Response[0].CertifiedKeyPair.CertOrEncCert
+	if value {
+		assert.NotNil(t, encrypted.EncryptedValueCertificate(), "EncryptedValue")
+		assert.Equal(t, pkicmp.PVNO2, msg.Header.PVNO)
+		return
+	}
+	assert.NotNil(t, encrypted.EncryptedCertificate(), "EnvelopedData")
+	assert.Equal(t, pkicmp.PVNO3, msg.Header.PVNO)
 }
