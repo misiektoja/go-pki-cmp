@@ -189,7 +189,8 @@ proved anything, so the CA should publish it only after `ConfirmAccepted` and re
 `ConfirmExpired` or `ConfirmRejected`. `server.POPMethodFromContext` tells the CA which method a
 request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another way to sign such a
 certificate. A CMP version 2 request for an RSA key gets its certificate in the older EncryptedValue
-format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get.
+format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get. A Bouncy Castle
+client must send version 3 for an RSA key, because its `CertificateResponse` reads only EnvelopedData.
 
 Then serve it:
 
