@@ -238,9 +238,14 @@ func decryptIssued(t *testing.T, resp *pkicmp.PKIMessage, key popKey) *x509.Cert
 	ckp := rep.Response[0].CertifiedKeyPair
 	require.NotNil(t, ckp)
 	assert.Nil(t, ckp.CertOrEncCert.Certificate, "the certificate must not travel in plaintext")
-	envelope := ckp.CertOrEncCert.EncryptedCertificate()
-	require.NotNil(t, envelope)
-	der, err := cms.Decrypt(envelope, key.priv)
+	var der []byte
+	if value := ckp.CertOrEncCert.EncryptedValueCertificate(); value != nil {
+		der, err = cms.DecryptEncryptedValue(value, key.priv)
+	} else {
+		envelope := ckp.CertOrEncCert.EncryptedCertificate()
+		require.NotNil(t, envelope)
+		der, err = cms.Decrypt(envelope, key.priv)
+	}
 	require.NoError(t, err)
 	cert, err := x509.ParseCertificate(der)
 	require.NoError(t, err)
@@ -248,6 +253,22 @@ func decryptIssued(t *testing.T, resp *pkicmp.PKIMessage, key popKey) *x509.Cert
 	require.NoError(t, err)
 	assert.True(t, pkicmp.PublicKeysEqual(pub, key.pub), "the certificate certifies the requested key")
 	return cert
+}
+
+// encryptedForm names the EncryptedKey choice that carries the certificate of the ip resp.
+func encryptedForm(t *testing.T, resp *pkicmp.PKIMessage) string {
+	t.Helper()
+	rep, err := resp.Body.IP()
+	require.NoError(t, err)
+	certOrEncCert := rep.Response[0].CertifiedKeyPair.CertOrEncCert
+	switch {
+	case certOrEncCert.EncryptedValueCertificate() != nil:
+		return "EncryptedValue"
+	case certOrEncCert.EncryptedCertificate() != nil:
+		return "EnvelopedData"
+	default:
+		return "plaintext"
+	}
 }
 
 // answerChallenge decrypts the popdecc resp for key, checks its witness and sender, and returns the popdecr.
@@ -268,35 +289,53 @@ func answerChallenge(t *testing.T, resp *pkicmp.PKIMessage, key popKey) *pkicmp.
 	return followUp(pkicmp.NewPopDecRBody(&pkicmp.POPODecKeyRespContent{r.Int}), resp)
 }
 
+// The certificate is encrypted for its key and confirmed by the certConf. A
+// pvno 2 request for an RSA key gets the EncryptedValue of CMP version 2.
+// EnvelopedData is cmp2021 syntax and raises the response to pvno 3, which is
+// the only form other keys can take.
 func TestEncryptedCertificatePOP(t *testing.T) {
 	secret := []byte("encrypted-certificate-pop")
-	for _, key := range popKeys(t) {
-		t.Run(key.name, func(t *testing.T) {
-			ca := newPOPCA(t)
-			ts := httptest.NewServer(server.NewCAServer(ca, server.LightweightPolicy(),
-				server.WithSecretLookup(&staticMACLookup{secret: secret}),
-				server.WithEncryptedCertificatePOP(),
-				server.WithImplicitConfirm(),
-			))
-			defer ts.Close()
-
-			// Implicit confirmation is asked for and allowed, but the certConf is the proof.
-			ir := indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, true)
-			ip := exchange(t, ts, ir, secret)
-			cert := decryptIssued(t, ip, key)
-			assert.False(t, grantsImplicit(ip), "an encrypted certificate needs an explicit certConf")
-			assert.Equal(t, pkicmp.PVNO3, ip.Header.PVNO)
-
-			methods, confirmations := ca.recorded()
-			assert.Equal(t, []server.POPMethod{server.POPEncryptedCertificate}, methods)
-			assert.Empty(t, confirmations, "nothing is confirmed before the certConf")
-
-			conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
-			require.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type, "%+v", conf.Body.Type)
-			_, confirmations = ca.recorded()
-			assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
-		})
+	for _, pvno := range []int{pkicmp.PVNO2, pkicmp.PVNO3} {
+		for _, key := range popKeys(t) {
+			t.Run(fmt.Sprintf("pvno %d/%s", pvno, key.name), func(t *testing.T) {
+				testEncryptedCertificatePOP(t, secret, key, pvno)
+			})
+		}
 	}
+}
+
+// testEncryptedCertificatePOP enrolls key with an encrypted certificate in a request of version pvno.
+func testEncryptedCertificatePOP(t *testing.T, secret []byte, key popKey, pvno int) {
+	ca := newPOPCA(t)
+	ts := httptest.NewServer(server.NewCAServer(ca, server.LightweightPolicy(),
+		server.WithSecretLookup(&staticMACLookup{secret: secret}),
+		server.WithEncryptedCertificatePOP(),
+		server.WithImplicitConfirm(),
+	))
+	defer ts.Close()
+
+	// Implicit confirmation is asked for and allowed, but the certConf is the proof.
+	ir := indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, true)
+	ir.Header.PVNO = pvno
+	ip := exchange(t, ts, ir, secret)
+	cert := decryptIssued(t, ip, key)
+	assert.False(t, grantsImplicit(ip), "an encrypted certificate needs an explicit certConf")
+	if _, isRSA := key.pub.(*rsa.PublicKey); isRSA && pvno == pkicmp.PVNO2 {
+		assert.Equal(t, "EncryptedValue", encryptedForm(t, ip))
+		assert.Equal(t, pkicmp.PVNO2, ip.Header.PVNO)
+	} else {
+		assert.Equal(t, "EnvelopedData", encryptedForm(t, ip))
+		assert.Equal(t, pkicmp.PVNO3, ip.Header.PVNO)
+	}
+
+	methods, confirmations := ca.recorded()
+	assert.Equal(t, []server.POPMethod{server.POPEncryptedCertificate}, methods)
+	assert.Empty(t, confirmations, "nothing is confirmed before the certConf")
+
+	conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
+	require.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type, "%+v", conf.Body.Type)
+	_, confirmations = ca.recorded()
+	assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
 }
 
 // A wrong hash fails the proof and keeps the transaction, so the certificate
@@ -329,29 +368,41 @@ func TestEncryptedCertificateWrongHash(t *testing.T) {
 	assert.Equal(t, []popConfirmation{{server.ConfirmExpired, server.POPEncryptedCertificate}}, confirmations)
 }
 
-// A waiting request delivers the encrypted certificate on the poll that collects it.
+// A waiting request delivers the encrypted certificate on the poll that
+// collects it, in the form the version of the pollReq allows.
 func TestEncryptedCertificatePOPAfterPolling(t *testing.T) {
 	secret := []byte("encrypted-certificate-poll")
-	key := popKeys(t)[0]
-	ca := newPOPCA(t)
-	ca.delay = true
-	ts := httptest.NewServer(server.NewCAServer(ca, server.LightweightPolicy(),
-		server.WithSecretLookup(&staticMACLookup{secret: secret}),
-		server.WithEncryptedCertificatePOP(),
-	))
-	defer ts.Close()
+	keys := popKeys(t)
+	for _, tc := range []struct {
+		key  popKey
+		form string
+	}{
+		{keys[0], "EnvelopedData"},
+		{keys[2], "EncryptedValue"},
+	} {
+		t.Run(tc.key.name, func(t *testing.T) {
+			ca := newPOPCA(t)
+			ca.delay = true
+			ts := httptest.NewServer(server.NewCAServer(ca, server.LightweightPolicy(),
+				server.WithSecretLookup(&staticMACLookup{secret: secret}),
+				server.WithEncryptedCertificatePOP(),
+			))
+			defer ts.Close()
 
-	waiting := exchange(t, ts, indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, false), secret)
-	require.Equal(t, pkicmp.StatusWaiting, statusInfoOf(t, waiting).Status)
+			waiting := exchange(t, ts, indirectPOPRequest(t, tc.key, pkicmp.SubsequentMessageEncrCert, false), secret)
+			require.Equal(t, pkicmp.StatusWaiting, statusInfoOf(t, waiting).Status)
 
-	ip := exchange(t, ts, followUp(pkicmp.NewPollReqBody(&pkicmp.PollReqContent{0}), waiting), secret)
-	cert := decryptIssued(t, ip, key)
-	conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
-	require.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type)
+			ip := exchange(t, ts, followUp(pkicmp.NewPollReqBody(&pkicmp.PollReqContent{0}), waiting), secret)
+			cert := decryptIssued(t, ip, tc.key)
+			assert.Equal(t, tc.form, encryptedForm(t, ip))
+			conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
+			require.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type)
 
-	methods, confirmations := ca.recorded()
-	assert.Equal(t, []server.POPMethod{server.POPEncryptedCertificate, server.POPEncryptedCertificate}, methods)
-	assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
+			methods, confirmations := ca.recorded()
+			assert.Equal(t, []server.POPMethod{server.POPEncryptedCertificate, server.POPEncryptedCertificate}, methods)
+			assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
+		})
+	}
 }
 
 func TestChallengeResponsePOP(t *testing.T) {
