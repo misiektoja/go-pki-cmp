@@ -302,7 +302,7 @@ func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *
 		protectionParams: sender.protectionParams,
 	}
 	if req.method == POPEncryptedCertificate && resp.Certificate != nil && grantsCertificate(r.status) {
-		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO)
+		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO, s.cfg.envelopedDataForVersion2)
 		if err != nil {
 			// The certificate exists but cannot reach its holder, so the CA hears that it was not accepted.
 			s.setCompleted(credID, txnID)

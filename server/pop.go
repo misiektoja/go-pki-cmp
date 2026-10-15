@@ -137,13 +137,14 @@ func encryptableKey(pub crypto.PublicKey) bool {
 // cmp2021 syntax and raises the response to pvno 3. A pvno 2 request for an
 // RSA key gets the EncryptedValue of CMP version 2 instead, which RFC 9810
 // §5.2.2 keeps for backward compatibility, so that a version 2 client can read
-// the response. Other keys have no EncryptedValue form.
-func encryptCertificate(cert *x509.Certificate, pvno int) (pkicmp.CertOrEncCert, error) {
+// the response, unless envelopedOnly is set. Other keys have no EncryptedValue
+// form.
+func encryptCertificate(cert *x509.Certificate, pvno int, envelopedOnly bool) (pkicmp.CertOrEncCert, error) {
 	pub := certificatePublicKey(cert)
 	if pub == nil {
 		return pkicmp.CertOrEncCert{}, errors.New("cannot parse the public key of the issued certificate")
 	}
-	if rsaKey, ok := pub.(*rsa.PublicKey); ok && pvno == pkicmp.PVNO2 {
+	if rsaKey, ok := pub.(*rsa.PublicKey); ok && pvno == pkicmp.PVNO2 && !envelopedOnly {
 		value, err := cms.NewEncryptedValue(cert.Raw, rsaKey)
 		return pkicmp.NewEncryptedValueCertificate(value), err
 	}

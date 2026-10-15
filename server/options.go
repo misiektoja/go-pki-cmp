@@ -81,6 +81,7 @@ type serverConfig struct {
 	macRevocation                bool
 	signatureProtectionPOP       bool
 	encryptedCertPOP             bool
+	envelopedDataForVersion2     bool
 	challengeResponsePOP         bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
@@ -375,7 +376,8 @@ func WithSignatureProtectionPOP() Option {
 // 3.0 and 3.2 cannot parse EnvelopedData there. Other keys have no EncryptedValue
 // form. A client that sends version 2 but reads only EnvelopedData, such as one
 // built on the CertificateResponse class of Bouncy Castle 1.86, must send version
-// 3 for an RSA key, as RFC 9810 §7 asks of a client that expects cmp2021 syntax.
+// 3 for an RSA key, as RFC 9810 §7 asks of a client that expects cmp2021 syntax,
+// or the server must use [WithEnvelopedDataForVersion2].
 //
 // Implicit confirmation is never granted to such a request. A certConf with
 // another hash is refused with badPOP. Until a matching certConf arrives the
@@ -390,6 +392,18 @@ func WithSignatureProtectionPOP() Option {
 func WithEncryptedCertificatePOP() Option {
 	return func(c *serverConfig) {
 		c.encryptedCertPOP = true
+	}
+}
+
+// WithEnvelopedDataForVersion2 sends EnvelopedData and a version 3 response to a
+// version 2 request for an RSA key that uses [WithEncryptedCertificatePOP], as
+// for every other key, instead of the EncryptedValue of CMP version 2. Use it
+// for clients that send version 2 but read only EnvelopedData, such as those
+// built on the CertificateResponse class of Bouncy Castle 1.86. OpenSSL 3.0 and
+// 3.2 clients cannot read the certificate in such a response.
+func WithEnvelopedDataForVersion2() Option {
+	return func(c *serverConfig) {
+		c.envelopedDataForVersion2 = true
 	}
 }
 
