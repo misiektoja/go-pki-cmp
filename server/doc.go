@@ -34,6 +34,10 @@
 // A CA that means to decide an extension itself must drop it from
 // ExtraExtensions first, as the example below does for keyUsage.
 //
+// A CA that leaves out or changes a requested extension may set
+// [Response].GrantedWithMods, so the client receives grantedWithMods instead of
+// accepted, and explain the change in [Response].StatusText.
+//
 // The subject is rebuilt from [crypto/x509/pkix.Name], which drops attribute
 // types it does not model, such as domainComponent and emailAddress. It may
 // also change the order and string types of the rest. [WithRawSubject] also sets
