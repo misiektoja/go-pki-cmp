@@ -80,6 +80,8 @@ type serverConfig struct {
 	optionalRevocationIssuer     bool
 	macRevocation                bool
 	signatureProtectionPOP       bool
+	encryptedCertPOP             bool
+	challengeResponsePOP         bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
 	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
@@ -196,6 +198,9 @@ func WithImplicitConfirm() Option {
 //   - a certConf with more than one CertStatus (§4.1.1),
 //   - a CRMF request whose signature proof of possession carries poposkInput
 //     (§4.1.1), even with [WithPoposkInputVariants].
+//
+// It also limits [WithEncryptedCertificatePOP] and [WithChallengeResponsePOP]
+// to keys that cannot sign (§4.1.1).
 //
 // It also overrides the options that relax RFC 9483 rules:
 // [WithOptionalCertConfRecipNonce], [WithPoposkInputVariants],
@@ -353,6 +358,48 @@ func WithMACRevocation() Option {
 func WithSignatureProtectionPOP() Option {
 	return func(c *serverConfig) {
 		c.signatureProtectionPOP = true
+	}
+}
+
+// WithEncryptedCertificatePOP accepts the encrypted certificate method of proof
+// of possession (RFC 9810 §5.2.8.3.2): a request whose popo is keyEncipherment
+// or keyAgreement with subsequentMessage encrCert. The server returns the
+// certificate in an EnvelopedData for the requested key, and the client proves
+// possession by sending certConf with the hash of the decrypted certificate.
+// A request with a key the server cannot encrypt for is refused with badAlg.
+// See the cms package for the supported keys.
+//
+// Implicit confirmation is never granted to such a request. A certConf with
+// another hash is refused with badPOP. Until a matching certConf arrives the
+// certificate must be treated as undelivered: [CA.IssueCertificate] and
+// [CertificateConfirmer.ConfirmCertificate] see the method through
+// [POPMethodFromContext], and a CA should not publish the certificate before
+// [ConfirmAccepted] and should revoke it on [ConfirmExpired] or [ConfirmRejected]
+// (RFC 9810 §5.2.8.3.2 and §8.11).
+//
+// RFC 9483 §4.1.1 requires a signature proof for a key that can sign. Under
+// [WithStrictProfileValidation] only an ML-KEM key may use this method.
+func WithEncryptedCertificatePOP() Option {
+	return func(c *serverConfig) {
+		c.encryptedCertPOP = true
+	}
+}
+
+// WithChallengeResponsePOP accepts the challenge-response method of proof of
+// possession (RFC 9810 §5.2.8.3.3): a request whose popo is keyEncipherment or
+// keyAgreement with subsequentMessage challengeResp. Before the request reaches
+// the [Handler], the server answers it with a popdecc that encrypts a random
+// number for the requested key. A popdecr with that number continues the request
+// as if it had just arrived, and the response to the popdecr is the ip, cp or kup.
+// A wrong number ends the transaction with badPOP, and the certificate is never
+// created.
+//
+// The challenge waits for its answer as long as an issued certificate waits for
+// certConf, see [WithConfirmWaitTime]. The same profile restriction as for
+// [WithEncryptedCertificatePOP] applies.
+func WithChallengeResponsePOP() Option {
+	return func(c *serverConfig) {
+		c.challengeResponsePOP = true
 	}
 }
 

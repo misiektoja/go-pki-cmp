@@ -10,8 +10,6 @@ import (
 	"math/big"
 	"reflect"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -289,10 +287,9 @@ func equalRDNSequences(a, b pkix.RDNSequence) bool {
 
 // samePublicKey reports whether a DER SubjectPublicKeyInfo holds the same key as pub.
 func samePublicKey(spki []byte, pub crypto.PublicKey) bool {
-	parsed, err := compositex509.ParsePKIXPublicKey(spki)
+	parsed, err := pkicmp.ParsePublicKey(spki)
 	if err != nil {
 		return false
 	}
-	comparable, ok := parsed.(interface{ Equal(crypto.PublicKey) bool })
-	return ok && comparable.Equal(pub)
+	return pkicmp.PublicKeysEqual(parsed, pub)
 }

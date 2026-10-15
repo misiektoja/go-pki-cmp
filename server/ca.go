@@ -11,8 +11,6 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -35,7 +33,12 @@ type CA interface {
 	// §4.2.1.6 requires. A CA that supplies a subject should clear that flag.
 	//
 	// A composite ML-DSA subject key arrives as *compositemldsa.PublicKey,
-	// which only compositex509.CreateCertificate can certify.
+	// which only compositex509.CreateCertificate can certify. An ML-KEM key
+	// arrives as *mlkem.EncapsulationKey768 or *mlkem.EncapsulationKey1024,
+	// which crypto/x509 cannot certify. [pkicmp.MarshalPublicKey] encodes its
+	// SubjectPublicKeyInfo (RFC 9935), whose only allowed key usage is
+	// keyEncipherment. [POPMethodFromContext] tells how the request proved
+	// possession.
 	IssueCertificate(
 		ctx context.Context, reqType RequestType, template *x509.Certificate, sender *SenderIdentity,
 	) (*Response, error)
@@ -141,6 +144,11 @@ type policyConfig struct {
 	optionalRevocationIssuer bool
 	macRevocation            bool
 	signatureProtectionPOP   bool
+	encryptedCertPOP         bool
+	challengeResponsePOP     bool
+	// indirectPOPForSigningKeys lets a key that can sign use an indirect method,
+	// which RFC 9483 §4.1.1 does not allow.
+	indirectPOPForSigningKeys bool
 }
 
 // contextWithPolicyConfig attaches the request check settings to ctx.
@@ -262,7 +270,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 			return nil, rejection(pkicmp.FailBadDataFormat, "")
 		}
 		// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
-		pubKey, err = compositex509.ParsePKIXPublicKey(csr.RawSubjectPublicKeyInfo)
+		pubKey, err = pkicmp.ParsePublicKey(csr.RawSubjectPublicKeyInfo)
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
 		}
@@ -283,7 +291,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 	}
 
 	// Compute SubjectKeyIdentifier from public key per RFC 5280 §4.2.1.2.
-	pubDER, err := compositex509.MarshalPKIXPublicKey(pubKey)
+	pubDER, err := pkicmp.MarshalPublicKey(pubKey)
 	if err != nil {
 		return nil, rejection(pkicmp.FailBadAlg, err.Error())
 	}

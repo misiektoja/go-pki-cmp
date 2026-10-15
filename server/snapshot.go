@@ -40,6 +40,11 @@ type savedTransaction struct {
 	CertReqID *int64 `json:",omitempty"`
 	// ImplicitConfirm records that a waiting request asked for implicit confirmation.
 	ImplicitConfirm bool `json:",omitempty"`
+	// POPMethod is absent for a signature proof of possession and from snapshots taken before it was recorded.
+	POPMethod POPMethod `json:",omitempty"`
+	// ChallengeRequest and ChallengeAnswer hold a request that waits for its popdecr.
+	ChallengeRequest []byte `json:",omitempty"`
+	ChallengeAnswer  []byte `json:",omitempty"`
 }
 
 // SnapshotTransactions encodes trusted recovery state while the caller excludes concurrent requests and cleanup.
@@ -63,6 +68,9 @@ func (s *Server) SnapshotTransactions() ([]byte, error) {
 			ProtectionAlgorithm: entry.protectionAlgorithm,
 			CertReqID:           entry.certReqID,
 			ImplicitConfirm:     entry.implicitConfirm,
+			POPMethod:           entry.popMethod,
+			ChallengeRequest:    entry.challengeRequest,
+			ChallengeAnswer:     entry.challengeAnswer,
 		}
 		if entry.cert != nil {
 			saved.Certificate = entry.cert.Raw
@@ -113,9 +121,8 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 	}
 	next := newTransactionTracker(s.maxTransactions, s.maxTransactionsPerCredential)
 	for _, saved := range snapshot.Entries {
-		if saved.State < stateActive || saved.State > stateCompleted ||
-			saved.LastActivity.IsZero() || saved.LastActivity.After(time.Now().Add(time.Minute)) {
-			return errors.New("invalid saved transaction state or timestamp")
+		if err := validateSaved(&saved); err != nil {
+			return err
 		}
 		entry := &transactionEntry{
 			state:               saved.State,
@@ -131,6 +138,9 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 			protectionAlgorithm: saved.ProtectionAlgorithm,
 			certReqID:           saved.CertReqID,
 			implicitConfirm:     saved.ImplicitConfirm,
+			popMethod:           saved.POPMethod,
+			challengeRequest:    saved.ChallengeRequest,
+			challengeAnswer:     saved.ChallengeAnswer,
 		}
 		if len(saved.Certificate) > 0 {
 			cert, err := x509.ParseCertificate(saved.Certificate)
@@ -138,14 +148,6 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 				return err
 			}
 			entry.cert = cert
-		}
-		// The client's senderNonce is not checked: RFC 4210 makes it optional and
-		// only WithStrictProfileValidation requires 128 bits.
-		if saved.State == stateIssued && (entry.cert == nil || len(entry.issuedSenderNonce) < 16) {
-			return errors.New("issued transaction is incomplete")
-		}
-		if saved.State == statePending && (saved.PollRef == "" || len(saved.SenderNonce) < 16 || saved.CheckAfter < 0) {
-			return errors.New("pending transaction is incomplete")
 		}
 		if saved.ProtectionAlgorithm != nil {
 			entry.protectionParams = pkicmp.WithProtectionAlgorithm(saved.ProtectionAlgorithm)
@@ -171,6 +173,37 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 		next.count.Add(1)
 	}
 	s.transactionTracker = next
+	return nil
+}
+
+// validateSaved checks that a saved transaction has a known state and holds what that state needs.
+func validateSaved(saved *savedTransaction) error {
+	if saved.State < stateActive || saved.State > stateChallenged ||
+		saved.LastActivity.IsZero() || saved.LastActivity.After(time.Now().Add(time.Minute)) {
+		return errors.New("invalid saved transaction state or timestamp")
+	}
+	if saved.POPMethod < POPSignature || saved.POPMethod > POPChallengeResponse {
+		return errors.New("invalid saved proof of possession method")
+	}
+	switch saved.State {
+	case stateIssued:
+		// The client's senderNonce is not checked: RFC 4210 makes it optional and
+		// only WithStrictProfileValidation requires 128 bits.
+		if len(saved.Certificate) == 0 || len(saved.IssuedSenderNonce) < 16 {
+			return errors.New("issued transaction is incomplete")
+		}
+	case statePending:
+		if saved.PollRef == "" || len(saved.SenderNonce) < 16 || saved.CheckAfter < 0 {
+			return errors.New("pending transaction is incomplete")
+		}
+	case stateChallenged:
+		if saved.POPMethod != POPChallengeResponse || saved.CertReqID == nil || len(saved.ChallengeRequest) == 0 ||
+			len(saved.ChallengeAnswer) != challengeSize || len(saved.SenderNonce) < 16 {
+			return errors.New("challenged transaction is incomplete")
+		}
+	case stateActive, stateCompleted:
+		// Neither state keeps anything a later message needs.
+	}
 	return nil
 }
 

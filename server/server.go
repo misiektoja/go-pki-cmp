@@ -246,6 +246,8 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		resp = s.handleCertConf(ctx, msg, sender)
 	case pkicmp.BodyTypePollReq:
 		resp = s.handlePollReq(ctx, msg, sender)
+	case pkicmp.BodyTypePopDecR:
+		resp = s.handlePopDecR(ctx, msg, sender)
 	case pkicmp.BodyTypeRR:
 		resp = s.handleRevocation(ctx, msg, sender)
 	case pkicmp.BodyTypeGenM:
@@ -270,15 +272,18 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 func (s *Server) policyConfig() policyConfig {
 	relaxed := !s.cfg.strictProfile
 	return policyConfig{
-		allowSHA1Signatures:      s.cfg.allowSHA1Signatures,
-		allowPoposkInputVariants: s.cfg.allowPoposkInputVariants && relaxed,
-		minMACIterationCount:     s.cfg.minMACIterationCount,
-		maxMACIterationCount:     s.cfg.maxMACIterationCount,
-		optionalSubject:          s.cfg.optionalSubject && relaxed,
-		optionalRevocationReason: s.cfg.optionalRevocationReason && relaxed,
-		optionalRevocationIssuer: s.cfg.optionalRevocationIssuer && relaxed,
-		macRevocation:            s.cfg.macRevocation && relaxed,
-		signatureProtectionPOP:   s.cfg.signatureProtectionPOP && relaxed,
+		allowSHA1Signatures:       s.cfg.allowSHA1Signatures,
+		allowPoposkInputVariants:  s.cfg.allowPoposkInputVariants && relaxed,
+		minMACIterationCount:      s.cfg.minMACIterationCount,
+		maxMACIterationCount:      s.cfg.maxMACIterationCount,
+		optionalSubject:           s.cfg.optionalSubject && relaxed,
+		optionalRevocationReason:  s.cfg.optionalRevocationReason && relaxed,
+		optionalRevocationIssuer:  s.cfg.optionalRevocationIssuer && relaxed,
+		macRevocation:             s.cfg.macRevocation && relaxed,
+		signatureProtectionPOP:    s.cfg.signatureProtectionPOP && relaxed,
+		encryptedCertPOP:          s.cfg.encryptedCertPOP,
+		challengeResponsePOP:      s.cfg.challengeResponsePOP,
+		indirectPOPForSigningKeys: relaxed,
 	}
 }
 
@@ -298,7 +303,8 @@ func (s *Server) CleanupExpired() {
 	expired := s.transactionTracker.cleanupExpired(s.cfg.confirmWait, s.cfg.waitingLifetime)
 	if s.cfg.confirmer != nil {
 		for _, e := range expired.issued {
-			_ = s.cfg.confirmer.ConfirmCertificate(context.Background(), e.cert, ConfirmExpired, e.issueRef)
+			ctx := contextWithPOPMethod(context.Background(), e.popMethod)
+			_ = s.cfg.confirmer.ConfirmCertificate(ctx, e.cert, ConfirmExpired, e.issueRef)
 		}
 	}
 	if s.cfg.waitingExpirer != nil {
