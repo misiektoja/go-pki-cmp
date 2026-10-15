@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -162,7 +161,7 @@ func (m *CertReqMsg) PublicKey() (any, error) {
 	if len(m.CertReq.CertTemplate.PublicKey) == 0 {
 		return nil, nil
 	}
-	return compositex509.ParsePKIXPublicKey(m.CertReq.CertTemplate.PublicKey)
+	return ParsePublicKey(m.CertReq.CertTemplate.PublicKey)
 }
 
 // Extensions parses and returns the extensions from the CertTemplate.
