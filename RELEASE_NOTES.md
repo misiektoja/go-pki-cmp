@@ -2,12 +2,14 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.5.1 - TBD
+## v0.6.0 - TBD
 
-Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. CAs can answer grantedWithMods when they change a request. CAs can hold enrollment and revocation requests until someone decides them, for example an operator who approves or rejects them. The example mock CA enrolls composite ML-DSA keys.
+Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. CAs can answer grantedWithMods when they change a request. CAs can hold enrollment and revocation requests until someone decides them, for example an operator who approves or rejects them. The example mock CA enrolls composite ML-DSA keys. Keys that cannot sign, such as ML-KEM-768 and ML-KEM-1024 keys, can be enrolled by proving possession through decryption, with the encrypted certificate or the challenge-response method of RFC 9810.
 
 ### `pkicmp`
 
+* **Proof of possession by decryption.** **`NewKeyAgreementPOP`** joins `NewKeyEnciphermentPOP`, and both take `SubsequentMessageEncrCert` or `SubsequentMessageChallengeResp` as the method. `NewEncryptedCertificate` and `CertOrEncCert.EncryptedCertificate` carry an encrypted certificate. `NewPopDecCBody`, `NewPopDecRBody`, `PKIBody.PopDecC` and `PKIBody.PopDecR` build and read the popdecc challenge and the popdecr answer. `ChallengeWitness`, `Challenge.VerifyWitness`, `Rand` and `ParseRand` create and check a challenge. A challenge whose encryptedRand is implicitly tagged, against the RFC 9810 ASN.1 module, is also accepted.
+* **ML-KEM public keys.** `ParsePublicKey` returns ML-KEM-768 and ML-KEM-1024 keys as `*mlkem.EncapsulationKey768` and `*mlkem.EncapsulationKey1024` and refuses ML-KEM-512 with `ErrMLKEM512`. `MarshalPublicKey`, `IsKEMKey` and `PublicKeysEqual` work with them. Certificate requests read their public key through `ParsePublicKey`.
 * **`ReasonUntrustedSigner`** reports a signature-protected message whose protection certificate does not chain to the trusted CAs. The error keeps the chain error. Such a message previously failed with `ReasonSignatureFailed`, so code that checks for that reason no longer sees it in this case.
 * **Verification reports the failure of the certificate that has the sender's name.** A response that carries its CA certificates without a senderKID, as Nokia NCM sends them, used to fail with `ReasonSenderMismatch` when its signature was damaged or its signer was untrusted or not allowed to sign. It now fails with `ReasonSignatureFailed`, `ReasonUntrustedSigner` or `ReasonKeyUsageNotPermitted`. `ReasonSenderMismatch` now means that no candidate certificate has the sender's name.
 * **`VerifyOptions.CurrentTime`** sets the time at which the protection certificate and its chain must be valid. Use it to check a recorded message at the time it was received, after its signer certificate expired. The zero value keeps the time of the call. Do not take the time from the message itself when the result decides whether to act on that message, because the sender chooses its `messageTime`.
@@ -15,15 +17,23 @@ Verification reports why the sender's certificate was refused, including a signe
 
 ### `client`
 
+* **`SendIRWithIndirectPOP`, `SendCRWithIndirectPOP` and `SendKURWithIndirectPOP`** enroll a key that cannot sign. They take the private key and the method, `EncryptedCertificate` or `ChallengeResponse`. Accepted keys are ML-KEM-768 and ML-KEM-1024, RSA and elliptic curve keys on P-256, P-384 and P-521. The client decrypts the certificate and confirms its hash, or answers the challenge after it checks the witness and the sender named in it. The CA must support the method. RFC 9483 lets a CA refuse both for a key that can sign. An encrypted certificate sent for a request with a signature proof is refused.
 * **`WithSenderKIDMismatch`** accepts signed responses whose senderKID names none of the candidate signer certificates. It is off by default. Without it, such a response fails with `ReasonSenderKIDMismatch` and the error names `WithServerCerts` and this option, instead of reporting that the response carries no certificate.
 
 ### `server`
 
+* **`WithEncryptedCertificatePOP`** accepts requests that prove possession with the encrypted certificate method. The server encrypts the certificate for the requested key and never grants implicit confirmation. A certConf with the wrong hash is refused with badPOP. The CA should publish the certificate only after `ConfirmAccepted` and revoke it on `ConfirmExpired` or `ConfirmRejected`. **`POPMethodFromContext`** tells the CA how a request proved possession. A key the server cannot encrypt for, such as X25519, is refused with badAlg.
+* **`WithChallengeResponsePOP`** accepts requests that prove possession with a challenge. The server sends a popdecc encrypted for the requested key and passes the request to the CA only after a popdecr returns the right number. A wrong number ends the transaction with badPOP. Without these options, such requests are still refused with badPOP. **`WithStrictProfileValidation`** allows both methods only for keys that cannot sign, as RFC 9483 section 4.1.1 requires.
+* **Snapshots** keep the proof-of-possession method and any challenge waiting for its answer. Earlier versions refuse a snapshot that holds such a challenge.
 * **`Response.GrantedWithMods`** answers an issued certificate with grantedWithMods instead of accepted, for a CA that left out or changed part of the request. **`Response.StatusText`** is sent as the statusString of the issued certificate. Both are off by default, so existing CAs still answer accepted.
 * **Waiting requests end the way immediate ones do.** When `PendingChecker.CheckPending` rejects a request, the client gets the `ip`, `cp` or `kup` it would have got at once, with the request's certReqId, instead of an error message. The final response grants implicit confirmation when the original request asked for it. Waiting and rejected responses no longer grant it. The waiting response carries `WaitingResponse.Reason` as its statusString.
 * **Polling follows RFC 9483 section 4.4 more closely.** A pollReq that arrives before checkAfter gets another pollRep with the time left. It used to fail the request with "polling too frequently". A pollReq must name the waiting request by its certReqId or by -1. Any other value is refused with badRequest.
 * **`WaitingError`** lets a `Revoker` or `RevocationAuthorizer` delay a revocation. The client gets an error message with status waiting, polls and receives the rp once `PendingChecker.CheckPending` decides. A delayed revocation was previously refused with systemFailure.
 * **`WithWaitingLifetime`** sets how long a waiting request stays after its last poll. The default is 24 hours. Waiting requests used to expire with the confirmation wait, 10 seconds by default. **`WaitingExpirer`** tells the CA about each waiting request that `CleanupExpired` removes, and **`WithWaitingExpirer`** sets it for a custom `Handler`.
+
+### `cms`
+
+* **New package** that encrypts and decrypts the CMS EnvelopedData of the encrypted certificate and challenge-response methods. It supports RSA-OAEP key transport, ECDH on P-256, P-384 and P-521 and ML-KEM-768 and ML-KEM-1024 recipients. `Encrypt` uses HKDF with SHA-256 for ML-KEM. `Decrypt` also accepts the KDF2 and KDF3 key derivation that Bouncy Castle uses by default. RSA PKCS #1 v1.5 key transport is refused.
 
 ### `examples/mockserver`
 
