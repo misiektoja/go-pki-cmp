@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/mlkem"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tsaarni/certyaml"
 
 	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/misiektoja/go-pki-cmp/cms"
@@ -142,5 +144,38 @@ func TestEncryptedCertificateForSigningKey(t *testing.T) {
 	creds, err := pkicmp.NewMACCredentials([]byte("secret"))
 	require.NoError(t, err)
 	_, err = client.NewClient(server.URL).SendIR(context.Background(), signer, creds, client.WithTemplateSubject(pkix.Name{CommonName: "test"}))
+	assert.ErrorContains(t, err, "encrypted certificate for a key that signs")
+}
+
+// The client decrypts a certificate sent in the EncryptedValue of CMP version 2,
+// and refuses one for a request that proved possession by signature.
+func TestEncryptedValueCertificate(t *testing.T) {
+	pki := newTestPKI()
+	ee := &certyaml.Certificate{Subject: "cn=rsa-ee", Issuer: pki.ca, KeyType: certyaml.KeyTypeRSA}
+	cert, err := ee.X509Certificate()
+	require.NoError(t, err)
+	key, err := ee.PrivateKey()
+	require.NoError(t, err)
+	value, err := cms.NewEncryptedValue(cert.Raw, key.Public().(*rsa.PublicKey))
+	require.NoError(t, err)
+	reply := func(*pkicmp.PKIMessage) *pkicmp.PKIBody {
+		return pkicmp.NewIPBody(&pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{{
+			Status:           pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
+			CertifiedKeyPair: &pkicmp.CertifiedKeyPair{CertOrEncCert: pkicmp.NewEncryptedValueCertificate(value)},
+		}}})
+	}
+	creds, err := pkicmp.NewMACCredentials([]byte("secret"))
+	require.NoError(t, err)
+	subject := client.WithTemplateSubject(pkix.Name{CommonName: "rsa-ee"})
+
+	server := mockCMPServer(pki, reply, []byte("secret"))
+	defer server.Close()
+	result, err := client.NewClient(server.URL).SendIRWithIndirectPOP(context.Background(), key, client.EncryptedCertificate, creds, subject)
+	require.NoError(t, err)
+	assert.Equal(t, cert.Raw, result.Certificate.Raw)
+
+	signing := mockCMPServer(pki, reply, []byte("secret"))
+	defer signing.Close()
+	_, err = client.NewClient(signing.URL).SendIR(context.Background(), key, creds, subject)
 	assert.ErrorContains(t, err, "encrypted certificate for a key that signs")
 }
