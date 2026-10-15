@@ -14,16 +14,15 @@ import (
 	"slices"
 	"time"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/internal/certpath"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // enroll performs the full CMP enrollment transaction:
-// request → response → [poll] → certConf → pkiConf
-// (RFC 9810 §5.3.1–§5.3.4, Appendix C.4).
-func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRepType pkicmp.BodyType, creds pkicmp.Credentials, opts *requestOptions, requestedKey crypto.PublicKey) (*EnrollResult, error) {
+// request → [popdecc → popdecr] → response → [poll] → certConf → pkiConf
+// (RFC 9810 §5.3.1–§5.3.4, Appendix C.4). proof is the key of a request that
+// proves possession by decryption, and nil for a signature proof.
+func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRepType pkicmp.BodyType, creds pkicmp.Credentials, opts *requestOptions, requestedKey crypto.PublicKey, proof *decryptionProof) (*EnrollResult, error) {
 	certReqIDs, err := answeringCertReqIDs(reqBody)
 	if err != nil {
 		return nil, err
@@ -46,6 +45,22 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		knownSigner = vr.ProtectionCertificate
 	}
 
+	// The delayed request a final response may refer back to is the popdecr when there was a challenge.
+	delayed := msg.Header
+	if resp.Body.Type == pkicmp.BodyTypePopDecC {
+		popdecr, answered, answeredVR, err := c.answerChallenge(ctx, msg, resp, creds, proof, knownSigner)
+		if err != nil {
+			return nil, cmpResp.wrapError(err)
+		}
+		cmpResp, resp, delayed = answered, answered.message, popdecr.Header
+		if answeredVR != nil {
+			vr = answeredVR
+			if vr.ProtectionCertificate != nil {
+				knownSigner = vr.ProtectionCertificate
+			}
+		}
+	}
+
 	if resp.Body.Type == pkicmp.BodyTypeError {
 		return nil, cmpResp.wrapError(parseErrorResponse(resp))
 	}
@@ -63,7 +78,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		if err := checkCertReqID(certResp, certReqIDs); err != nil {
 			return nil, cmpResp.wrapError(err)
 		}
-		cmpResp, vr, err = c.poll(ctx, msg.Header, resp, creds, certResp.CertReqID, knownSigner)
+		cmpResp, vr, err = c.poll(ctx, delayed, resp, creds, certResp.CertReqID, knownSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +96,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, cmpResp.wrapError(certResp.Status.AsError())
 	}
 
-	cert, err := extractCertificate(certResp)
+	cert, err := extractCertificate(certResp, proof)
 	if err != nil {
 		return nil, cmpResp.wrapError(err)
 	}
@@ -523,29 +538,30 @@ func checkIssuedKey(cert *x509.Certificate, requested crypto.PublicKey) error {
 	// this exchange.
 	issuedKey := cert.PublicKey
 	if issuedKey == nil {
-		// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
-		issuedKey, _ = compositex509.ParsePKIXPublicKey(cert.RawSubjectPublicKeyInfo)
+		// crypto/x509 leaves PublicKey nil for composite ML-DSA and ML-KEM keys.
+		issuedKey, _ = pkicmp.ParsePublicKey(cert.RawSubjectPublicKeyInfo)
 	}
-	type publicKeyComparer interface{ Equal(crypto.PublicKey) bool }
-	issued, ok := issuedKey.(publicKeyComparer)
-	if !ok {
-		return &Error{
-			Op: fmt.Sprintf("cannot compare issued certificate public key of type %T with the requested key", issuedKey),
-		}
+	if issuedKey == nil {
+		return &Error{Op: "cannot parse the public key of the issued certificate"}
 	}
-	if !issued.Equal(requested) {
+	if !pkicmp.PublicKeysEqual(issuedKey, requested) {
 		return &Error{Op: "issued certificate does not certify the requested public key"}
 	}
 	return nil
 }
 
-func extractCertificate(resp *pkicmp.CertResponse) (*x509.Certificate, error) {
+// extractCertificate returns the certificate of resp, decrypting an encrypted one with proof.
+func extractCertificate(resp *pkicmp.CertResponse, proof *decryptionProof) (*x509.Certificate, error) {
 	if resp.CertifiedKeyPair == nil {
 		return nil, &Error{Op: "missing certifiedKeyPair in response"}
 	}
-	cert := resp.CertifiedKeyPair.CertOrEncCert.Certificate
+	certOrEncCert := &resp.CertifiedKeyPair.CertOrEncCert
+	if envelope := certOrEncCert.EncryptedCertificate(); envelope != nil {
+		return decryptCertificate(envelope, proof)
+	}
+	cert := certOrEncCert.Certificate
 	if cert == nil {
-		return nil, &Error{Op: "encrypted certificates not yet supported"}
+		return nil, &Error{Op: "unsupported encrypted certificate format"}
 	}
 	return cert.Parse()
 }

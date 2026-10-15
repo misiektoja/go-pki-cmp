@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -33,13 +31,27 @@ func (c *Client) SendKUR(ctx context.Context, newKey crypto.Signer, creds pkicmp
 	return c.sendCRMF(ctx, newKey, creds, pkicmp.BodyTypeKUP, opts)
 }
 
+// sendCRMF requests a certificate for a signing key, which proves possession by signature.
 func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
+	pop := func(m *pkicmp.CertReqMsg) error {
+		if err := m.GeneratePOP(key); err != nil {
+			return &Error{Op: "generate POP", Err: err}
+		}
+		return nil
+	}
+	return c.sendCertRequest(ctx, key.Public(), pop, nil, creds, expectedRepType, opts)
+}
+
+// sendCertRequest requests a certificate for pub in an ir, cr or kur. pop adds
+// the proof of possession to the finished request, and proof is the key that
+// answers an indirect one.
+func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
 	ropts := &requestOptions{}
 	for _, opt := range opts {
 		opt(ropts)
 	}
 
-	pubDER, err := compositex509.MarshalPKIXPublicKey(key.Public())
+	pubDER, err := pkicmp.MarshalPublicKey(pub)
 	if err != nil {
 		return nil, &Error{Op: "marshal public key", Err: err}
 	}
@@ -105,8 +117,8 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 		CertReq: certReq,
 	}
 
-	if err := certReqMsg.GeneratePOP(key); err != nil {
-		return nil, &Error{Op: "generate POP", Err: err}
+	if err := pop(&certReqMsg); err != nil {
+		return nil, err
 	}
 
 	reqs := pkicmp.CertReqMessages{certReqMsg}
@@ -122,7 +134,7 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 		return nil, &Error{Op: fmt.Sprintf("unsupported CRMF expected response type %d", expectedRepType)}
 	}
 
-	return c.enroll(ctx, body, expectedRepType, creds, ropts, key.Public())
+	return c.enroll(ctx, body, expectedRepType, creds, ropts, pub, proof)
 }
 
 // oidSubjectAltName identifies the RFC 5280 §4.2.1.6 subjectAltName extension.
