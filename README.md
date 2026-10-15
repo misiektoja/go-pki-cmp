@@ -33,8 +33,8 @@ CI runs the library against independent CMP implementations:
 * **[EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp)**: the client enrolls and updates certificates.
 * **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)** 3.5 and 4.0: the client
   enrolls, updates, revokes and sends support messages against the mock server. OpenSSL as a client
-  revokes at the server and sends support messages to it. OpenSSL 4.0 also enrolls ML-KEM, RSA and EC
-  keys at the server with the encrypted certificate method (`-popo 2`).
+  revokes at the server and sends support messages to it. It also enrolls RSA and EC keys at the server
+  with the encrypted certificate method (`-popo 2`). OpenSSL 4.0 enrolls ML-KEM keys that way too.
 * **[Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)**:
   the client enrolls, re-enrolls, updates and revokes certificates against a hosted instance on every push to
   `dev` and `main` and once a week.
@@ -188,7 +188,8 @@ that cannot sign. With the encrypted certificate method, the certificate exists 
 proved anything, so the CA should publish it only after `ConfirmAccepted` and revoke it on
 `ConfirmExpired` or `ConfirmRejected`. `server.POPMethodFromContext` tells the CA which method a
 request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another way to sign such a
-certificate.
+certificate. A CMP version 2 request for an RSA key gets its certificate in the older EncryptedValue
+format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get.
 
 Then serve it:
 
