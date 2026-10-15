@@ -103,7 +103,7 @@ func (s *Server) buildCertRepResponseForType(req *pkicmp.PKIMessage, certReqID i
 		Status:    si,
 	}
 
-	if cert != nil && si.Status == pkicmp.StatusAccepted {
+	if cert != nil && grantsCertificate(si) {
 		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{
 			CertOrEncCert: pkicmp.CertOrEncCert{
 				Certificate: &pkicmp.CMPCertificate{Raw: cert.Raw},
@@ -134,7 +134,7 @@ func (s *Server) buildCertRepResponseForType(req *pkicmp.PKIMessage, certReqID i
 	var generalInfo []pkicmp.InfoTypeAndValue
 	if s.cfg.implicitConfirm && requestHasImplicitConfirm(req) {
 		generalInfo = append(generalInfo, pkicmp.ImplicitConfirmInfoValue())
-	} else if s.cfg.confirmWait > 0 && si.Status == pkicmp.StatusAccepted {
+	} else if s.cfg.confirmWait > 0 && grantsCertificate(si) {
 		generalInfo = append(generalInfo, pkicmp.ConfirmWaitTimeInfoValue(s.cfg.confirmWait))
 	}
 
@@ -144,6 +144,24 @@ func (s *Server) buildCertRepResponseForType(req *pkicmp.PKIMessage, certReqID i
 		}
 		return nil
 	}())
+}
+
+// grantsCertificate reports whether si delivers a certificate: accepted or grantedWithMods.
+func grantsCertificate(si pkicmp.PKIStatusInfo) bool {
+	return si.Status == pkicmp.StatusAccepted || si.Status == pkicmp.StatusGrantedWithMods
+}
+
+// issuedStatus returns the status of a response that is not waiting, with the handler's
+// grantedWithMods choice and status text.
+func issuedStatus(resp *Response) pkicmp.PKIStatusInfo {
+	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
+	if resp.GrantedWithMods {
+		si.Status = pkicmp.StatusGrantedWithMods
+	}
+	if resp.StatusText != "" {
+		si.StatusString = pkicmp.PKIFreeText{resp.StatusText}
+	}
+	return si
 }
 
 // handleCertRequest processes certificate requests through the configured handler.
@@ -198,7 +216,7 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 		return respMsg
 	}
 
-	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
+	si := issuedStatus(resp)
 	protectionParams := sender.protectionParams
 	respMsg := s.buildCertRepResponseForType(
 		msg, certReqID, si, resp.Certificate, resp.CACerts, sender, reqType, protectionParams,
@@ -308,7 +326,7 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 	}
 
 	// Certificate ready → respond with ip/cp/kup matching original request type.
-	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
+	si := issuedStatus(resp)
 	respMsg := s.buildCertRepResponseForType(msg, certReqID, si, resp.Certificate, resp.CACerts, sender, pending.reqType)
 
 	if resp.Certificate != nil {
