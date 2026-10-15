@@ -58,6 +58,8 @@ tmp/
 *.orig
 # DER encoded CMP messages are golden test vectors, not credentials.
 !pkicmp/testdata/*.der
+# Bouncy Castle encryption vectors.
+!cms/testdata/kem/*.der
 
 # OS-specific files
 .DS_Store
