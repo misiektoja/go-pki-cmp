@@ -36,6 +36,8 @@ public class BcKemVectors {
         write(out, "kdf3-sha512-aes128", pub, kdf(X9ObjectIdentifiers.id_kdf_kdf3, NISTObjectIdentifiers.id_sha512, false), null, CMSAlgorithm.AES128_WRAP);
         write(out, "kdf2-sha256", pub, kdf(X9ObjectIdentifiers.id_kdf_kdf2, NISTObjectIdentifiers.id_sha256, false), null, CMSAlgorithm.AES256_WRAP);
         write(out, "hkdf-sha256", pub, CMSAlgorithm.SHA256_HKDF, null, CMSAlgorithm.AES256_WRAP);
+        write(out, "shake256", pub, new AlgorithmIdentifier(NISTObjectIdentifiers.id_shake256), null, CMSAlgorithm.AES256_WRAP);
+        write(out, "shake256-ukm-aes128", pub, new AlgorithmIdentifier(NISTObjectIdentifiers.id_shake256), "user keying material".getBytes(java.nio.charset.StandardCharsets.US_ASCII), CMSAlgorithm.AES128_WRAP);
     }
 
     // kdf returns an X9.44 KDF AlgorithmIdentifier whose parameters name the hash, with NULL hash parameters when nullParams is set.
