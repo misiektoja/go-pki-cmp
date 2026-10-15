@@ -198,6 +198,10 @@ func exerciseBody(msg *pkicmp.PKIMessage) {
 		_, _ = msg.Body.PollReq()
 	case pkicmp.BodyTypePollRep:
 		_, _ = msg.Body.PollRep()
+	case pkicmp.BodyTypePopDecC:
+		_, _ = msg.Body.PopDecC()
+	case pkicmp.BodyTypePopDecR:
+		_, _ = msg.Body.PopDecR()
 	case pkicmp.BodyTypeRR:
 		if rr, err := msg.Body.RR(); err == nil {
 			for i := range *rr {
