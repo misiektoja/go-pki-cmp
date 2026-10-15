@@ -1,11 +1,19 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509/pkix"
+	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,4 +109,87 @@ func TestClientIndirectPOPUnsupportedKey(t *testing.T) {
 	}
 	_, err = c.SendIRWithIndirectPOP(context.Background(), popKeys(t)[0].priv, client.IndirectPOP(9), creds)
 	assert.ErrorContains(t, err, "unknown indirect proof of possession")
+}
+
+// versionRecorder passes requests to next and records the body type and pvno of each.
+type versionRecorder struct {
+	next http.Handler
+	mu   sync.Mutex
+	seen []string
+}
+
+// ServeHTTP records the request and passes it on unchanged.
+func (v *versionRecorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err == nil {
+		if msg, err := pkicmp.ParsePKIMessage(body); err == nil {
+			v.mu.Lock()
+			v.seen = append(v.seen, fmt.Sprintf("%s v%d", msg.Body.Type, msg.Header.PVNO))
+			v.mu.Unlock()
+		}
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	v.next.ServeHTTP(w, r)
+}
+
+// requests returns the recorded requests in the order they arrived.
+func (v *versionRecorder) requests() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return slices.Clone(v.seen)
+}
+
+// An indirect proof of possession expects cmp2021 syntax back, so every message
+// of its transaction is pvno 3 (RFC 9810 §7). A signature proof stays at pvno 2.
+func TestClientIndirectPOPVersion(t *testing.T) {
+	secret := []byte("client-indirect-version")
+	kem := popKeys(t)[0]
+	signer, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	opts := []client.RequestOption{
+		client.WithSender(testSender),
+		client.WithSenderKID([]byte(testSender.String())),
+		client.WithTemplateSubject(pkix.Name{CommonName: "client version"}),
+	}
+	for _, tc := range []struct {
+		name  string
+		delay bool
+		send  func(c *client.Client, creds pkicmp.Credentials) error
+		want  []string
+	}{
+		{"encrCert", false, func(c *client.Client, creds pkicmp.Credentials) error {
+			_, err := c.SendIRWithIndirectPOP(context.Background(), kem.priv, client.EncryptedCertificate, creds, opts...)
+			return err
+		}, []string{"ir v3", "certConf v3"}},
+		{"challengeResp", false, func(c *client.Client, creds pkicmp.Credentials) error {
+			_, err := c.SendIRWithIndirectPOP(context.Background(), kem.priv, client.ChallengeResponse, creds, opts...)
+			return err
+		}, []string{"ir v3", "popdecr v3", "certConf v3"}},
+		{"challengeResp polled", true, func(c *client.Client, creds pkicmp.Credentials) error {
+			_, err := c.SendIRWithIndirectPOP(context.Background(), kem.priv, client.ChallengeResponse, creds, opts...)
+			return err
+		}, []string{"ir v3", "popdecr v3", "pollReq v3", "certConf v3"}},
+		{"signature", false, func(c *client.Client, creds pkicmp.Credentials) error {
+			_, err := c.SendIR(context.Background(), signer, creds, opts...)
+			return err
+		}, []string{"ir v2", "certConf v2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ca := newPOPCA(t)
+			ca.delay = tc.delay
+			recorder := &versionRecorder{next: server.NewCAServer(ca, server.LightweightPolicy(),
+				server.WithSecretLookup(&staticMACLookup{secret: secret}),
+				server.WithEncryptedCertificatePOP(),
+				server.WithChallengeResponsePOP(),
+			)}
+			ts := httptest.NewServer(recorder)
+			defer ts.Close()
+
+			creds, err := pkicmp.NewMACCredentials(secret)
+			require.NoError(t, err)
+			c := client.NewClient(ts.URL)
+			require.NoError(t, tc.send(c, creds))
+			assert.Equal(t, tc.want, slices.Compact(recorder.requests()))
+		})
+	}
 }
