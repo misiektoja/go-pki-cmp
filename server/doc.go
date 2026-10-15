@@ -172,6 +172,12 @@
 // ([ConfirmExpired]). The ref parameter echoes [Response.IssueRef] set during
 // [CA.IssueCertificate] for correlation.
 //
+// For the encrypted certificate method the certConf is the proof of possession.
+// [POPMethodFromContext] returns [POPEncryptedCertificate] in every call for
+// such a certificate, which the CA should revoke unless it hears
+// [ConfirmAccepted]. A certConf with the wrong hash is refused with badPOP and
+// leaves the transaction open until a right one or [ConfirmExpired].
+//
 // Every CertStatus in a certConf must carry the certHash and certReqId of the
 // issued certificate. All of them must accept it or all must reject it. The
 // CA is then notified once. For a p10cr the certReqId may be -1 or 0, because
@@ -347,11 +353,13 @@
 //
 //   - Proof of possession, so that a certificate is never issued for a public
 //     key the requester did not prove holding (RFC 4211 §4, RFC 9483 §5.1.1).
-//     For a p10cr this is the CSR self-signature. Only signature-based proof is
-//     supported, so a CRMF request without a public key or for a key that
-//     cannot sign, such as X25519, is rejected. [WithSignatureProtectionPOP]
+//     For a p10cr this is the CSR self-signature. By default only a signature
+//     proves possession, so a CRMF request without a public key or for a key
+//     that cannot sign, such as ML-KEM, is rejected. [WithSignatureProtectionPOP]
 //     also accepts a CRMF request without proof whose protection signature was
-//     made with the requested key.
+//     made with the requested key. [WithEncryptedCertificatePOP] and
+//     [WithChallengeResponsePOP] accept the indirect methods of RFC 9810
+//     §5.2.8.3 for RSA, ECDH and ML-KEM keys. X25519 is refused with badAlg.
 //   - Rejection of a BasicConstraints extension that cannot be decoded, so that
 //     no extension reaches [CA.IssueCertificate] that the checks above did not
 //     understand.
