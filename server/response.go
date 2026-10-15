@@ -105,9 +105,9 @@ type certRep struct {
 	certReqID int64
 	status    pkicmp.PKIStatusInfo
 	cert      *x509.Certificate
-	// encrypted is the EnvelopedData that carries cert instead of the plaintext
-	// certificate, for the encrypted certificate proof of possession.
-	encrypted []byte
+	// encrypted carries cert instead of the plaintext certificate, for the
+	// encrypted certificate proof of possession.
+	encrypted *pkicmp.CertOrEncCert
 	caCerts   []*x509.Certificate
 	reqType   RequestType
 	// implicit reports that the client asked for implicit confirmation and may
@@ -127,7 +127,7 @@ func (s *Server) buildCertRep(req *pkicmp.PKIMessage, sender *SenderIdentity, r 
 	if r.cert != nil && grantsCertificate(r.status) {
 		certOrEncCert := pkicmp.CertOrEncCert{Certificate: &pkicmp.CMPCertificate{Raw: r.cert.Raw}}
 		if r.encrypted != nil {
-			certOrEncCert = pkicmp.NewEncryptedCertificate(r.encrypted)
+			certOrEncCert = *r.encrypted
 		}
 		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{CertOrEncCert: certOrEncCert}
 	}
@@ -302,7 +302,7 @@ func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *
 		protectionParams: sender.protectionParams,
 	}
 	if req.method == POPEncryptedCertificate && resp.Certificate != nil && grantsCertificate(r.status) {
-		envelope, err := encryptCertificate(resp.Certificate)
+		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO)
 		if err != nil {
 			// The certificate exists but cannot reach its holder, so the CA hears that it was not accepted.
 			s.setCompleted(credID, txnID)
@@ -315,7 +315,7 @@ func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *
 				reqType:   req.reqType,
 			})
 		}
-		r.encrypted = envelope
+		r.encrypted = &encrypted
 	}
 	respMsg := s.buildCertRep(reply, sender, r)
 
