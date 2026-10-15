@@ -15,7 +15,7 @@ func TestSnapshotPreservesPollingBindingAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	nonce := bytes.Repeat([]byte{1}, 16)
-	if !original.setPending(credential, transaction, RequestIR, "pending-reference", nonce, time.Second, time.Now()) {
+	if !original.setPending(credential, transaction, waitingState{reqType: RequestIR, certReqID: 0, implicitConfirm: true, pollRef: "pending-reference", senderNonce: nonce, checkAfter: time.Second, lastPollTime: time.Now()}) {
 		t.Fatal("pending transition failed")
 	}
 	data, err := original.SnapshotTransactions()
@@ -27,7 +27,7 @@ func TestSnapshotPreservesPollingBindingAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending, ok := restored.getPending(credential, transaction)
-	if !ok || pending.pollRef != "pending-reference" || !bytes.Equal(pending.senderNonce, nonce) || pending.checkAfter != time.Second {
+	if !ok || pending.pollRef != "pending-reference" || !bytes.Equal(pending.senderNonce, nonce) || pending.checkAfter != time.Second || !pending.implicitConfirm || pending.certReqID == nil || *pending.certReqID != 0 {
 		t.Fatal("polling state changed")
 	}
 	if _, ok := restored.getPending([]byte("other"), transaction); ok {
@@ -40,7 +40,8 @@ func TestSnapshotPreservesPollingBindingAndExpiry(t *testing.T) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	snapshot.Entries[0].LastActivity = time.Now().Add(-time.Hour)
+	// Older than the default waiting lifetime of 24 hours.
+	snapshot.Entries[0].LastActivity = time.Now().Add(-25 * time.Hour)
 	expired, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatal(err)
