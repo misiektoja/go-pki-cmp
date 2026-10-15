@@ -105,6 +105,28 @@ func TestEncryptedCertificateAccessors(t *testing.T) {
 
 	plain := pkicmp.CertOrEncCert{Certificate: &pkicmp.CMPCertificate{Raw: []byte{0x30, 0x00}}}
 	assert.Nil(t, plain.EncryptedCertificate())
+	assert.Nil(t, plain.EncryptedValueCertificate())
+	assert.Nil(t, ckp.CertOrEncCert.EncryptedValueCertificate())
+}
+
+// An EncryptedValue is CMP version 2 syntax, so it leaves the message at pvno 2.
+func TestEncryptedValueCertificateAccessors(t *testing.T) {
+	value := []byte{0x30, 0x04, 0x03, 0x02, 0x00, 0x01}
+	rep := pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{{
+		Status:           pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
+		CertifiedKeyPair: &pkicmp.CertifiedKeyPair{CertOrEncCert: pkicmp.NewEncryptedValueCertificate(value)},
+	}}}
+	der, err := pkicmp.NewPKIMessage(pkicmp.NewIPBody(&rep), pkicmp.MessageOptions{}).MarshalBinary()
+	require.NoError(t, err)
+	parsed, err := pkicmp.ParsePKIMessage(der)
+	require.NoError(t, err)
+	assert.Equal(t, pkicmp.PVNO2, parsed.Header.PVNO)
+	ip, err := parsed.Body.IP()
+	require.NoError(t, err)
+	got := ip.Response[0].CertifiedKeyPair.CertOrEncCert
+	assert.Equal(t, value, got.EncryptedValueCertificate())
+	assert.Nil(t, got.EncryptedCertificate())
+	assert.Nil(t, got.Certificate)
 }
 
 func TestSubsequentMessagePOP(t *testing.T) {
