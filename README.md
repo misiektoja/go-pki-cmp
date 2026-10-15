@@ -21,17 +21,20 @@ issuer, is built on this library. The library implements:
 
 Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, `genm` and `nested`
 with their responses. General messages carry the RFC 9483 support requests for CA certificates, a root
-CA update, a certificate request template and CRL updates. Key recovery, cross-certification,
-proof-of-possession challenges and announcements are not implemented.
+CA update, a certificate request template and CRL updates. A key that cannot sign, such as an ML-KEM
+key, proves possession by decryption: the CA returns the certificate encrypted for the key or sends a
+`popdecc` challenge first (RFC 9810 §5.2.8.3). Key recovery, central key generation,
+cross-certification and announcements are not implemented.
 
 ## Interoperability and testing
 
 CI runs the library against independent CMP implementations:
 
 * **[EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp)**: the client enrolls and updates certificates.
-* **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)**: the client enrolls,
-  updates, revokes and sends support messages against the mock server. OpenSSL as a client revokes at
-  the server and sends support messages to it.
+* **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)** 3.5 and 4.0: the client
+  enrolls, updates, revokes and sends support messages against the mock server. OpenSSL as a client
+  revokes at the server and sends support messages to it. OpenSSL 4.0 also enrolls ML-KEM, RSA and EC
+  keys at the server with the encrypted certificate method (`-popo 2`).
 * **[Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)**:
   the client enrolls, re-enrolls, updates and revokes certificates against a hosted instance on every push to
   `dev` and `main` and once a week.
@@ -66,7 +69,8 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 
 * **Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
   [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) support enrollment and CMP
-  signatures. Older Dilithium encodings are not supported.
+  signatures. Older Dilithium encodings are not supported. ML-KEM-768 and ML-KEM-1024 keys can be
+  certified through a proof of possession by decryption. ML-KEM-512 is not supported.
 * **RFC 4210 peers** are supported by default. SHA-1 signatures and additional device compatibility
   options are opt-in. [Server options](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#Option)
   describe these exceptions and the stricter `WithStrictProfileValidation` checks.
@@ -142,6 +146,17 @@ case update != nil:
 
 `GetCACertificates`, `GetCertReqTemplate`, `GetCRLUpdate` and `GetCurrentCRL` follow the same pattern.
 
+Enrollment of a key that cannot sign (RFC 9810 §5.2.8.3):
+
+```go
+// An ML-KEM key proves possession by decrypting what the CA sends. The CA must
+// support the chosen method. client.ChallengeResponse asks for a challenge first.
+kemKey, _ := mlkem.GenerateKey768()
+result, err := c.SendIRWithIndirectPOP(context.Background(), kemKey, client.EncryptedCertificate, creds,
+	client.WithTemplateSubject(pkix.Name{CommonName: "my-device-encryption"}),
+)
+```
+
 ### Server
 
 Implement the `server.CA` interface and the credential lookups:
@@ -167,6 +182,13 @@ func (ca *MyCA) RevokeCertificate(ctx, req, sender) {
 Support messages are answered by optional interfaces: `server.CACertificatesProvider`,
 `server.RootCAUpdateProvider`, `server.CertReqTemplateProvider` and `server.CRLProvider`. The server
 lists a requested type without a provider as unsupported.
+
+`server.WithEncryptedCertificatePOP` and `server.WithChallengeResponsePOP` accept requests for keys
+that cannot sign. With the encrypted certificate method, the certificate exists before the client has
+proved anything, so the CA should publish it only after `ConfirmAccepted` and revoke it on
+`ConfirmExpired` or `ConfirmRejected`. `server.POPMethodFromContext` tells the CA which method a
+request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another way to sign such a
+certificate.
 
 Then serve it:
 
