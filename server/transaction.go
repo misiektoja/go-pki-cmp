@@ -96,13 +96,20 @@ type transactionEntry struct {
 	pollRef      string
 	senderNonce  []byte        // server's senderNonce from the waiting response (for recipNonce verification)
 	lastPollTime time.Time     // last time a poll was received (zero for initial pending)
-	checkAfter   time.Duration // minimum interval between polls
+	checkAfter   time.Duration // minimum interval between polls, in whole seconds as advertised
+	// implicitConfirm records that the delayed request asked for implicit
+	// confirmation, which the pollReq that collects the certificate does not repeat.
+	implicitConfirm bool
+
+	// Set when state == statePending or stateIssued
+	//
+	// certReqID is the certReqId of the delayed request while pending and of the
+	// CertResponse that carried cert once issued. It is nil when the entry was
+	// restored from a snapshot without it.
+	certReqID *int64
 
 	// Set when state == stateIssued
 	//
-	// certReqID is the certReqId of the CertResponse that carried cert. It is nil
-	// when the entry was restored from a snapshot without it.
-	certReqID           *int64
 	cert                *x509.Certificate
 	issueRef            any    // opaque CA reference for CertificateConfirmer
 	issuedSenderNonce   []byte // server's senderNonce from the issued response
@@ -177,7 +184,19 @@ func (t *transactionTracker) getOrCreateCredCount(ck credentialKey) *atomic.Int6
 	return val.(*atomic.Int64)
 }
 
-func (t *transactionTracker) setPending(credentialID, transactionID []byte, reqType RequestType, pollRef string, senderNonce []byte, checkAfter time.Duration, lastPollTime time.Time) bool {
+// waitingState is what a waiting transaction keeps between polls.
+type waitingState struct {
+	reqType         RequestType
+	certReqID       int64
+	implicitConfirm bool
+	pollRef         string
+	senderNonce     []byte
+	checkAfter      time.Duration
+	lastPollTime    time.Time
+}
+
+// setPending moves an active or waiting transaction to the waiting state w describes.
+func (t *transactionTracker) setPending(credentialID, transactionID []byte, w waitingState) bool {
 	key := makeKey(credentialID, transactionID)
 	ck := makeCredentialKey(credentialID)
 
@@ -192,16 +211,35 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, reqT
 	}
 
 	newEntry := &transactionEntry{
-		state:         statePending,
-		lastActivity:  time.Now(),
-		credentialKey: ck,
-		reqType:       reqType,
-		pollRef:       pollRef,
-		senderNonce:   senderNonce,
-		lastPollTime:  lastPollTime,
-		checkAfter:    checkAfter,
+		state:           statePending,
+		lastActivity:    time.Now(),
+		credentialKey:   ck,
+		reqType:         w.reqType,
+		pollRef:         w.pollRef,
+		senderNonce:     w.senderNonce,
+		lastPollTime:    w.lastPollTime,
+		checkAfter:      w.checkAfter,
+		implicitConfirm: w.implicitConfirm,
+		certReqID:       &w.certReqID,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
+}
+
+// waiting returns the state of a waiting entry, for a transition that keeps the request's details.
+func (e *transactionEntry) waiting() waitingState {
+	w := waitingState{
+		reqType:         e.reqType,
+		implicitConfirm: e.implicitConfirm,
+		pollRef:         e.pollRef,
+		senderNonce:     e.senderNonce,
+		checkAfter:      e.checkAfter,
+		lastPollTime:    e.lastPollTime,
+		certReqID:       -1,
+	}
+	if e.certReqID != nil {
+		w.certReqID = *e.certReqID
+	}
+	return w
 }
 
 func (t *transactionTracker) getPending(credentialID, transactionID []byte) (*transactionEntry, bool) {
@@ -306,29 +344,45 @@ type expiredIssued struct {
 	issueRef any
 }
 
-// cleanupExpired removes entries older than maxAge and returns any expired
-// issued transactions (certificates that were never confirmed).
-func (t *transactionTracker) cleanupExpired(maxAge time.Duration) []expiredIssued {
-	if maxAge <= 0 {
-		return nil
-	}
-	var expired []expiredIssued
-	cutoff := time.Now().Add(-maxAge)
+// expiredEntries are the transactions one cleanup removed that their CA may want to hear about.
+type expiredEntries struct {
+	// issued are certificates that were never confirmed.
+	issued []expiredIssued
+	// waiting are the pollRefs of waiting requests whose client stopped polling.
+	waiting []string
+}
+
+// cleanupExpired removes waiting entries idle for longer than waitingAge and
+// every other entry idle for longer than maxAge. It returns the removed issued
+// and waiting entries. A zero age keeps the entries it governs.
+func (t *transactionTracker) cleanupExpired(maxAge, waitingAge time.Duration) expiredEntries {
+	var expired expiredEntries
+	now := time.Now()
 	t.transactions.Range(func(key, value any) bool {
 		entry := value.(*transactionEntry)
-		if entry.lastActivity.Before(cutoff) {
-			_, loaded := t.transactions.LoadAndDelete(key)
-			if loaded {
-				t.count.Add(-1)
-				credCount := t.getOrCreateCredCount(entry.credentialKey)
-				credCount.Add(-1)
-				if entry.state == stateIssued && entry.cert != nil {
-					expired = append(expired, expiredIssued{
-						cert:     entry.cert,
-						issueRef: entry.issueRef,
-					})
-				}
-			}
+		age := maxAge
+		if entry.state == statePending {
+			age = waitingAge
+		}
+		if age <= 0 || !entry.lastActivity.Before(now.Add(-age)) {
+			return true
+		}
+		// Only the entry read above is removed, so one that a concurrent request
+		// replaced, for example by answering a poll, stays.
+		if !t.transactions.CompareAndDelete(key, value) {
+			return true
+		}
+		t.count.Add(-1)
+		credCount := t.getOrCreateCredCount(entry.credentialKey)
+		credCount.Add(-1)
+		switch {
+		case entry.state == stateIssued && entry.cert != nil:
+			expired.issued = append(expired.issued, expiredIssued{
+				cert:     entry.cert,
+				issueRef: entry.issueRef,
+			})
+		case entry.state == statePending:
+			expired.waiting = append(expired.waiting, entry.pollRef)
 		}
 		return true
 	})

@@ -85,6 +85,8 @@ type serverConfig struct {
 	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
 	maxMACIterationCount         int                  // zero selects pkicmp.DefaultMaxMACIterationCount
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
+	waitingLifetime              time.Duration        // zero selects defaultWaitingLifetime
+	waitingExpirer               WaitingExpirer       // set by WithWaitingExpirer or NewCAServer
 
 	// Built once by New from signerKey and signerCert. signerErr records a
 	// rejected pair so responses fail visibly instead of going out unprotected.
@@ -132,11 +134,36 @@ func WithSender(name pkix.Name) Option {
 }
 
 // WithConfirmWaitTime sets the confirmWaitTime included in certificate responses
-// and controls when [Server.CleanupExpired] considers transactions stale.
-// The default is 10 seconds. RFC 9810 §5.1.1.2.
+// and controls when [Server.CleanupExpired] considers transactions stale, except
+// waiting requests, which [WithWaitingLifetime] governs. The default is 10
+// seconds. RFC 9810 §5.1.1.2.
 func WithConfirmWaitTime(d time.Duration) Option {
 	return func(c *serverConfig) {
 		c.confirmWait = d
+	}
+}
+
+// WithWaitingLifetime sets how long a waiting request stays after its last
+// message when the client stops polling. [Server.CleanupExpired] then removes
+// it and tells the [WaitingExpirer]. The default is 24 hours.
+//
+// The lifetime counts from the waiting response or the last pollRep, so it must
+// exceed the CheckAfter a CA returns. It does not limit how long a CA may take
+// to decide, which is the CA's own policy: a client that keeps polling keeps
+// the request. Confirmation of an issued certificate keeps using
+// [WithConfirmWaitTime].
+func WithWaitingLifetime(d time.Duration) Option {
+	return func(c *serverConfig) {
+		c.waitingLifetime = d
+	}
+}
+
+// WithWaitingExpirer sets the [WaitingExpirer] that [Server.CleanupExpired]
+// tells about waiting requests whose client stopped polling. [NewCAServer] sets
+// it for a CA that implements the interface.
+func WithWaitingExpirer(expirer WaitingExpirer) Option {
+	return func(c *serverConfig) {
+		c.waitingExpirer = expirer
 	}
 }
 

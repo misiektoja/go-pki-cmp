@@ -35,8 +35,11 @@ type savedTransaction struct {
 	ClientSenderNonce   []byte
 	ProtectionAlgorithm *pkicmp.AlgorithmIdentifier
 	// CertReqID is absent from snapshots taken before it was recorded. A
-	// transaction restored from one confirms without the certReqId check.
+	// transaction restored from one confirms without the certReqId check, and a
+	// waiting one takes the certReqId of the pollReq.
 	CertReqID *int64 `json:",omitempty"`
+	// ImplicitConfirm records that a waiting request asked for implicit confirmation.
+	ImplicitConfirm bool `json:",omitempty"`
 }
 
 // SnapshotTransactions encodes trusted recovery state while the caller excludes concurrent requests and cleanup.
@@ -59,6 +62,7 @@ func (s *Server) SnapshotTransactions() ([]byte, error) {
 			ClientSenderNonce:   entry.clientSenderNonce,
 			ProtectionAlgorithm: entry.protectionAlgorithm,
 			CertReqID:           entry.certReqID,
+			ImplicitConfirm:     entry.implicitConfirm,
 		}
 		if entry.cert != nil {
 			saved.Certificate = entry.cert.Raw
@@ -126,6 +130,7 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 			clientSenderNonce:   saved.ClientSenderNonce,
 			protectionAlgorithm: saved.ProtectionAlgorithm,
 			certReqID:           saved.CertReqID,
+			implicitConfirm:     saved.ImplicitConfirm,
 		}
 		if len(saved.Certificate) > 0 {
 			cert, err := x509.ParseCertificate(saved.Certificate)

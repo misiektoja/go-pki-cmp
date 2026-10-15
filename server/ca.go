@@ -7,6 +7,7 @@ import (
 	"crypto/sha1" // #nosec G505 -- used for SKI computation (opaque identifier)
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"slices"
 
@@ -41,11 +42,27 @@ type CA interface {
 }
 
 // PendingChecker is an optional interface for CAs that support async issuance.
-// Implement this if IssueCertificate may return Response.Waiting.
+// Implement this if IssueCertificate may return Response.Waiting, or a
+// [Revoker] or [RevocationAuthorizer] may return a [WaitingError].
 type PendingChecker interface {
-	// CheckPending checks the status of a pending certificate request.
+	// CheckPending checks the status of a pending request when its client polls.
 	// pollRef is the value returned in WaitingResponse.PollRef.
+	//
+	// Return a Response with Waiting to keep the request waiting. Return the
+	// certificate of a delayed certificate request, or a nil Response for a
+	// delayed revocation that is now done. An [*Error] with status rejection
+	// rejects the request: the client gets an ip, cp or kup carrying the
+	// rejection, or an rp for a revocation, and the transaction ends.
 	CheckPending(ctx context.Context, pollRef string, sender *SenderIdentity) (*Response, error)
+}
+
+// WaitingExpirer is an optional interface for a CA that keeps its own record of
+// waiting requests, such as a queue of requests for an operator to approve.
+type WaitingExpirer interface {
+	// ExpireWaiting is called by [Server.CleanupExpired] for a waiting request
+	// whose client stopped polling for longer than [WithWaitingLifetime]. The
+	// client can no longer collect the result, so the CA may close its record.
+	ExpireWaiting(ctx context.Context, pollRef string)
 }
 
 // ConfirmStatus indicates the outcome of a certificate confirmation.
@@ -202,6 +219,7 @@ func NewCAHandler(ca CA) Handler {
 	return &caHandler{ca: ca}
 }
 
+// HandleCMP dispatches a request to the CA method that answers its body type.
 func (h *caHandler) HandleCMP(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) (*Response, error) {
 	switch msg.Body.Type {
 	case pkicmp.BodyTypeIR, pkicmp.BodyTypeCR, pkicmp.BodyTypeKUR, pkicmp.BodyTypeP10CR:
@@ -211,7 +229,11 @@ func (h *caHandler) HandleCMP(ctx context.Context, msg *pkicmp.PKIMessage, sende
 	case pkicmp.BodyTypePollReq:
 		return h.handlePollReq(ctx, sender)
 	case pkicmp.BodyTypeRR:
-		return nil, h.handleRevocation(ctx, msg, sender)
+		err := h.handleRevocation(ctx, msg, sender)
+		if waiting, ok := errors.AsType[*WaitingError](err); ok {
+			return &Response{Waiting: &waiting.WaitingResponse}, nil
+		}
+		return nil, err
 	case pkicmp.BodyTypeGenM:
 		return h.handleGenM(ctx, msg, sender)
 	default:
@@ -380,6 +402,9 @@ func NewCAServer(ca CA, policy func(Handler) Handler, opts ...Option) *Server {
 	// call it on implicit confirm (not just explicit certConf).
 	if confirmer, ok := ca.(CertificateConfirmer); ok {
 		opts = append([]Option{func(c *serverConfig) { c.confirmer = confirmer }}, opts...)
+	}
+	if expirer, ok := ca.(WaitingExpirer); ok {
+		opts = append([]Option{WithWaitingExpirer(expirer)}, opts...)
 	}
 	handler := NewCAHandler(ca)
 	if policy != nil {

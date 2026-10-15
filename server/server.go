@@ -37,6 +37,9 @@ func New(handler Handler, opts ...Option) *Server {
 	if s.cfg.confirmWait == 0 {
 		s.cfg.confirmWait = 10 * time.Second
 	}
+	if s.cfg.waitingLifetime == 0 {
+		s.cfg.waitingLifetime = defaultWaitingLifetime
+	}
 	maxTxn := s.cfg.maxTransactions
 	if maxTxn == 0 {
 		maxTxn = 10000
@@ -279,18 +282,28 @@ func (s *Server) policyConfig() policyConfig {
 	}
 }
 
-// CleanupExpired removes pending transactions and issued certificates that
-// have exceeded the configured confirmWaitTime (default 10s). Call this
-// periodically.
+// defaultWaitingLifetime is how long a waiting request stays without a poll unless
+// [WithWaitingLifetime] says otherwise.
+const defaultWaitingLifetime = 24 * time.Hour
+
+// CleanupExpired removes transactions idle for longer than the configured
+// confirmWaitTime (default 10s) and waiting requests whose client has not
+// polled within the waiting lifetime (default 24h). Call this periodically.
 //
 // If the CA implements [CertificateConfirmer], it is notified with
 // [ConfirmExpired] for each issued certificate that timed out without
-// receiving a certConf message.
+// receiving a certConf message. A [WaitingExpirer] hears about each waiting
+// request removed.
 func (s *Server) CleanupExpired() {
-	expired := s.transactionTracker.cleanupExpired(s.cfg.confirmWait)
+	expired := s.transactionTracker.cleanupExpired(s.cfg.confirmWait, s.cfg.waitingLifetime)
 	if s.cfg.confirmer != nil {
-		for _, e := range expired {
+		for _, e := range expired.issued {
 			_ = s.cfg.confirmer.ConfirmCertificate(context.Background(), e.cert, ConfirmExpired, e.issueRef)
+		}
+	}
+	if s.cfg.waitingExpirer != nil {
+		for _, pollRef := range expired.waiting {
+			s.cfg.waitingExpirer.ExpireWaiting(context.Background(), pollRef)
 		}
 	}
 }
