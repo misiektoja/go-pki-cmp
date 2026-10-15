@@ -1,6 +1,8 @@
 // Package cms encrypts and decrypts CMS EnvelopedData (RFC 5652 §6) for the CMP
 // proof-of-possession methods that need it: the encrypted certificate and the
-// challenge-response exchange (RFC 9810 §5.2.8.3).
+// challenge-response exchange (RFC 9810 §5.2.8.3). It also handles the older
+// EncryptedValue (RFC 4211 §2.1) that CMP version 2 peers use for an encrypted
+// certificate.
 //
 // An EnvelopedData built here has exactly one recipient, as RFC 9810 §5.2.2
 // requires, and carries the content as id-data. Three key management techniques
@@ -19,9 +21,16 @@
 // [Decrypt] also accepts AES-128 and AES-192, the SHA-1 and SHA-224 KDF variants
 // of ECDH and HKDF with SHA-384 or SHA-512. For ML-KEM it also accepts the ANS
 // X9.44 KDF2 and KDF3 of RFC 9690 Appendix B with SHA-224, SHA-256, SHA-384 or
-// SHA-512, because Bouncy Castle uses KDF3 with SHA-256 by default. RSA PKCS #1
-// v1.5 key transport is refused because its decryption is open to padding oracle
-// attacks.
+// SHA-512, because Bouncy Castle uses KDF3 with SHA-256 by default. It accepts
+// SHAKE256 as well, which EJBCA uses. RSA PKCS #1 v1.5 key transport is refused
+// in EnvelopedData because its decryption is open to padding oracle attacks.
+//
+// [NewEncryptedValue] and [DecryptEncryptedValue] handle EncryptedValue, which
+// only RSA keys can receive. CMP version 2 peers such as OpenSSL 3.0 and 3.2
+// read no other form. They decrypt the key with PKCS #1 v1.5, so
+// [NewEncryptedValue] uses it with AES-256-CBC. [DecryptEncryptedValue] also
+// accepts AES-128, AES-192, Triple DES and RSAES-OAEP. It decrypts PKCS #1 v1.5
+// so that a padding error looks like any other failure.
 //
 // ML-KEM-512 is not supported, because the Go standard library does not
 // implement it.
