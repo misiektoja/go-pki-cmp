@@ -4,7 +4,7 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.5.1 - TBD
 
-Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. The example mock CA enrolls composite ML-DSA keys.
+Verification reports why the sender's certificate was refused, including a signer outside the trusted CAs or a senderKID that names no certificate. It can also check certificates at a chosen time. Clients can accept CAs that copy the senderKID of the request into their responses. CAs can answer grantedWithMods when they change a request. The example mock CA enrolls composite ML-DSA keys.
 
 ### `pkicmp`
 
@@ -16,6 +16,10 @@ Verification reports why the sender's certificate was refused, including a signe
 ### `client`
 
 * **`WithSenderKIDMismatch`** accepts signed responses whose senderKID names none of the candidate signer certificates. It is off by default. Without it, such a response fails with `ReasonSenderKIDMismatch` and the error names `WithServerCerts` and this option, instead of reporting that the response carries no certificate.
+
+### `server`
+
+* **`Response.GrantedWithMods`** answers an issued certificate with grantedWithMods instead of accepted, for a CA that left out or changed part of the request. **`Response.StatusText`** is sent as the statusString of the issued certificate. Both are off by default, so existing CAs still answer accepted.
 
 ### `examples/mockserver`
 
