@@ -226,6 +226,7 @@ func (c *Client) answerChallenge(ctx context.Context, req, challenge *pkicmp.PKI
 		RecipNonce: challenge.Header.SenderNonce,
 	})
 	msg.Header.TransactionID = req.Header.TransactionID
+	msg.Header.PVNO = req.Header.PVNO
 	msg.Header.SenderKID = req.Header.SenderKID
 	if err := creds.Protect(msg); err != nil {
 		return nil, nil, nil, &Error{Op: "protect popdecr", Err: err}

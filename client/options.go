@@ -6,6 +6,9 @@ import (
 )
 
 type requestOptions struct {
+	// cmp2021 sends the first request as pvno 3, because the response it
+	// expects needs cmp2021 syntax (RFC 9810 §7).
+	cmp2021         bool
 	sender          *pkix.Name
 	senderKID       []byte
 	templateSubject *pkix.Name

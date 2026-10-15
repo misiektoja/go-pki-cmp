@@ -28,6 +28,9 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, err
 	}
 
+	// The encrypted certificate and the popdecc challenge come back as
+	// EnvelopedData, which needs cmp2021, so RFC 9810 §7 asks for pvno 3.
+	opts.cmp2021 = proof != nil
 	msg, err := c.newRequest(reqBody, creds, opts)
 	if err != nil {
 		return nil, err
@@ -204,6 +207,8 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 		},
 	)
 	confMsg.Header.TransactionID = conf.req.Header.TransactionID
+	// The messages of one transaction keep the version of its first request.
+	confMsg.Header.PVNO = conf.req.Header.PVNO
 	// Preserve senderKID across all messages in this transaction (RFC 9810 §5.1.1).
 	// For signature-based creds, ProtectWithSignature will overwrite this with the
 	// cert SubjectKeyId; for MAC-based creds it must be set explicitly.
@@ -295,6 +300,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 		Sender:    sender,
 		Recipient: recipient,
 	})
+	if opts.cmp2021 {
+		msg.Header.PVNO = pkicmp.PVNO3
+	}
 
 	for _, cert := range c.extraCerts {
 		msg.ExtraCerts = append(msg.ExtraCerts, pkicmp.CMPCertificate{Raw: cert.Raw})
@@ -616,6 +624,7 @@ func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp
 			},
 		)
 		pollMsg.Header.TransactionID = origHeader.TransactionID
+		pollMsg.Header.PVNO = origHeader.PVNO
 		pollMsg.Header.SenderKID = origHeader.SenderKID
 
 		if err := creds.Protect(pollMsg); err != nil {
