@@ -373,7 +373,9 @@ func WithSignatureProtectionPOP() Option {
 // request for an RSA key gets the certificate in the EncryptedValue of CMP
 // version 2 instead and a version 2 response, because clients such as OpenSSL
 // 3.0 and 3.2 cannot parse EnvelopedData there. Other keys have no EncryptedValue
-// form.
+// form. A client that sends version 2 but reads only EnvelopedData, such as one
+// built on the CertificateResponse class of Bouncy Castle 1.86, must send version
+// 3 for an RSA key, as RFC 9810 §7 asks of a client that expects cmp2021 syntax.
 //
 // Implicit confirmation is never granted to such a request. A certConf with
 // another hash is refused with badPOP. Until a matching certConf arrives the
