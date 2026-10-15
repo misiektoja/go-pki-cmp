@@ -162,12 +162,14 @@ func decryptionPublicKey(key any) (crypto.PublicKey, bool, error) {
 	return parsed, agreement, nil
 }
 
-// decryptCertificate returns the certificate of an encrypted certificate response, decrypted with proof.
-func decryptCertificate(envelope []byte, proof *decryptionProof) (*x509.Certificate, error) {
+// decryptCertificate returns the certificate of an encrypted certificate
+// response, decrypted with proof by decrypt, which is [cms.Decrypt] for
+// EnvelopedData and [cms.DecryptEncryptedValue] for EncryptedValue.
+func decryptCertificate(encrypted []byte, decrypt func(der []byte, key any) ([]byte, error), proof *decryptionProof) (*x509.Certificate, error) {
 	if proof == nil {
 		return nil, &Error{Op: "the CA sent an encrypted certificate for a key that signs"}
 	}
-	der, err := cms.Decrypt(envelope, proof.key)
+	der, err := decrypt(encrypted, proof.key)
 	if err != nil {
 		return nil, &Error{Op: "decrypt certificate", Err: err}
 	}

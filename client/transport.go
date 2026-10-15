@@ -14,6 +14,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/misiektoja/go-pki-cmp/cms"
 	"github.com/misiektoja/go-pki-cmp/internal/certpath"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
@@ -565,7 +566,12 @@ func extractCertificate(resp *pkicmp.CertResponse, proof *decryptionProof) (*x50
 	}
 	certOrEncCert := &resp.CertifiedKeyPair.CertOrEncCert
 	if envelope := certOrEncCert.EncryptedCertificate(); envelope != nil {
-		return decryptCertificate(envelope, proof)
+		return decryptCertificate(envelope, cms.Decrypt, proof)
+	}
+	// RFC 9810 §5.2.2 keeps EncryptedValue for CMP version 2 CAs, which send it
+	// whatever version the request had.
+	if value := certOrEncCert.EncryptedValueCertificate(); value != nil {
+		return decryptCertificate(value, cms.DecryptEncryptedValue, proof)
 	}
 	cert := certOrEncCert.Certificate
 	if cert == nil {
