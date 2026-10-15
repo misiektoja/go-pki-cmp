@@ -107,7 +107,8 @@
 //
 // CAs may implement additional optional interfaces:
 //
-//   - [PendingChecker]: asynchronous issuance with polling.
+//   - [PendingChecker]: asynchronous issuance and revocation with polling.
+//   - [WaitingExpirer]: notification when a client stops polling for a waiting request.
 //   - [CertificateConfirmer]: notification when a client accepts or rejects a certificate.
 //   - [Revoker]: revocation requests (rr).
 //   - [RevocationAuthorizer]: revocation by signers other than the certificate holder.
@@ -123,19 +124,45 @@
 //	    CheckPending(ctx context.Context, pollRef string, sender *SenderIdentity) (*Response, error)
 //	}
 //
-// Flow:
+// Flow (RFC 9483 §4.4):
 //
-//  1. Client sends IR/CR/KUR.
+//  1. Client sends ir, cr, kur or p10cr.
 //  2. [CA.IssueCertificate] returns a [WaitingResponse]:
 //     return &Response{Waiting: &WaitingResponse{CheckAfter: 30*time.Second, PollRef: "job-123"}}, nil
-//  3. Server stores the pollRef and replies with a "waiting" status.
+//  3. Server stores the pollRef and replies with a "waiting" status. Reason
+//     becomes its statusString.
 //  4. Client polls after [WaitingResponse.CheckAfter].
 //  5. Server calls [PendingChecker.CheckPending] with the stored pollRef.
-//  6. CA returns either the issued certificate or another [WaitingResponse].
+//  6. CA returns the issued certificate, another [WaitingResponse] or an
+//     [*Error] that rejects the request.
+//
+// A rejection reaches the client in the ip, cp or kup it would have got at
+// once (RFC 9810 §5.3.22), with the request's certReqId, and ends the
+// transaction. The final response grants implicit confirmation when the delayed
+// request asked for it, and repeats the senderNonce of the last pollReq, as
+// OpenSSL expects.
+//
+// The pollRep advertises CheckAfter in whole seconds, at least one. A pollReq
+// that arrives earlier gets another pollRep with the time left and does not
+// reach the CA. A pollReq names the request by its certReqId or by -1 for the
+// whole message. A p10cr may also be polled with 0. Any other value is refused.
+//
+// A revocation waits when [Revoker.RevokeCertificate] or
+// [RevocationAuthorizer.AuthorizeRevocation] returns a [*WaitingError]. The
+// client gets an error message with status waiting, polls with certReqId -1 and
+// receives an rp once CheckPending returns without error. A general message is
+// never delayed.
 //
 // The pollRef is an opaque string the CA uses to correlate with its backend
-// (a database ID, job reference, or any identifier). It works across server
-// replicas when the CA uses shared storage.
+// (a database ID, job reference, or any identifier). The waiting state itself
+// lives in the server, so replicas share it only through
+// [Server.SnapshotTransactions].
+//
+// A client that stops polling leaves its request waiting until
+// [Server.CleanupExpired] removes it after [WithWaitingLifetime], 24 hours
+// after its last message by default. A CA that implements [WaitingExpirer] is
+// told the pollRef. How long a request may wait for a decision is the CA's
+// policy: CheckPending rejects a request the CA no longer wants to decide.
 //
 // # Certificate confirmation
 //
@@ -186,9 +213,11 @@
 // [RevocationAuthorizer] and approves them. The same applies to MAC-protected
 // requests, which [LightweightPolicy] refuses unless [WithMACRevocation] is set.
 //
-// Revocation is synchronous. The server answers with an rp that reports either
-// acceptance or the rejection RevokeCertificate returned. A custom [Handler]
-// that returns a [WaitingResponse] for an rr gets systemFailure.
+// The server answers with an rp that reports either acceptance or the
+// rejection RevokeCertificate returned. A revocation that has to wait, for
+// example for an operator, returns a [*WaitingError] and is decided through
+// [PendingChecker], as described under Asynchronous issuance. A custom
+// [Handler] delays an rr by returning a [WaitingResponse] with a PollRef.
 //
 // # Support messages
 //
@@ -457,8 +486,9 @@
 //	    }
 //	}()
 //
-// Entries expire based on last activity time; the expiry duration is controlled
-// by [WithConfirmWaitTime] (default 10 seconds).
+// Entries expire based on last activity time. [WithConfirmWaitTime] controls
+// the expiry (default 10 seconds), except for waiting requests, which
+// [WithWaitingLifetime] controls (default 24 hours).
 //
 // # Durable transaction recovery
 //
@@ -482,5 +512,5 @@
 // Restore rejects a different signer, invalid state and configured capacity
 // overruns without replacing existing state. Snapshots are limited to 64 MiB.
 // Expiration timestamps are preserved. The host still calls CleanupExpired
-// according to its configured confirmation deadline.
+// according to its configured confirmation deadline and waiting lifetime.
 package server
