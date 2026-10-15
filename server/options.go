@@ -369,6 +369,12 @@ func WithSignatureProtectionPOP() Option {
 // A request with a key the server cannot encrypt for is refused with badAlg.
 // See the cms package for the supported keys.
 //
+// EnvelopedData is cmp2021 syntax, so the response is version 3. A version 2
+// request for an RSA key gets the certificate in the EncryptedValue of CMP
+// version 2 instead and a version 2 response, because clients such as OpenSSL
+// 3.0 and 3.2 cannot parse EnvelopedData there. Other keys have no EncryptedValue
+// form.
+//
 // Implicit confirmation is never granted to such a request. A certConf with
 // another hash is refused with badPOP. Until a matching certConf arrives the
 // certificate must be treated as undelivered: [CA.IssueCertificate] and
