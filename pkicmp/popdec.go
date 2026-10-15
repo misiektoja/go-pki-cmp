@@ -258,3 +258,19 @@ func (c *CertOrEncCert) EncryptedCertificate() []byte {
 	}
 	return c.EncryptedCert.envelopedData.Raw
 }
+
+// NewEncryptedValueCertificate returns a CertOrEncCert holding the DER
+// EncryptedValue (RFC 4211 §2.1) of an encrypted certificate. RFC 9810 §5.2.2
+// keeps this form for CMP version 2 peers only.
+func NewEncryptedValueCertificate(value []byte) CertOrEncCert {
+	return CertOrEncCert{EncryptedCert: &encryptedKey{encryptedValue: &encryptedValue{Raw: value}}}
+}
+
+// EncryptedValueCertificate returns the DER EncryptedValue of an encrypted
+// certificate, or nil when the certificate is in plaintext or uses EnvelopedData.
+func (c *CertOrEncCert) EncryptedValueCertificate() []byte {
+	if c.EncryptedCert == nil || c.EncryptedCert.encryptedValue == nil {
+		return nil
+	}
+	return c.EncryptedCert.encryptedValue.Raw
+}
