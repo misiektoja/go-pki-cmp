@@ -7,11 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha3"
 	"crypto/sha512"
 	"encoding/asn1"
 	"errors"
 	"fmt"
 	"hash"
+	"slices"
 
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -39,6 +41,8 @@ var (
 	// The ANS X9.44 key derivation functions of RFC 9690 Appendix B.
 	oidKDF2 = asn1.ObjectIdentifier{1, 3, 133, 16, 840, 9, 44, 1, 1}
 	oidKDF3 = asn1.ObjectIdentifier{1, 3, 133, 16, 840, 9, 44, 1, 2}
+
+	oidSHAKE256 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 12}
 )
 
 // ML-KEM encapsulation key sizes from FIPS 203 Table 3.
@@ -420,6 +424,10 @@ type kemKDF func(sharedSecret, otherInfo []byte, size int) ([]byte, error)
 // support other KDFs. Decryption also accepts HKDF with SHA-384 or SHA-512 and
 // the ANS X9.44 KDF2 and KDF3 of RFC 9690 Appendix B, because Bouncy Castle
 // uses KDF3 with SHA-256 by default. SHA-1 is refused, as RFC 9690 requires.
+//
+// SHAKE256 is accepted because EJBCA configures it. No RFC defines it as a
+// KEMRecipientInfo KDF. Bouncy Castle derives the key as SHAKE256(Z || OtherInfo),
+// and its parameters are absent as RFC 8702 §2 defines them for the hash.
 func kemKeyDerivation(alg algorithmIdentifier) (kemKDF, error) {
 	unsupported := fmt.Errorf("cms: unsupported KEM key derivation algorithm %v", alg.oid)
 	if newHash, ok := hkdfHash(alg.oid); ok {
@@ -429,6 +437,14 @@ func kemKeyDerivation(alg algorithmIdentifier) (kemKDF, error) {
 		}
 		return func(z, info []byte, size int) ([]byte, error) {
 			return hkdf.Key(newHash, z, nil, string(info), size)
+		}, nil
+	}
+	if alg.oid.Equal(oidSHAKE256) {
+		if len(alg.params) != 0 {
+			return nil, unsupported
+		}
+		return func(z, info []byte, size int) ([]byte, error) {
+			return sha3.SumSHAKE256(slices.Concat(z, info), size), nil
 		}, nil
 	}
 	isKDF3 := alg.oid.Equal(oidKDF3)
