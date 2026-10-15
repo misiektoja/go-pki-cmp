@@ -191,6 +191,8 @@ request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another 
 certificate. A CMP version 2 request for an RSA key gets its certificate in the older EncryptedValue
 format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get. A Bouncy Castle
 client must send version 3 for an RSA key, because its `CertificateResponse` reads only EnvelopedData.
+`server.WithEnvelopedDataForVersion2` sends EnvelopedData to such requests too, for servers whose
+version 2 clients read only that format.
 
 Then serve it:
 
