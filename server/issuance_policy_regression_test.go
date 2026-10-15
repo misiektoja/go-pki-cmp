@@ -392,23 +392,46 @@ func TestSignatureSenderMustMatchLookedUpCertificate(t *testing.T) {
 	}
 }
 
-// Only a signature proves possession here. RFC 9810 §5.2.8.3 gives keys that
-// cannot sign an indirect method, which is not implemented, so such a request
-// must be refused instead of reaching the CA with no proof at all.
+// A request without a verified proof must be refused instead of reaching the CA.
+// The indirect methods of RFC 9810 §5.2.8.3 are off by default, and with them
+// on the server still refuses a key it cannot encrypt for, such as X25519.
 func TestProofOfPossessionRequiredForKeysThatCannotSign(t *testing.T) {
 	secret := []byte("pop-non-signing-key")
 	key, err := ecdh.X25519().GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	subsequent := int64(0)
 
-	requests := map[string]func(t *testing.T) pkicmp.CertReqMsg{
-		"NoPOP": func(t *testing.T) pkicmp.CertReqMsg {
-			return certReqMsgWithoutPOP(t, key.PublicKey(), "x25519-no-pop")
+	requests := map[string]struct {
+		msg     func(t *testing.T) pkicmp.CertReqMsg
+		options []server.Option
+		fail    pkicmp.PKIFailureInfo
+		text    string
+	}{
+		"NoPOP": {
+			msg: func(t *testing.T) pkicmp.CertReqMsg {
+				return certReqMsgWithoutPOP(t, key.PublicKey(), "x25519-no-pop")
+			},
+			fail: pkicmp.FailBadPOP,
+			text: "proof of possession by signature required",
 		},
-		"KeyEnciphermentPOP": func(t *testing.T) pkicmp.CertReqMsg {
-			msg := certReqMsgWithoutPOP(t, key.PublicKey(), "x25519-key-encipherment")
-			msg.Popo = pkicmp.NewKeyEnciphermentPOP(&subsequent)
-			return msg
+		"KeyEnciphermentPOP": {
+			msg: func(t *testing.T) pkicmp.CertReqMsg {
+				msg := certReqMsgWithoutPOP(t, key.PublicKey(), "x25519-key-encipherment")
+				msg.Popo = pkicmp.NewKeyEnciphermentPOP(&subsequent)
+				return msg
+			},
+			fail: pkicmp.FailBadPOP,
+			text: "encrypted certificate proof of possession is not accepted",
+		},
+		"KeyEnciphermentPOPEnabled": {
+			msg: func(t *testing.T) pkicmp.CertReqMsg {
+				msg := certReqMsgWithoutPOP(t, key.PublicKey(), "x25519-key-encipherment-enabled")
+				msg.Popo = pkicmp.NewKeyEnciphermentPOP(&subsequent)
+				return msg
+			},
+			options: []server.Option{server.WithEncryptedCertificatePOP()},
+			fail:    pkicmp.FailBadAlg,
+			text:    "the server cannot encrypt for the requested key",
 		},
 	}
 	policies := map[string]func(server.Handler) server.Handler{
@@ -420,16 +443,17 @@ func TestProofOfPossessionRequiredForKeysThatCannotSign(t *testing.T) {
 		for policyName, policy := range policies {
 			t.Run(reqName+"/"+policyName, func(t *testing.T) {
 				issuer := &recordingCA{ca: &certyaml.Certificate{Subject: "CN=Test CA"}}
-				ts := httptest.NewServer(server.NewCAServer(issuer, policy, server.WithSecretLookup(&staticMACLookup{secret: secret})))
+				options := append([]server.Option{server.WithSecretLookup(&staticMACLookup{secret: secret})}, request.options...)
+				ts := httptest.NewServer(server.NewCAServer(issuer, policy, options...))
 				defer ts.Close()
 
-				msg := pkicmp.NewPKIMessage(pkicmp.NewIRBody(&pkicmp.CertReqMessages{request(t)}), macMessageOpts())
+				msg := pkicmp.NewPKIMessage(pkicmp.NewIRBody(&pkicmp.CertReqMessages{request.msg(t)}), macMessageOpts())
 				protectMAC(msg, secret)
 
 				status := rejectionStatus(t, postCMP(t, ts, msg))
 				assert.Equal(t, pkicmp.StatusRejection, status.Status)
-				assert.Equal(t, pkicmp.FailBadPOP, status.FailInfo)
-				assert.Equal(t, pkicmp.PKIFreeText{"proof of possession by signature required"}, status.StatusString)
+				assert.Equal(t, request.fail, status.FailInfo)
+				assert.Equal(t, pkicmp.PKIFreeText{request.text}, status.StatusString)
 				assert.False(t, issuer.called, "the CA must not be reached without a verified proof")
 			})
 		}
