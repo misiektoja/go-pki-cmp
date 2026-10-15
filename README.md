@@ -58,8 +58,9 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 * **[`client`](./client/)**: IR, CR, KUR, P10CR, RR and support message flows with polling, response
   verification and certificate confirmation.
 * **[`server`](./server/)**: an `http.Handler` that authenticates clients, tracks transactions,
-  supports deferred issuance, revocation and support messages, accepts requests a registration
-  authority forwards in nested messages and applies policy middleware such as the lightweight profile.
+  handles revocation and support messages, lets issuance and revocation wait for a decision such as
+  an operator's approval, accepts requests a registration authority forwards in nested messages and
+  applies policy middleware such as the lightweight profile.
 
 ## Compatibility
 
