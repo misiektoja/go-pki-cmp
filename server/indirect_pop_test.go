@@ -338,6 +338,35 @@ func testEncryptedCertificatePOP(t *testing.T, secret []byte, key popKey, pvno i
 	assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
 }
 
+// WithEnvelopedDataForVersion2 sends EnvelopedData and a pvno 3 response to a
+// pvno 2 request for an RSA key, for clients that read only EnvelopedData.
+func TestEnvelopedDataForVersion2(t *testing.T) {
+	secret := []byte("enveloped-data-version-2")
+	for _, key := range popKeys(t) {
+		t.Run(key.name, func(t *testing.T) {
+			ca := newPOPCA(t)
+			ts := httptest.NewServer(server.NewCAServer(ca, server.LightweightPolicy(),
+				server.WithSecretLookup(&staticMACLookup{secret: secret}),
+				server.WithEncryptedCertificatePOP(),
+				server.WithEnvelopedDataForVersion2(),
+			))
+			defer ts.Close()
+
+			ir := indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, false)
+			ir.Header.PVNO = pkicmp.PVNO2
+			ip := exchange(t, ts, ir, secret)
+			cert := decryptIssued(t, ip, key)
+			assert.Equal(t, "EnvelopedData", encryptedForm(t, ip))
+			assert.Equal(t, pkicmp.PVNO3, ip.Header.PVNO)
+
+			conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
+			require.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type, "%+v", conf.Body.Type)
+			_, confirmations := ca.recorded()
+			assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
+		})
+	}
+}
+
 // A wrong hash fails the proof and keeps the transaction, so the certificate
 // expires unconfirmed unless a right certConf follows.
 func TestEncryptedCertificateWrongHash(t *testing.T) {
