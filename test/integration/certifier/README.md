@@ -18,6 +18,8 @@ Both clients deviate from RFC 4211 and RFC 9483 in places. The tests check that 
 | ssh-cmpclient `INITIALIZE`, `ENROLL`, `P10CR` and `UPDATE` with a new key | none |
 | ssh-cmpclient `UPDATE` without `-P`, which keeps the key and sends no proof of possession | `WithSignatureProtectionPOP` |
 | ssh-cmpclient `REVOKE` | not accepted, because it sends pvno 0 |
+| cmpclient `ir` that waits for a decision, which it polls for without recipNonce | `WithOptionalPollReqRecipNonce` |
+| ssh-cmpclient `POLL` after an `INITIALIZE` that waits for a decision, without recipNonce | `WithOptionalPollReqRecipNonce` |
 
 `WithStrictProfileValidation` refuses MAC-protected requests from ssh-cmpclient and from cmpclient without `--sender`, because their sender is the NULL-DN. It also refuses cmpclient requests that carry poposkInput and a signed ssh-cmpclient `UPDATE`, which leaves the signer certificate out of extraCerts.
 
