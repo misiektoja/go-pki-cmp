@@ -3,7 +3,7 @@
 Integration tests for the CMP server against two proprietary CMP clients:
 
 * the **Insta Certifier 10 cmpclient**
-* the **Nokia ssh-cmpclient** from an Insta Certifier 7 or Nokia NCM installation
+* the **Insta Certifier 7 ssh-cmpclient**
 
 The clients run in a Docker container and send their requests to a server the test starts on the host. Each test checks what the client saved and what the server reported to the CA. Both clients exit with status 0 when the server rejects a request, so their exit status proves nothing.
 
@@ -29,7 +29,7 @@ The clients are not distributed with this repository. Put them in a local direct
 
 ```text
 bin/cmpclient          Certifier 10 cmpclient
-bin/ssh-cmpclient      ssh-cmpclient, optional
+bin/ssh-cmpclient      Certifier 7 ssh-cmpclient, optional
 lib/libssl.so.3        OpenSSL from the same installation as ssh-cmpclient
 lib/libcrypto.so.3
 ```
@@ -50,10 +50,6 @@ make test-integration-certifier
 
 The tests skip when Docker or the image is missing, so `make test-integration` passes without them. The ssh-cmpclient tests skip when the image has no ssh-cmpclient.
 
-The server listens on 127.0.0.1. On Linux the container shares the host network. On macOS it reaches the server through `host.docker.internal`, which Colima forwards to the host loopback interface. The tests have been run only with Colima on macOS.
+The server listens on 127.0.0.1. On Linux the container shares the host network. Elsewhere it reaches the server through `host.docker.internal`.
 
-Both clients are linux/amd64 binaries, so an arm64 host runs them under emulation. Under QEMU emulation in Colima, cmpclient can compute wrong PasswordBasedMac values when its Go runtime uses several threads. The tests run it with `GOMAXPROCS=1`, but iteration counts above 10000 can still fail. The problem was not seen on an amd64 host.
-
-ssh-cmpclient sometimes exits with SIGSEGV before printing anything. This was seen under emulation. Native amd64 hosts have not been checked. The tests retry a crashed client once.
-
-Running the clients through Rosetta, with `colima start --vm-type vz --vz-rosetta`, has not been tested.
+Both clients are linux/amd64 binaries, so an arm64 host runs them under emulation. There cmpclient can compute wrong PasswordBasedMac values when its Go runtime uses several threads and ssh-cmpclient sometimes crashes before printing anything. The tests therefore run cmpclient with `GOMAXPROCS=1` and retry a crashed client once.
