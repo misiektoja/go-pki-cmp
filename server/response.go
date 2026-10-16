@@ -387,13 +387,15 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 	}
 
 	// RFC 9483 §3.5: recipNonce MUST equal the senderNonce of the previous message.
-	if len(msg.Header.RecipNonce) == 0 {
+	// WithStrictProfileValidation overrides WithOptionalPollReqRecipNonce.
+	missingRecipNonce := len(msg.Header.RecipNonce) == 0
+	if missingRecipNonce && (!s.cfg.optionalPollReqRecipNonce || s.cfg.strictProfile) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"missing recipNonce"},
 		})
 	}
-	if !bytes.Equal(msg.Header.RecipNonce, pending.senderNonce) {
+	if !missingRecipNonce && !bytes.Equal(msg.Header.RecipNonce, pending.senderNonce) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"recipNonce mismatch"},

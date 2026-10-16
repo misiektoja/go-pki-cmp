@@ -72,6 +72,7 @@ type serverConfig struct {
 	maxTransactionsPerCredential int
 	strictProfile                bool
 	optionalCertConfRecipNonce   bool
+	optionalPollReqRecipNonce    bool
 	allowSHA1Signatures          bool
 	allowPoposkInputVariants     bool
 	rawSubject                   bool
@@ -235,6 +236,28 @@ func WithStrictProfileValidation() Option {
 func WithOptionalCertConfRecipNonce() Option {
 	return func(c *serverConfig) {
 		c.optionalCertConfRecipNonce = true
+	}
+}
+
+// WithOptionalPollReqRecipNonce accepts a pollReq that carries no recipNonce.
+// RFC 9483 §3.1 requires every message after the first of a transaction to
+// repeat the senderNonce of the previous message, so the server answers a
+// pollReq without one with badRecipientNonce by default. Use the option for
+// clients that leave the field out, such as the Insta Certifier 10 cmpclient
+// and the Nokia ssh-cmpclient. Without it they cannot collect a certificate
+// or a revocation that waited for a decision.
+//
+// A recipNonce that is present must still match. The poll stays bound to the
+// waiting request by its protection, the sender's credential and its
+// transactionID. Without the nonce a recorded pollReq of the same transaction
+// can be sent again, which can collect the final response before the device
+// does. That response holds no secret: a certificate, a refusal or an
+// encrypted certificate only the requested key can read.
+// [WithStrictProfileValidation] refuses a pollReq without recipNonce whether
+// or not this option is set.
+func WithOptionalPollReqRecipNonce() Option {
+	return func(c *serverConfig) {
+		c.optionalPollReqRecipNonce = true
 	}
 }
 
