@@ -3,7 +3,7 @@
 # repository, so the build context is a local directory that holds them:
 #
 #   bin/cmpclient                          Certifier 10 cmpclient
-#   bin/ssh-cmpclient                      ssh-cmpclient, optional
+#   bin/ssh-cmpclient                      Certifier 7 ssh-cmpclient, optional
 #   lib/libssl.so.3, lib/libcrypto.so.3    OpenSSL from the same installation
 #                                          as ssh-cmpclient, which needs it
 #
