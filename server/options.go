@@ -210,8 +210,9 @@ func WithImplicitConfirm() Option {
 // [WithOptionalRevocationIssuer], [WithMACRevocation] and
 // [WithSignatureProtectionPOP].
 //
-// Off by default because deployed clients fail them: Nokia ssh-cmpclient
-// sends a NULL-DN sender, omits its own certificate and reuses the senderNonce.
+// Off by default because deployed clients fail them: the Insta Certifier 7
+// ssh-cmpclient sends a NULL-DN sender, omits its own certificate and reuses
+// the senderNonce.
 // RFC 4210 clients may omit the transactionID or send a shorter senderNonce.
 // None of them affects authentication, which comes from senderKID or
 // CertificateLookup plus recipNonce. Turn it on for a conformance suite or a
@@ -244,8 +245,8 @@ func WithOptionalCertConfRecipNonce() Option {
 // repeat the senderNonce of the previous message, so the server answers a
 // pollReq without one with badRecipientNonce by default. Use the option for
 // clients that leave the field out, such as the Insta Certifier 10 cmpclient
-// and the Nokia ssh-cmpclient. Without it they cannot collect a certificate
-// or a revocation that waited for a decision.
+// and the Insta Certifier 7 ssh-cmpclient. Without it they cannot collect a
+// certificate or a revocation that waited for a decision.
 //
 // A recipNonce that is present must still match. The poll stays bound to the
 // waiting request by its protection, the sender's credential and its
