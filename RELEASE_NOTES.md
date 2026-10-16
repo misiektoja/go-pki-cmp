@@ -41,6 +41,10 @@ The new **documentation site** at [misiektoja.github.io/go-pki-cmp](https://misi
 
 * **`MockCA` certifies composite ML-DSA keys.** Enrolling one used to fail with systemFailure.
 
+### Requirements
+
+* **golang.org/x/crypto v0.58.0 or newer** is now required.
+
 ## v0.5.0 - 12 Oct 2026
 
 This release adds the RFC 9483 support messages. Clients can ask a CA for its CA certificates, a root CA update, a certificate request template and newer CRLs. Servers can answer these requests.
