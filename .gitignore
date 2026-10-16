@@ -36,6 +36,7 @@ go.work.sum
 bin/
 dist/
 .cache/
+site/
 
 # Dependency directories
 vendor/

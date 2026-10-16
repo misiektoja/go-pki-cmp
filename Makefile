@@ -144,6 +144,21 @@ docs: ## Serve the package documentation locally with pkgsite.
 	# https://github.com/golang/pkgsite
 	pkgsite -http localhost:9430 -open .
 
+# PYTHON selects the interpreter that provides the MkDocs toolchain.
+PYTHON ?= python3
+
+.PHONY: docs-deps
+docs-deps: ## Install the pinned documentation site build dependencies.
+	$(PYTHON) -m pip install -r docs/requirements.txt
+
+.PHONY: docs-build
+docs-build: ## Build the documentation site into site/ and fail on any warning.
+	$(PYTHON) -m mkdocs build --strict
+
+.PHONY: docs-serve
+docs-serve: ## Serve the documentation site locally with live reload.
+	$(PYTHON) -m mkdocs serve
+
 ##@ Release
 
 # VERSION names the release tag, for example v0.2.0. Every artifact is named after it.
