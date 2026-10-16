@@ -8,7 +8,7 @@ Contribute only code you have the right to license under Apache-2.0. Do not copy
 
 Never commit shared secrets, private keys, full CSRs, CMP messages captured from a production system or non-public PKI documentation. Keep scratch files and local test state out of commits.
 
-Open pull requests against `dev`. Pull requests run the formatting, vet, lint, test, fuzz, integration and supply chain checks.
+Open pull requests against `dev`. Pull requests run the formatting, vet, lint, test, fuzz, integration, documentation and supply chain checks.
 
 ## Development checks
 
@@ -18,53 +18,26 @@ Run these before submitting a change:
 make lint
 make test
 make fuzz
+make docs-build
 ```
 
-`make test` runs `go vet` and the unit tests under the race detector, because the documented server deployment sweeps expired transactions from a background goroutine while serving requests. The unit tests have no external dependencies. `make lint` runs golangci-lint at the version CI uses, installed under `bin/`, and also lints the integration tests.
+`make test` runs `go vet` and the unit tests under the race detector. `make lint` runs golangci-lint at the version CI uses, installed under `bin/`. `make docs-build` builds the documentation site strictly and needs `make docs-deps` once. Run `make actionlint` when a workflow changes, `make govulncheck` when a dependency changes and `make gitleaks` before pushing. `make help` lists every target.
 
-Every parser in `pkicmp` consumes bytes chosen by a peer, and message protection is verified before anything establishes who that peer is. The fuzz targets cover whole-message parsing, MAC protection parameters and signature verification. `make fuzz` runs each for 30 seconds, as CI does. Use `make fuzz FUZZTIME=10m` for a longer local run and set `FUZZMINIMIZETIME` to minimize a crashing input.
+`make test-integration` runs the library against EJBCA, OpenSSL, the Siemens CMP test suite, Nokia NCM and the Insta Certifier clients. It needs Docker, OpenSSL 3.2 or newer, Git and `uv`. The NCM and Insta Certifier tests skip without their setup.
 
-Run `make actionlint` when a workflow changes, `make govulncheck` when a dependency changes and `make gitleaks` before pushing. `make help` lists every target.
+[Development](https://misiektoja.github.io/go-pki-cmp/development/development/) and [Testing](https://misiektoja.github.io/go-pki-cmp/development/testing/) describe the repository layout, the fuzz targets, the integration test setup and the OpenSSL versions each test needs.
 
-## Integration tests
-
-The integration tests run the library against independent CMP implementations: the client against EJBCA and OpenSSL, and the server against OpenSSL and the Siemens CMP test suite.
-
-> [!IMPORTANT]
-> **Prerequisites**: Docker, OpenSSL 3.2 or newer, Git and `uv`.
-> The certificate request template test against the OpenSSL mock server needs OpenSSL 4.0 or newer, because the OpenSSL 3 server crashes on that request. The ML-KEM cases of the CMS and proof-of-possession tests also need OpenSSL 4.0, the first release with ML-KEM in CMS, and skip on OpenSSL 3. The elliptic curve case of the encrypted certificate test needs OpenSSL 3.5 or newer because earlier releases cannot read a certificate in EnvelopedData. It skips on them. CI runs the OpenSSL tests with 3.5 and 4.0.
-
-```bash
-make setup             # Start the EJBCA container and clone the CMP test suite
-make test-integration  # Run every integration test
-make teardown          # Stop and remove the EJBCA container
-```
-
-`make test-integration-ncm` runs the client against a Nokia NCM instance. It needs the endpoint and credentials in `NCM_CMP_*` variables and skips without them. [test/integration/ncm/README.md](test/integration/ncm/README.md) lists the variables. CI runs these tests for pushes to `dev` and `main` and once a week when the repository has the NCM secrets.
-
-`make test-integration-certifier` runs the server against the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient. The clients are proprietary, so the tests need a local image built from your own copies and skip without it. CI does not run them. [test/integration/certifier/README.md](test/integration/certifier/README.md) describes the image.
-
-Protocol changes need negative tests and an RFC citation. A change must keep working against real CMP peers and against clients that implement only RFC 4210. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments and the README.
+Protocol changes need negative tests and an RFC citation. A change must keep working against real CMP peers and against clients that implement only RFC 4210. Interoperability claims need sanitized evidence naming the peer and its version. User-facing behavior changes update the Go doc comments and the relevant page under `docs/`.
 
 Every change must comply with the Developer Certificate of Origin 1.1. Use `git commit -s` only when you intend to provide that certification.
 
 ## Compatibility
 
-The module uses semantic versioning. [RELEASE_NOTES.md](RELEASE_NOTES.md) describes every change that affects callers, including any that needs a code change.
+The module uses semantic versioning. [RELEASE_NOTES.md](RELEASE_NOTES.md) describes every change that affects callers, including any that needs a code change. [Compatibility policy](https://misiektoja.github.io/go-pki-cmp/reference/compatibility/) states what may change before v1.0.0.
 
 ## Releasing
 
-A release is started by pushing a version tag that is reachable from `main` and by nothing else.
-
-Release headings use `## vX.Y.Z - D Mon YYYY`, for example `## v0.4.0 - 11 Oct 2026`. Use an unpadded day and an abbreviated English month. Keep `TBD` until the release date is set.
-
-1. Set the release date in `RELEASE_NOTES.md` and merge `dev` into `main`.
-2. Run `make release-check VERSION=vX.Y.Z` on `main`. It builds, vets and tests an export of the tree in a new temporary directory, imports it from a separate module and checks the release notes heading. Set `RELEASE_CHECK_DIR` to a path that does not exist yet to keep the export somewhere else.
-3. Tag the release commit on `main` and push the tag with `git push origin vX.Y.Z`.
-4. The Release workflow repeats the check and creates a draft release. The draft carries the release notes section, complete source archives, a CycloneDX SBOM, SHA-256 checksums and a signed build provenance bundle.
-5. Review the draft and publish it.
-
-Consumers can check that an artifact was built by the workflow with `gh attestation verify <file> --repo misiektoja/go-pki-cmp`.
+A release is started by pushing a version tag that is reachable from `main` and by nothing else. [Release process](https://misiektoja.github.io/go-pki-cmp/development/release-process/) lists the steps, the release notes heading format, the checks and the artifacts every release carries.
 
 ## Code style
 
