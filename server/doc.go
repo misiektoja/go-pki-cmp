@@ -146,6 +146,8 @@
 // that arrives earlier gets another pollRep with the time left and does not
 // reach the CA. A pollReq names the request by its certReqId or by -1 for the
 // whole message. A p10cr may also be polled with 0. Any other value is refused.
+// A pollReq must repeat the senderNonce of the previous response in its
+// recipNonce. [WithOptionalPollReqRecipNonce] accepts one that leaves it out.
 //
 // A revocation waits when [Revoker.RevokeCertificate] or
 // [RevocationAuthorizer.AuthorizeRevocation] returns a [*WaitingError]. The
