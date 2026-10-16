@@ -1,0 +1,109 @@
+package pkicmp
+
+import (
+	"bytes"
+	"crypto"
+	"crypto/mlkem"
+	"encoding/asn1"
+	"errors"
+
+	"github.com/misiektoja/go-composite-mldsa/compositex509"
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+)
+
+// ML-KEM algorithm identifiers (RFC 9935 §3).
+var (
+	oidMLKEM512  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 4, 1}
+	oidMLKEM768  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 4, 2}
+	oidMLKEM1024 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 4, 3}
+)
+
+// ErrMLKEM512 is returned for an ML-KEM-512 key, which the Go standard library does not implement.
+var ErrMLKEM512 = errors.New("pkicmp: ML-KEM-512 keys are not supported")
+
+// ParsePublicKey parses a DER SubjectPublicKeyInfo.
+//
+// ML-KEM-768 and ML-KEM-1024 keys (RFC 9935) are returned as *mlkem.EncapsulationKey768
+// and *mlkem.EncapsulationKey1024, and ML-KEM-512 keys are refused with [ErrMLKEM512].
+// A composite ML-DSA key is returned as *compositemldsa.PublicKey and every other key
+// as crypto/x509 returns it.
+func ParsePublicKey(der []byte) (crypto.PublicKey, error) {
+	oid, key, ok := parseSPKI(der)
+	switch {
+	case !ok:
+		// Leave the error report for a malformed encoding to crypto/x509.
+	case oid.Equal(oidMLKEM768):
+		return mlkem.NewEncapsulationKey768(key)
+	case oid.Equal(oidMLKEM1024):
+		return mlkem.NewEncapsulationKey1024(key)
+	case oid.Equal(oidMLKEM512):
+		return nil, ErrMLKEM512
+	}
+	return compositex509.ParsePKIXPublicKey(der)
+}
+
+// MarshalPublicKey encodes a public key as a DER SubjectPublicKeyInfo. It accepts the
+// key types [ParsePublicKey] returns.
+func MarshalPublicKey(pub crypto.PublicKey) ([]byte, error) {
+	var oid asn1.ObjectIdentifier
+	var key []byte
+	switch k := pub.(type) {
+	case *mlkem.EncapsulationKey768:
+		oid, key = oidMLKEM768, k.Bytes()
+	case *mlkem.EncapsulationKey1024:
+		oid, key = oidMLKEM1024, k.Bytes()
+	default:
+		return compositex509.MarshalPKIXPublicKey(pub)
+	}
+	// RFC 9935 §4: the parameters field is absent.
+	var b cryptobyte.Builder
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+			b.AddASN1ObjectIdentifier(oid)
+		})
+		b.AddASN1BitString(key)
+	})
+	return b.Bytes()
+}
+
+// parseSPKI returns the algorithm OID and key bits of a SubjectPublicKeyInfo with absent algorithm parameters.
+func parseSPKI(der []byte) (asn1.ObjectIdentifier, []byte, bool) {
+	s := cryptobyte.String(der)
+	var spki, alg cryptobyte.String
+	var oid asn1.ObjectIdentifier
+	var bits asn1.BitString
+	if !s.ReadASN1(&spki, cbasn1.SEQUENCE) || !s.Empty() || !spki.ReadASN1(&alg, cbasn1.SEQUENCE) ||
+		!alg.ReadASN1ObjectIdentifier(&oid) || !alg.Empty() {
+		return nil, nil, false
+	}
+	if !spki.ReadASN1BitString(&bits) || !spki.Empty() || bits.BitLength%8 != 0 {
+		return nil, nil, false
+	}
+	return oid, bits.Bytes, true
+}
+
+// IsKEMKey reports whether pub is an ML-KEM key, which can only prove possession by decryption.
+func IsKEMKey(pub crypto.PublicKey) bool {
+	switch pub.(type) {
+	case *mlkem.EncapsulationKey768, *mlkem.EncapsulationKey1024:
+		return true
+	}
+	return false
+}
+
+// PublicKeysEqual reports whether a and b are the same public key. It compares
+// ML-KEM keys by their encoding, because the mlkem types have no Equal method,
+// and other keys with their Equal method.
+func PublicKeysEqual(a, b crypto.PublicKey) bool {
+	switch ka := a.(type) {
+	case *mlkem.EncapsulationKey768:
+		kb, ok := b.(*mlkem.EncapsulationKey768)
+		return ok && bytes.Equal(ka.Bytes(), kb.Bytes())
+	case *mlkem.EncapsulationKey1024:
+		kb, ok := b.(*mlkem.EncapsulationKey1024)
+		return ok && bytes.Equal(ka.Bytes(), kb.Bytes())
+	}
+	comparable, ok := a.(interface{ Equal(crypto.PublicKey) bool })
+	return ok && comparable.Equal(b)
+}

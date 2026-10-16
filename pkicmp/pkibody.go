@@ -59,6 +59,8 @@ type PKIBody struct {
 	cr       *CertReqMessages
 	cp       *CertRepMessage
 	p10cr    *x509.CertificateRequest
+	popdecc  *POPODecKeyChallContent
+	popdecr  *POPODecKeyRespContent
 	kur      *CertReqMessages
 	kup      *CertRepMessage
 	rr       *RevReqContent
@@ -86,6 +88,8 @@ const (
 	BodyTypeCR       = BodyType(2 | classContextSpecific | classConstructed)
 	BodyTypeCP       = BodyType(3 | classContextSpecific | classConstructed)
 	BodyTypeP10CR    = BodyType(4 | classContextSpecific | classConstructed)
+	BodyTypePopDecC  = BodyType(5 | classContextSpecific | classConstructed) // RFC 9810 §5.2.8.3.3: POPODecKeyChallContent
+	BodyTypePopDecR  = BodyType(6 | classContextSpecific | classConstructed) // RFC 9810 §5.2.8.3.3: POPODecKeyRespContent
 	BodyTypeKUR      = BodyType(7 | classContextSpecific | classConstructed)
 	BodyTypeKUP      = BodyType(8 | classContextSpecific | classConstructed)
 	BodyTypeRR       = BodyType(11 | classContextSpecific | classConstructed)
@@ -113,6 +117,10 @@ func (t BodyType) String() string {
 		return "cp"
 	case BodyTypeP10CR:
 		return "p10cr"
+	case BodyTypePopDecC:
+		return "popdecc"
+	case BodyTypePopDecR:
+		return "popdecr"
 	case BodyTypeKUR:
 		return "kur"
 	case BodyTypeKUP:
@@ -174,6 +182,10 @@ func (b *PKIBody) marshal(mctx *marshalContext, builder *cryptobyte.Builder) {
 			b.cp.marshal(mctx, builder)
 		case BodyTypeP10CR:
 			builder.AddBytes(b.p10cr.Raw)
+		case BodyTypePopDecC:
+			b.popdecc.marshal(mctx, builder)
+		case BodyTypePopDecR:
+			b.popdecr.marshal(mctx, builder)
 		case BodyTypeKUR:
 			b.kur.marshal(mctx, builder)
 		case BodyTypeKUP:
@@ -311,6 +323,30 @@ func (b *PKIBody) P10CR() (*x509.CertificateRequest, error) {
 	}
 	b.p10cr, b.err = x509.ParseCertificateRequest(sub)
 	return b.p10cr, b.err
+}
+
+// PopDecC returns the challenges of a popdecc body (RFC 9810 §5.2.8.3.3).
+func (b *PKIBody) PopDecC() (*POPODecKeyChallContent, error) {
+	if b.Type != BodyTypePopDecC {
+		return nil, &ParseError{Detail: fmt.Sprintf("body is not popdecc (type %s)", b.Type)}
+	}
+	if b.popdecc == nil && b.err == nil {
+		b.popdecc = &POPODecKeyChallContent{}
+		b.err = b.unmarshalBodyContent(b.popdecc)
+	}
+	return b.popdecc, b.err
+}
+
+// PopDecR returns the answers of a popdecr body (RFC 9810 §5.2.8.3.3).
+func (b *PKIBody) PopDecR() (*POPODecKeyRespContent, error) {
+	if b.Type != BodyTypePopDecR {
+		return nil, &ParseError{Detail: fmt.Sprintf("body is not popdecr (type %s)", b.Type)}
+	}
+	if b.popdecr == nil && b.err == nil {
+		b.popdecr = &POPODecKeyRespContent{}
+		b.err = b.unmarshalBodyContent(b.popdecr)
+	}
+	return b.popdecr, b.err
 }
 
 func (b *PKIBody) CP() (*CertRepMessage, error) {
@@ -519,6 +555,16 @@ func NewKUPBody(rep *CertRepMessage) *PKIBody {
 
 func NewP10CRBody(csr *x509.CertificateRequest) *PKIBody {
 	return &PKIBody{Type: BodyTypeP10CR, p10cr: csr, dirty: true}
+}
+
+// NewPopDecCBody creates a popdecc body carrying proof-of-possession challenges (RFC 9810 §5.2.8.3.3).
+func NewPopDecCBody(challenges *POPODecKeyChallContent) *PKIBody {
+	return &PKIBody{Type: BodyTypePopDecC, popdecc: challenges, dirty: true}
+}
+
+// NewPopDecRBody creates a popdecr body carrying the answers to a popdecc (RFC 9810 §5.2.8.3.3).
+func NewPopDecRBody(answers *POPODecKeyRespContent) *PKIBody {
+	return &PKIBody{Type: BodyTypePopDecR, popdecr: answers, dirty: true}
 }
 
 func NewCPBody(rep *CertRepMessage) *PKIBody {

@@ -2,6 +2,43 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.6.0 - 16 Oct 2026
+
+This release enrolls keys that cannot sign, such as ML-KEM-768 and ML-KEM-1024, through proof of possession by decryption: the encrypted certificate and challenge-response methods of RFC 9810. It works against EJBCA, with OpenSSL 3.0 and later for RSA keys and with OpenSSL 4.0 for ML-KEM keys. CAs can hold enrollment and revocation requests until someone approves or rejects them. They can also answer grantedWithMods. Some refusal reasons and the handling of waiting requests changed. Code that checks refusal reasons or relies on waiting requests should read the `pkicmp` and `server` entries before upgrading.
+
+### `pkicmp`
+
+* **Proof of possession by decryption.** **`NewKeyAgreementPOP`** joins `NewKeyEnciphermentPOP`. Both take `SubsequentMessageEncrCert` or `SubsequentMessageChallengeResp`. `NewEncryptedCertificate` carries an encrypted certificate in EnvelopedData and `NewEncryptedValueCertificate` in the EncryptedValue of CMP version 2. `CertOrEncCert.EncryptedCertificate` and `EncryptedValueCertificate` read them. `NewPopDecCBody`, `NewPopDecRBody`, `PKIBody.PopDecC`, `PKIBody.PopDecR`, `ChallengeWitness`, `Challenge.VerifyWitness`, `Rand` and `ParseRand` build and check the challenge and its answer.
+* **ML-KEM public keys.** `ParsePublicKey` returns ML-KEM-768 and ML-KEM-1024 keys and refuses ML-KEM-512 with `ErrMLKEM512`. `MarshalPublicKey`, `IsKEMKey`, `PublicKeysEqual` and certificate requests support them.
+* **Refusal reasons are more precise.** **`ReasonUntrustedSigner`** reports a protection certificate that does not chain to the trusted CAs, which used to fail with `ReasonSignatureFailed`. **`ReasonSenderKIDMismatch`** reports a senderKID that names none of the candidate certificates, which used to fail with `ReasonNoCandidateSigner`. That reason now means no certificate was available. A response that carries CA certificates without a senderKID, as Nokia NCM sends them, now reports the failure of the certificate with the sender's name instead of `ReasonSenderMismatch`, which now means no candidate has that name.
+* **`VerifyOptions.AllowSenderKIDMismatch`** tries every candidate when the senderKID names none of them, for CAs that copy the senderKID of the request. Each candidate must still chain to the trusted CAs, have the sender's name and verify the signature.
+* **`VerifyOptions.CurrentTime`** checks the protection certificate and its chain at a chosen time, such as when a recorded message was received. Do not take that time from the message when the result decides whether to act on it, because the sender sets its `messageTime`.
+
+### `client`
+
+* **`SendIRWithIndirectPOP`, `SendCRWithIndirectPOP` and `SendKURWithIndirectPOP`** enroll a key that cannot sign with `EncryptedCertificate` or `ChallengeResponse`. They accept ML-KEM-768 and ML-KEM-1024, RSA and elliptic curve keys on P-256, P-384 and P-521. They read certificates sent as EnvelopedData or as EncryptedValue and use CMP version 3 for the whole transaction. The CA must support the method. RFC 9483 lets it refuse both for a key that can sign.
+* **`WithSenderKIDMismatch`** accepts signed responses whose senderKID names none of the candidate signer certificates. It is off by default.
+
+### `server`
+
+* **`WithEncryptedCertificatePOP`** and **`WithChallengeResponsePOP`** accept proof of possession by decryption. Both are off by default. `WithStrictProfileValidation` allows them only for keys that cannot sign. An encrypted certificate never gets implicit confirmation and a certConf with the wrong hash gets badPOP. Publish the certificate only after `ConfirmAccepted` and revoke it on `ConfirmExpired` or `ConfirmRejected`. A challenge-response request reaches the CA only after the right answer. **`POPMethodFromContext`** tells the CA which method a request used. Keys the server cannot encrypt for, such as X25519, are refused with badAlg.
+* **Encrypted certificate format.** A CMP version 2 request for an RSA key gets its certificate as EncryptedValue in a version 2 response, because OpenSSL 3.0 and 3.2 read only that format. Other requests get EnvelopedData in a version 3 response. **`WithEnvelopedDataForVersion2`** sends EnvelopedData to version 2 RSA requests too, for clients that read only EnvelopedData, such as Bouncy Castle 1.86.
+* **Snapshots** keep the proof-of-possession method and any challenge waiting for its answer. Earlier versions refuse a snapshot that holds such a challenge.
+* **`Response.GrantedWithMods`** answers grantedWithMods for a CA that changed the request. **`Response.StatusText`** sets the statusString of the issued certificate. Both are off by default.
+* **Waiting requests end the way immediate ones do.** A request that `PendingChecker.CheckPending` rejects gets an `ip`, `cp` or `kup` with its certReqId instead of an error message. The final response with a certificate grants implicit confirmation only when the request asked for it. Waiting and rejected responses no longer grant it. `WaitingResponse.Reason` becomes the statusString of the waiting response.
+* **Polling follows RFC 9483 section 4.4.** An early pollReq gets another pollRep with the time left instead of failing with "polling too frequently". A pollReq must name the waiting request by its certReqId or by -1, otherwise it gets badRequest. **`WithOptionalPollReqRecipNonce`** accepts a pollReq without recipNonce, which the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient send. Without it they cannot collect a certificate that waited for a decision.
+* **`WaitingError`** lets a `Revoker` or `RevocationAuthorizer` delay a revocation until `PendingChecker.CheckPending` decides. Such a revocation used to fail with systemFailure.
+* **`WithWaitingLifetime`** keeps a waiting request for 24 hours after its last poll by default. Waiting requests used to expire with the confirmation wait of 10 seconds. **`WaitingExpirer`** and **`WithWaitingExpirer`** tell the CA about each waiting request that `CleanupExpired` removes.
+
+### `cms`
+
+* **New package** for the EnvelopedData of proof by decryption, with RSA-OAEP, ECDH on P-256, P-384 and P-521 and ML-KEM-768 and ML-KEM-1024 recipients. `Encrypt` derives ML-KEM keys with HKDF-SHA256. `Decrypt` also accepts the KDF2, KDF3 and SHAKE256 derivations that Bouncy Castle and EJBCA use. RSA PKCS #1 v1.5 key transport is refused in EnvelopedData.
+* **`NewEncryptedValue` and `DecryptEncryptedValue`** handle the EncryptedValue of CMP version 2 for RSA keys. Encryption uses AES-256-CBC with PKCS #1 v1.5 key transport, the only combination OpenSSL reads. Decryption also accepts AES-128, AES-192, Triple DES and RSA-OAEP and reports a padding error like any other failure.
+
+### `examples/mockserver`
+
+* **`MockCA` certifies composite ML-DSA keys.** Enrolling one used to fail with systemFailure.
+
 ## v0.5.0 - 12 Oct 2026
 
 This release adds the RFC 9483 support messages. Clients can ask a CA for its CA certificates, a root CA update, a certificate request template and newer CRLs. Servers can answer these requests.

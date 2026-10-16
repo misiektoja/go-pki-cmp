@@ -43,6 +43,12 @@ type Response struct {
 	Certificate *x509.Certificate
 	CACerts     []*x509.Certificate
 	Waiting     *WaitingResponse
+	// GrantedWithMods answers grantedWithMods instead of accepted (RFC 9810 §5.2.3) for a
+	// certificate that differs from the request, such as one without a requested extension.
+	GrantedWithMods bool
+	// StatusText is sent as the statusString of an issued certificate, for example to name
+	// what the CA changed. Clients may show it to a person.
+	StatusText string
 	// GeneralResponse holds the items of the genp that answers a general
 	// message (RFC 9810 §5.3.20). Other requests ignore it.
 	GeneralResponse []pkicmp.InfoTypeAndValue

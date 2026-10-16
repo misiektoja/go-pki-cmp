@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -82,7 +81,7 @@ func VerifyPOPWithOptions(reqMsg *CertReqMsg, opts POPOptions) error {
 	if len(reqMsg.CertReq.CertTemplate.PublicKey) == 0 {
 		return &ParseError{Detail: "no public key in template for POP verification"}
 	}
-	pub, err := compositex509.ParsePKIXPublicKey(reqMsg.CertReq.CertTemplate.PublicKey)
+	pub, err := ParsePublicKey(reqMsg.CertReq.CertTemplate.PublicKey)
 	if err != nil {
 		return fmt.Errorf("pkicmp: parse public key for POP: %w", err)
 	}

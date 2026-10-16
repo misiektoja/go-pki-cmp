@@ -9,6 +9,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
@@ -73,6 +74,13 @@ type VerifyOptions struct {
 	// be within its validity period and match the sender named in the header.
 	TrustedCert *x509.Certificate
 
+	// CurrentTime is the time at which the protection certificate and its chain
+	// must be valid. The zero value means the time of the call. Set it to check a
+	// recorded message at the time it was received. Do not take it from the
+	// message being verified when the result decides whether to act on that
+	// message, because the sender chooses its messageTime.
+	CurrentTime time.Time
+
 	// ExtraCerts provides candidate signer certificates (typically from
 	// msg.ExtraCerts) for signature chain building. Certificates the caller
 	// knows out of band may be appended, and each must pass the same chain,
@@ -81,8 +89,19 @@ type VerifyOptions struct {
 	ExtraCerts []CMPCertificate
 
 	// SenderKID filters candidate signer certificates by SubjectKeyId
-	// (typically msg.Header.SenderKID).
+	// (typically msg.Header.SenderKID). When it names none of them,
+	// verification fails with [ReasonSenderKIDMismatch].
 	SenderKID []byte
+
+	// AllowSenderKIDMismatch tries every candidate when SenderKID names none
+	// of them. A candidate that SenderKID names is still the only one tried.
+	//
+	// RFC 9483 §3.1 requires senderKID to hold the SubjectKeyIdentifier of the
+	// CMP protection certificate, but some CAs copy the senderKID of the
+	// request into the response. Each candidate still faces the chain, sender
+	// and signature checks, so this only stops senderKID from excluding the
+	// real signer. Enable it only for such a peer.
+	AllowSenderKIDMismatch bool
 
 	// RequireDigitalSignatureKeyUsage rejects a CMP protection certificate that
 	// carries a keyUsage extension without the digitalSignature bit, as
@@ -370,12 +389,13 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		return nil, err
 	}
 
+	now := opts.verificationTime()
+
 	// Direct verification against a pre-trusted certificate (server-side lookup).
 	if opts.TrustedCert != nil {
 		// The chain path gets expiry checking from x509.Verify. This path does
 		// not, so without this an expired certificate left in the verifier's
 		// database would keep authenticating forever.
-		now := time.Now()
 		if now.Before(opts.TrustedCert.NotBefore) || now.After(opts.TrustedCert.NotAfter) {
 			return nil, &VerificationError{Reason: ReasonCertificateExpired}
 		}
@@ -410,43 +430,66 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		}
 		intermediates = append(intermediates, x509Cert)
 	}
+	// A message without a certificate to try says nothing about its signature,
+	// so it is reported apart from one whose signature did not verify. RFC 9483
+	// §3.3 requires extraCerts on the first response of an operation, but
+	// RFC 9810 §5.1 leaves them optional and some CAs omit them.
+	if len(intermediates) == 0 {
+		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
+	}
 
-	// senderMismatch records that a candidate was rejected only because it did
-	// not belong to the named sender, so the caller can tell an identity problem
-	// apart from a cryptographic one. keyUsageRejected does the same for a
-	// certificate that is trusted and correctly named but not allowed to sign.
-	senderMismatch := false
+	// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
+	signers := intermediates
+	if len(opts.SenderKID) > 0 {
+		signers = slices.DeleteFunc(slices.Clone(intermediates), func(cert *x509.Certificate) bool {
+			return !bytes.Equal(cert.SubjectKeyId, opts.SenderKID)
+		})
+		if len(signers) == 0 {
+			if !opts.AllowSenderKIDMismatch {
+				return nil, &VerificationError{
+					Reason: ReasonSenderKIDMismatch,
+					Err:    fmt.Errorf("no certificate has subject key identifier %X", opts.SenderKID),
+				}
+			}
+			signers = intermediates
+		}
+	}
+
+	// named counts the candidates whose subject is the sender, the only ones
+	// that may be the protection certificate. The failure of a named candidate
+	// is reported, so the CA certificates a server sends along with its own do
+	// not hide why its certificate was refused. With no named candidate the
+	// failure is an identity problem rather than a cryptographic one.
+	named := 0
+	// chained counts the named candidates that reach a trust anchor. untrusted
+	// keeps the chain error of the first one that does not, which is the
+	// reported cause when none does. keyUsageRejected records a trusted named
+	// certificate that is not allowed to sign.
+	chained := 0
+	var untrusted error
 	keyUsageRejected := false
-	candidates := 0
 
 	// RFC 9810 §5.1.3.3: Verify the signature using certificates from extraCerts.
-	for _, cert := range opts.ExtraCerts {
-		x509Cert, err := cert.Parse()
-		if err != nil {
-			continue
-		}
-		// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
-		if len(opts.SenderKID) > 0 {
-			if len(x509Cert.SubjectKeyId) == 0 || !bytes.Equal(x509Cert.SubjectKeyId, opts.SenderKID) {
-				continue
-			}
-		}
-		candidates++
-		// Verify trust chain. Any extended key usage is accepted because
-		// crypto/x509 otherwise demands serverAuth, which no CMP specification
-		// asks for and which rejects the RFC 9810 §4.5 certificates
-		// id-kp-cmcCA, id-kp-cmcRA and id-kp-cmKGA.
-		if err := certpath.Verify(x509Cert, opts.TrustPool, intermediates, time.Now()); err != nil {
-			continue
-		}
+	for _, x509Cert := range signers {
 		// RFC 9483 §3.5: the sender field must match the subject of the CMP
 		// protection certificate. Chaining to a trust anchor only proves the
 		// certificate is trusted, not that it belongs to the claimed sender, so
 		// without this any certificate under any configured anchor would pass.
 		if !senderMatchesCertificate(m.Header.Sender, x509Cert) {
-			senderMismatch = true
 			continue
 		}
+		named++
+		// Verify trust chain. Any extended key usage is accepted because
+		// crypto/x509 otherwise demands serverAuth, which no CMP specification
+		// asks for and which rejects the RFC 9810 §4.5 certificates
+		// id-kp-cmcCA, id-kp-cmcRA and id-kp-cmKGA.
+		if err := certpath.Verify(x509Cert, opts.TrustPool, intermediates, now); err != nil {
+			if untrusted == nil {
+				untrusted = err
+			}
+			continue
+		}
+		chained++
 		if opts.RequireDigitalSignatureKeyUsage && !permittedToSign(x509Cert) {
 			keyUsageRejected = true
 			continue
@@ -457,20 +500,27 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		}
 	}
 
-	// A message without a certificate to try says nothing about its signature,
-	// so it is reported apart from one whose signature did not verify. RFC 9483
-	// §3.3 requires extraCerts on the first response of an operation, but
-	// RFC 9810 §5.1 leaves them optional and some CAs omit them.
-	if candidates == 0 {
-		return nil, &VerificationError{Reason: ReasonNoCandidateSigner}
-	}
-	if senderMismatch {
+	if named == 0 {
 		return nil, &VerificationError{Reason: ReasonSenderMismatch}
+	}
+	// A signature is checked only with a trusted certificate, so a message
+	// signed by a certificate outside the trust pool is reported as untrusted
+	// rather than as a bad signature.
+	if chained == 0 {
+		return nil, &VerificationError{Reason: ReasonUntrustedSigner, Err: untrusted}
 	}
 	if keyUsageRejected {
 		return nil, &VerificationError{Reason: ReasonKeyUsageNotPermitted}
 	}
 	return nil, &VerificationError{Reason: ReasonSignatureFailed}
+}
+
+// verificationTime returns the time at which certificates must be valid.
+func (o *VerifyOptions) verificationTime() time.Time {
+	if o.CurrentTime.IsZero() {
+		return time.Now()
+	}
+	return o.CurrentTime
 }
 
 // signatureChecker returns the check of a protection signature made with the

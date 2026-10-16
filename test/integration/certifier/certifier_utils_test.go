@@ -257,12 +257,19 @@ func newCA(t *testing.T) *recordingCA {
 // Servers that share a CA see the same certificates.
 func startServer(t *testing.T, c *clientContainer, ca *recordingCA, opts ...server.Option) *testServer {
 	t.Helper()
+	return serveCA(t, c, ca, ca, opts...)
+}
+
+// serveCA starts a server that passes requests to handler and takes its
+// signer, secrets and certificates from ca.
+func serveCA(t *testing.T, c *clientContainer, handler server.CA, ca *recordingCA, opts ...server.Option) *testServer {
+	t.Helper()
 	base := []server.Option{
 		server.WithSigner(ca.Key(), ca.Cert()),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
 	}
-	srv := server.NewCAServer(ca, server.LightweightPolicy(), slices.Concat(base, opts)...)
+	srv := server.NewCAServer(handler, server.LightweightPolicy(), slices.Concat(base, opts)...)
 	require.NoError(t, srv.Err())
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

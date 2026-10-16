@@ -10,8 +10,6 @@ import (
 	"math/big"
 	"reflect"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -32,7 +30,8 @@ type Revoker interface {
 	//   - certRevoked when the certificate is already revoked.
 	//
 	// Return an [*Error] to choose the rejection sent to the peer. A nil error
-	// reports the revocation as accepted.
+	// reports the revocation as accepted. A [*WaitingError] delays the answer
+	// until [PendingChecker.CheckPending] decides it.
 	RevokeCertificate(ctx context.Context, req *RevocationRequest, sender *SenderIdentity) error
 }
 
@@ -42,7 +41,9 @@ type RevocationAuthorizer interface {
 	// AuthorizeRevocation decides whether sender may revoke the certificate req
 	// identifies, for example a registration authority acting for an end entity
 	// (RFC 9483 §5.3.2). Return nil to allow it, or an [*Error], normally with
-	// notAuthorized, to refuse it.
+	// notAuthorized, to refuse it. A [*WaitingError] delays the decision, for
+	// example until an operator approves it, and [Revoker.RevokeCertificate] is
+	// then not called.
 	//
 	// Without this interface such requests are rejected with notAuthorized.
 	// It also receives MAC-protected requests that [WithMACRevocation] lets
@@ -204,7 +205,8 @@ func (h *caHandler) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage
 	return revoker.RevokeCertificate(ctx, req, sender)
 }
 
-// handleRevocation answers an rr with an rp carrying the handler's decision (RFC 9483 §4.2).
+// handleRevocation answers an rr with an rp carrying the handler's decision (RFC 9483 §4.2),
+// or with an error message with status waiting when the decision is delayed (RFC 9483 §4.4).
 func (s *Server) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) *pkicmp.PKIMessage {
 	credID, err := sender.credentialID()
 	if err != nil {
@@ -212,11 +214,32 @@ func (s *Server) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage, s
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadMessageCheck,
 		})
 	}
-	// The rp ends the operation. The entry stays until cleanup so the
-	// transactionID cannot be reused within the same window (RFC 9483 §3.5).
-	defer s.setCompleted(credID, msg.Header.TransactionID)
+	txnID := msg.Header.TransactionID
 
 	resp, err := s.handler.HandleCMP(ctx, msg, sender)
+	if err == nil && resp != nil && resp.Waiting != nil {
+		// Without a pollRef the CA could not find the request again, and reporting
+		// acceptance would claim a revocation that has not happened.
+		if resp.Waiting.PollRef == "" {
+			err = rejection(pkicmp.FailSystemFailure, "")
+		} else {
+			respMsg := s.buildErrorResponse(msg, sender, waitingStatus(resp.Waiting))
+			if s.setPending(credID, txnID, waitingState{
+				reqType:     requestRR,
+				certReqID:   -1,
+				pollRef:     resp.Waiting.PollRef,
+				senderNonce: respMsg.Header.SenderNonce,
+				checkAfter:  advertisedCheckAfter(resp.Waiting.CheckAfter),
+			}) {
+				return respMsg
+			}
+			err = rejection(pkicmp.FailSystemFailure, "")
+		}
+	}
+
+	// The rp ends the operation. The entry stays until cleanup so the
+	// transactionID cannot be reused within the same window (RFC 9483 §3.5).
+	s.setCompleted(credID, txnID)
 	if err != nil {
 		si := errorToStatusInfo(err)
 		// RFC 9483 §3.6.2: problems with the header or protection go in an error
@@ -225,13 +248,6 @@ func (s *Server) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage, s
 			return s.buildErrorResponse(msg, sender, si)
 		}
 		return s.buildRevRepResponse(msg, si, sender)
-	}
-	if resp != nil && resp.Waiting != nil {
-		// Delayed revocation is not supported, and reporting acceptance would
-		// claim a revocation that has not happened.
-		return s.buildRevRepResponse(msg, pkicmp.PKIStatusInfo{
-			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
-		}, sender)
 	}
 	return s.buildRevRepResponse(msg, pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}, sender)
 }
@@ -271,10 +287,9 @@ func equalRDNSequences(a, b pkix.RDNSequence) bool {
 
 // samePublicKey reports whether a DER SubjectPublicKeyInfo holds the same key as pub.
 func samePublicKey(spki []byte, pub crypto.PublicKey) bool {
-	parsed, err := compositex509.ParsePKIXPublicKey(spki)
+	parsed, err := pkicmp.ParsePublicKey(spki)
 	if err != nil {
 		return false
 	}
-	comparable, ok := parsed.(interface{ Equal(crypto.PublicKey) bool })
-	return ok && comparable.Equal(pub)
+	return pkicmp.PublicKeysEqual(parsed, pub)
 }

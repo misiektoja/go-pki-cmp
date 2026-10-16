@@ -230,7 +230,7 @@ func TestSendRRRefusesWrongServerCerts(t *testing.T) {
 		reason pkicmp.InvalidReason
 	}{
 		{"same name with another key", []*x509.Certificate{sameNameOtherKey}, pkicmp.ReasonSignatureFailed},
-		{"right key under an untrusted issuer", []*x509.Certificate{untrustedCopy, otherRoot}, pkicmp.ReasonSignatureFailed},
+		{"right key under an untrusted issuer", []*x509.Certificate{untrustedCopy, otherRoot}, pkicmp.ReasonUntrustedSigner},
 		{"trusted certificate of another name", []*x509.Certificate{h.root}, pkicmp.ReasonSenderMismatch},
 	}
 	for _, tc := range cases {

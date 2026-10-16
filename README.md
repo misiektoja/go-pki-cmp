@@ -21,17 +21,20 @@ issuer, is built on this library. The library implements:
 
 Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, `genm` and `nested`
 with their responses. General messages carry the RFC 9483 support requests for CA certificates, a root
-CA update, a certificate request template and CRL updates. Key recovery, cross-certification,
-proof-of-possession challenges and announcements are not implemented.
+CA update, a certificate request template and CRL updates. A key that cannot sign, such as an ML-KEM
+key, proves possession by decryption: the CA returns the certificate encrypted for the key or sends a
+`popdecc` challenge first (RFC 9810 §5.2.8.3). Key recovery, central key generation,
+cross-certification and announcements are not implemented.
 
 ## Interoperability and testing
 
 CI runs the library against independent CMP implementations:
 
 * **[EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp)**: the client enrolls and updates certificates.
-* **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)**: the client enrolls,
-  updates, revokes and sends support messages against the mock server. OpenSSL as a client revokes at
-  the server and sends support messages to it.
+* **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)** 3.5 and 4.0: the client
+  enrolls, updates, revokes and sends support messages against the mock server. OpenSSL as a client
+  revokes at the server and sends support messages to it. It also enrolls RSA and EC keys at the server
+  with the encrypted certificate method (`-popo 2`). OpenSSL 4.0 enrolls ML-KEM keys that way too.
 * **[Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)**:
   the client enrolls, re-enrolls, updates and revokes certificates against a hosted instance on every push to
   `dev` and `main` and once a week.
@@ -58,14 +61,18 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 * **[`client`](./client/)**: IR, CR, KUR, P10CR, RR and support message flows with polling, response
   verification and certificate confirmation.
 * **[`server`](./server/)**: an `http.Handler` that authenticates clients, tracks transactions,
-  supports deferred issuance, revocation and support messages, accepts requests a registration
-  authority forwards in nested messages and applies policy middleware such as the lightweight profile.
+  handles revocation and support messages, lets issuance and revocation wait for a decision such as
+  an operator's approval, accepts requests a registration authority forwards in nested messages and
+  applies policy middleware such as the lightweight profile.
+* **[`cms`](./cms/)**: CMS EnvelopedData and CMP version 2 EncryptedValue encryption and decryption for
+  proof of possession by decryption.
 
 ## Compatibility
 
 * **Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
   [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) support enrollment and CMP
-  signatures. Older Dilithium encodings are not supported.
+  signatures. Older Dilithium encodings are not supported. ML-KEM-768 and ML-KEM-1024 keys can be
+  certified through a proof of possession by decryption. ML-KEM-512 is not supported.
 * **RFC 4210 peers** are supported by default. SHA-1 signatures and additional device compatibility
   options are opt-in. [Server options](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#Option)
   describe these exceptions and the stricter `WithStrictProfileValidation` checks.
@@ -141,6 +148,17 @@ case update != nil:
 
 `GetCACertificates`, `GetCertReqTemplate`, `GetCRLUpdate` and `GetCurrentCRL` follow the same pattern.
 
+Enrollment of a key that cannot sign (RFC 9810 §5.2.8.3):
+
+```go
+// An ML-KEM key proves possession by decrypting what the CA sends. The CA must
+// support the chosen method. client.ChallengeResponse asks for a challenge first.
+kemKey, _ := mlkem.GenerateKey768()
+result, err := c.SendIRWithIndirectPOP(context.Background(), kemKey, client.EncryptedCertificate, creds,
+	client.WithTemplateSubject(pkix.Name{CommonName: "my-device-encryption"}),
+)
+```
+
 ### Server
 
 Implement the `server.CA` interface and the credential lookups:
@@ -166,6 +184,17 @@ func (ca *MyCA) RevokeCertificate(ctx, req, sender) {
 Support messages are answered by optional interfaces: `server.CACertificatesProvider`,
 `server.RootCAUpdateProvider`, `server.CertReqTemplateProvider` and `server.CRLProvider`. The server
 lists a requested type without a provider as unsupported.
+
+`server.WithEncryptedCertificatePOP` and `server.WithChallengeResponsePOP` accept requests for keys
+that cannot sign. With the encrypted certificate method, the certificate exists before the client has
+proved anything, so the CA should publish it only after `ConfirmAccepted` and revoke it on
+`ConfirmExpired` or `ConfirmRejected`. `server.POPMethodFromContext` tells the CA which method a
+request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another way to sign such a
+certificate. A CMP version 2 request for an RSA key gets its certificate in the older EncryptedValue
+format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get. A Bouncy Castle
+client must send version 3 for an RSA key, because its `CertificateResponse` reads only EnvelopedData.
+`server.WithEnvelopedDataForVersion2` sends EnvelopedData to such requests too, for servers whose
+version 2 clients read only that format.
 
 Then serve it:
 

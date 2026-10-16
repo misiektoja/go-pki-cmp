@@ -26,20 +26,32 @@ const (
 	// mechanism than the caller required. RFC 9810 §5.2.3 defines the matching
 	// failInfo bit wrongIntegrity, "password based instead of signature or vice versa".
 	ReasonUnexpectedProtection
-	// ReasonSenderMismatch indicates the protection certificate subject does not
-	// match the sender named in the header (RFC 9483 §3.5).
+	// ReasonSenderMismatch indicates that the subject of the protection
+	// certificate, or of every candidate for it, is not the sender named in the
+	// header (RFC 9483 §3.5).
 	ReasonSenderMismatch
 	// ReasonKeyUsageNotPermitted indicates the CMP protection certificate carries
 	// a keyUsage extension without the digitalSignature bit, which RFC 9483 §3.5
 	// requires for signature-based protection.
 	ReasonKeyUsageNotPermitted
-	// ReasonCertificateExpired indicates the CMP protection certificate is outside
-	// its validity period.
+	// ReasonCertificateExpired indicates that [VerifyOptions.TrustedCert] is
+	// outside its validity period at [VerifyOptions.CurrentTime]. An expired
+	// certificate on the chain path gives [ReasonUntrustedSigner] instead.
 	ReasonCertificateExpired
 	// ReasonNoCandidateSigner indicates that no certificate was available to
-	// verify a signature: [VerifyOptions.ExtraCerts] was empty or held no
-	// certificate matching the senderKID.
+	// verify a signature: [VerifyOptions.ExtraCerts] held no certificate that
+	// could be parsed.
 	ReasonNoCandidateSigner
+	// ReasonUntrustedSigner indicates that no candidate protection certificate
+	// with the sender's name chains to [VerifyOptions.TrustPool], so no
+	// signature was checked. Err holds the chain error of the first of them.
+	ReasonUntrustedSigner
+	// ReasonSenderKIDMismatch indicates that [VerifyOptions.SenderKID] names
+	// the subject key identifier of none of the candidate certificates. Either
+	// the signer's certificate is missing from [VerifyOptions.ExtraCerts] or
+	// the sender filled senderKID with another value, which
+	// [VerifyOptions.AllowSenderKIDMismatch] tolerates.
+	ReasonSenderKIDMismatch
 )
 
 func (r InvalidReason) String() string {
@@ -66,6 +78,10 @@ func (r InvalidReason) String() string {
 		return "protection certificate is outside its validity period"
 	case ReasonNoCandidateSigner:
 		return "no candidate signer certificate"
+	case ReasonUntrustedSigner:
+		return "protection certificate is not trusted"
+	case ReasonSenderKIDMismatch:
+		return "senderKID names no candidate signer certificate"
 	default:
 		return "unknown"
 	}

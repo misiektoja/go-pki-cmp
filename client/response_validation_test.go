@@ -527,10 +527,15 @@ func TestResponseValidationAcceptsSignedResponseToMACRequestByDefault(t *testing
 	require.NotNil(t, result.Certificate)
 }
 
-func TestResponseValidationRejectsMismatchedSenderKID(t *testing.T) {
+// A response whose senderKID names none of its certificates is refused by default and accepted with
+// WithSenderKIDMismatch, as some CAs copy the senderKID of the request into their responses.
+func TestResponseValidationMismatchedSenderKID(t *testing.T) {
 	cfg := setupValidationCerts()
 	cfg.respProtector = "sig"
 	server := setupMockServer(cfg, func(req, resp *pkicmp.PKIMessage) {
+		if req.Body.Type == pkicmp.BodyTypeCertConf {
+			resp.Body = pkicmp.NewPKIConfBody()
+		}
 		resp.Header.Sender = pkicmp.NewDirectoryName(pkix.Name{CommonName: "cmp-server"})
 		resp.Header.SenderKID = []byte("wrong-sender-kid")
 	})
@@ -552,7 +557,19 @@ func TestResponseValidationRejectsMismatchedSenderKID(t *testing.T) {
 	var ve *pkicmp.VerificationError
 	require.ErrorAs(t, err, &ve)
 	// No certificate carries the key the senderKID names, so none is tried.
-	assert.Equal(t, pkicmp.ReasonNoCandidateSigner, ve.Reason)
+	assert.Equal(t, pkicmp.ReasonSenderKIDMismatch, ve.Reason)
+	assert.ErrorContains(t, err, "WithSenderKIDMismatch")
+
+	// The response is signed by the certificate it carries, which the option lets the client try.
+	c = client.NewClient(
+		server.URL,
+		client.WithTrustedCAs(trustedCAs),
+		client.WithRecipient(pkix.Name{CommonName: "cmp-server"}),
+		client.WithSenderKIDMismatch(),
+	)
+	result, err := c.SendIR(context.Background(), key, creds, client.WithTemplateSubject(pkix.Name{CommonName: "test"}))
+	require.NoError(t, err)
+	require.NotNil(t, result.Certificate)
 }
 
 func TestResponseValidationRejectsOversizedHTTPResponse(t *testing.T) {

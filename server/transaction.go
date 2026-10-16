@@ -80,6 +80,9 @@ const (
 	// Transaction done (implicit confirm granted), kept until cleanupExpired to
 	// block transactionID reuse.
 	stateCompleted
+	// A popdecc challenge was sent and the request waits for the popdecr.
+	// It comes last so the values saved in snapshots keep their meaning.
+	stateChallenged
 )
 
 // transactionEntry holds all state for a single transaction.
@@ -89,26 +92,43 @@ type transactionEntry struct {
 	lastActivity  time.Time
 	credentialKey credentialKey
 
-	// Set when state == statePending or stateIssued
+	// Set when state == statePending, stateIssued or stateChallenged
 	reqType RequestType
+	// popMethod is how the request proves possession of its key.
+	popMethod POPMethod
 
 	// Set when state == statePending
 	pollRef      string
 	senderNonce  []byte        // server's senderNonce from the waiting response (for recipNonce verification)
 	lastPollTime time.Time     // last time a poll was received (zero for initial pending)
-	checkAfter   time.Duration // minimum interval between polls
+	checkAfter   time.Duration // minimum interval between polls, in whole seconds as advertised
+	// implicitConfirm records that the delayed request asked for implicit
+	// confirmation, which the pollReq that collects the certificate does not repeat.
+	implicitConfirm bool
+
+	// Set when state == statePending or stateIssued
+	//
+	// certReqID is the certReqId of the delayed request while pending and of the
+	// CertResponse that carried cert once issued. It is nil when the entry was
+	// restored from a snapshot without it.
+	certReqID *int64
 
 	// Set when state == stateIssued
 	//
-	// certReqID is the certReqId of the CertResponse that carried cert. It is nil
-	// when the entry was restored from a snapshot without it.
-	certReqID           *int64
 	cert                *x509.Certificate
 	issueRef            any    // opaque CA reference for CertificateConfirmer
 	issuedSenderNonce   []byte // server's senderNonce from the issued response
 	clientSenderNonce   []byte // client's senderNonce from the cert request
 	protectionAlgorithm *pkicmp.AlgorithmIdentifier
 	protectionParams    pkicmp.MACCredentialOption // decoded protection parameters for echo-back
+
+	// Set when state == stateChallenged, together with senderNonce (the
+	// popdecc's), certReqID and implicitConfirm.
+	//
+	// challengeRequest is the DER certificate request that the popdecr continues.
+	challengeRequest []byte
+	// challengeAnswer is the number the popdecc encrypted, as fixed-length big-endian bytes.
+	challengeAnswer []byte
 }
 
 // transactionTracker manages transaction state for the CMP server.
@@ -177,7 +197,20 @@ func (t *transactionTracker) getOrCreateCredCount(ck credentialKey) *atomic.Int6
 	return val.(*atomic.Int64)
 }
 
-func (t *transactionTracker) setPending(credentialID, transactionID []byte, reqType RequestType, pollRef string, senderNonce []byte, checkAfter time.Duration, lastPollTime time.Time) bool {
+// waitingState is what a waiting transaction keeps between polls.
+type waitingState struct {
+	reqType         RequestType
+	certReqID       int64
+	implicitConfirm bool
+	popMethod       POPMethod
+	pollRef         string
+	senderNonce     []byte
+	checkAfter      time.Duration
+	lastPollTime    time.Time
+}
+
+// setPending moves an active, waiting or challenged transaction to the waiting state w describes.
+func (t *transactionTracker) setPending(credentialID, transactionID []byte, w waitingState) bool {
 	key := makeKey(credentialID, transactionID)
 	ck := makeCredentialKey(credentialID)
 
@@ -187,21 +220,42 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, reqT
 		return false
 	}
 	oldEntry := old.(*transactionEntry)
-	if oldEntry.state != stateActive && oldEntry.state != statePending {
+	if oldEntry.state != stateActive && oldEntry.state != statePending && oldEntry.state != stateChallenged {
 		return false
 	}
 
 	newEntry := &transactionEntry{
-		state:         statePending,
-		lastActivity:  time.Now(),
-		credentialKey: ck,
-		reqType:       reqType,
-		pollRef:       pollRef,
-		senderNonce:   senderNonce,
-		lastPollTime:  lastPollTime,
-		checkAfter:    checkAfter,
+		state:           statePending,
+		lastActivity:    time.Now(),
+		credentialKey:   ck,
+		reqType:         w.reqType,
+		pollRef:         w.pollRef,
+		senderNonce:     w.senderNonce,
+		lastPollTime:    w.lastPollTime,
+		checkAfter:      w.checkAfter,
+		implicitConfirm: w.implicitConfirm,
+		popMethod:       w.popMethod,
+		certReqID:       &w.certReqID,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
+}
+
+// waiting returns the state of a waiting entry, for a transition that keeps the request's details.
+func (e *transactionEntry) waiting() waitingState {
+	w := waitingState{
+		reqType:         e.reqType,
+		implicitConfirm: e.implicitConfirm,
+		popMethod:       e.popMethod,
+		pollRef:         e.pollRef,
+		senderNonce:     e.senderNonce,
+		checkAfter:      e.checkAfter,
+		lastPollTime:    e.lastPollTime,
+		certReqID:       -1,
+	}
+	if e.certReqID != nil {
+		w.certReqID = *e.certReqID
+	}
+	return w
 }
 
 func (t *transactionTracker) getPending(credentialID, transactionID []byte) (*transactionEntry, bool) {
@@ -216,8 +270,23 @@ func (t *transactionTracker) getPending(credentialID, transactionID []byte) (*tr
 	return entry, true
 }
 
+// issuedState is what an issued transaction keeps until its certConf.
+type issuedState struct {
+	reqType   RequestType
+	certReqID int64
+	cert      *x509.Certificate
+	issueRef  any
+	popMethod POPMethod
+	// senderNonce is the server's senderNonce in the response that carried cert.
+	senderNonce []byte
+	// clientSenderNonce is the senderNonce of the message that response answered.
+	clientSenderNonce   []byte
+	protectionParams    pkicmp.MACCredentialOption
+	protectionAlgorithm *pkicmp.AlgorithmIdentifier
+}
+
 // setIssued retains the certificate and protection parameters needed for confirmation.
-func (t *transactionTracker) setIssued(credentialID, transactionID []byte, reqType RequestType, certReqID int64, cert *x509.Certificate, issueRef any, senderNonce, clientSenderNonce []byte, protectionParams pkicmp.MACCredentialOption, algorithm ...*pkicmp.AlgorithmIdentifier) bool {
+func (t *transactionTracker) setIssued(credentialID, transactionID []byte, is issuedState) bool {
 	key := makeKey(credentialID, transactionID)
 	ck := makeCredentialKey(credentialID)
 
@@ -227,26 +296,70 @@ func (t *transactionTracker) setIssued(credentialID, transactionID []byte, reqTy
 		return false
 	}
 	oldEntry := old.(*transactionEntry)
-	if oldEntry.state != stateActive && oldEntry.state != statePending {
+	if oldEntry.state != stateActive && oldEntry.state != statePending && oldEntry.state != stateChallenged {
 		return false
 	}
 
 	newEntry := &transactionEntry{
-		state:             stateIssued,
-		lastActivity:      time.Now(),
-		credentialKey:     ck,
-		reqType:           reqType,
-		certReqID:         &certReqID,
-		cert:              cert,
-		issueRef:          issueRef,
-		issuedSenderNonce: senderNonce,
-		clientSenderNonce: clientSenderNonce,
-		protectionParams:  protectionParams,
-	}
-	if len(algorithm) > 0 {
-		newEntry.protectionAlgorithm = algorithm[0]
+		state:               stateIssued,
+		lastActivity:        time.Now(),
+		credentialKey:       ck,
+		reqType:             is.reqType,
+		popMethod:           is.popMethod,
+		certReqID:           &is.certReqID,
+		cert:                is.cert,
+		issueRef:            is.issueRef,
+		issuedSenderNonce:   is.senderNonce,
+		clientSenderNonce:   is.clientSenderNonce,
+		protectionParams:    is.protectionParams,
+		protectionAlgorithm: is.protectionAlgorithm,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
+}
+
+// challengeState is what a challenged transaction keeps until the popdecr.
+type challengeState struct {
+	reqType         RequestType
+	certReqID       int64
+	implicitConfirm bool
+	request         []byte
+	answer          []byte
+	senderNonce     []byte
+}
+
+// setChallenged moves an active transaction to the challenged state c describes.
+func (t *transactionTracker) setChallenged(credentialID, transactionID []byte, c challengeState) bool {
+	key := makeKey(credentialID, transactionID)
+	old, ok := t.transactions.Load(key)
+	if !ok || old.(*transactionEntry).state != stateActive {
+		return false
+	}
+	newEntry := &transactionEntry{
+		state:            stateChallenged,
+		lastActivity:     time.Now(),
+		credentialKey:    makeCredentialKey(credentialID),
+		reqType:          c.reqType,
+		popMethod:        POPChallengeResponse,
+		certReqID:        &c.certReqID,
+		implicitConfirm:  c.implicitConfirm,
+		senderNonce:      c.senderNonce,
+		challengeRequest: c.request,
+		challengeAnswer:  c.answer,
+	}
+	return t.transactions.CompareAndSwap(key, old, newEntry)
+}
+
+// getChallenged returns the entry of a transaction that waits for a popdecr.
+func (t *transactionTracker) getChallenged(credentialID, transactionID []byte) (*transactionEntry, bool) {
+	v, ok := t.transactions.Load(makeKey(credentialID, transactionID))
+	if !ok {
+		return nil, false
+	}
+	entry := v.(*transactionEntry)
+	if entry.state != stateChallenged {
+		return nil, false
+	}
+	return entry, true
 }
 
 func (t *transactionTracker) getIssued(credentialID, transactionID []byte) (*transactionEntry, bool) {
@@ -302,33 +415,51 @@ func (t *transactionTracker) delete(credentialID, transactionID []byte) {
 
 // expiredIssued holds details of an expired issued transaction for CA notification.
 type expiredIssued struct {
-	cert     *x509.Certificate
-	issueRef any
+	cert      *x509.Certificate
+	issueRef  any
+	popMethod POPMethod
 }
 
-// cleanupExpired removes entries older than maxAge and returns any expired
-// issued transactions (certificates that were never confirmed).
-func (t *transactionTracker) cleanupExpired(maxAge time.Duration) []expiredIssued {
-	if maxAge <= 0 {
-		return nil
-	}
-	var expired []expiredIssued
-	cutoff := time.Now().Add(-maxAge)
+// expiredEntries are the transactions one cleanup removed that their CA may want to hear about.
+type expiredEntries struct {
+	// issued are certificates that were never confirmed.
+	issued []expiredIssued
+	// waiting are the pollRefs of waiting requests whose client stopped polling.
+	waiting []string
+}
+
+// cleanupExpired removes waiting entries idle for longer than waitingAge and
+// every other entry idle for longer than maxAge. It returns the removed issued
+// and waiting entries. A zero age keeps the entries it governs.
+func (t *transactionTracker) cleanupExpired(maxAge, waitingAge time.Duration) expiredEntries {
+	var expired expiredEntries
+	now := time.Now()
 	t.transactions.Range(func(key, value any) bool {
 		entry := value.(*transactionEntry)
-		if entry.lastActivity.Before(cutoff) {
-			_, loaded := t.transactions.LoadAndDelete(key)
-			if loaded {
-				t.count.Add(-1)
-				credCount := t.getOrCreateCredCount(entry.credentialKey)
-				credCount.Add(-1)
-				if entry.state == stateIssued && entry.cert != nil {
-					expired = append(expired, expiredIssued{
-						cert:     entry.cert,
-						issueRef: entry.issueRef,
-					})
-				}
-			}
+		age := maxAge
+		if entry.state == statePending {
+			age = waitingAge
+		}
+		if age <= 0 || !entry.lastActivity.Before(now.Add(-age)) {
+			return true
+		}
+		// Only the entry read above is removed, so one that a concurrent request
+		// replaced, for example by answering a poll, stays.
+		if !t.transactions.CompareAndDelete(key, value) {
+			return true
+		}
+		t.count.Add(-1)
+		credCount := t.getOrCreateCredCount(entry.credentialKey)
+		credCount.Add(-1)
+		switch {
+		case entry.state == stateIssued && entry.cert != nil:
+			expired.issued = append(expired.issued, expiredIssued{
+				cert:      entry.cert,
+				issueRef:  entry.issueRef,
+				popMethod: entry.popMethod,
+			})
+		case entry.state == statePending:
+			expired.waiting = append(expired.waiting, entry.pollRef)
 		}
 		return true
 	})

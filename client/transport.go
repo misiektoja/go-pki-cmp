@@ -14,21 +14,24 @@ import (
 	"slices"
 	"time"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
+	"github.com/misiektoja/go-pki-cmp/cms"
 	"github.com/misiektoja/go-pki-cmp/internal/certpath"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // enroll performs the full CMP enrollment transaction:
-// request → response → [poll] → certConf → pkiConf
-// (RFC 9810 §5.3.1–§5.3.4, Appendix C.4).
-func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRepType pkicmp.BodyType, creds pkicmp.Credentials, opts *requestOptions, requestedKey crypto.PublicKey) (*EnrollResult, error) {
+// request → [popdecc → popdecr] → response → [poll] → certConf → pkiConf
+// (RFC 9810 §5.3.1–§5.3.4, Appendix C.4). proof is the key of a request that
+// proves possession by decryption, and nil for a signature proof.
+func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRepType pkicmp.BodyType, creds pkicmp.Credentials, opts *requestOptions, requestedKey crypto.PublicKey, proof *decryptionProof) (*EnrollResult, error) {
 	certReqIDs, err := answeringCertReqIDs(reqBody)
 	if err != nil {
 		return nil, err
 	}
 
+	// The encrypted certificate and the popdecc challenge come back as
+	// EnvelopedData, which needs cmp2021, so RFC 9810 §7 asks for pvno 3.
+	opts.cmp2021 = proof != nil
 	msg, err := c.newRequest(reqBody, creds, opts)
 	if err != nil {
 		return nil, err
@@ -44,6 +47,22 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 	var knownSigner *x509.Certificate
 	if vr != nil {
 		knownSigner = vr.ProtectionCertificate
+	}
+
+	// The delayed request a final response may refer back to is the popdecr when there was a challenge.
+	delayed := msg.Header
+	if resp.Body.Type == pkicmp.BodyTypePopDecC {
+		popdecr, answered, answeredVR, err := c.answerChallenge(ctx, msg, resp, creds, proof, knownSigner)
+		if err != nil {
+			return nil, cmpResp.wrapError(err)
+		}
+		cmpResp, resp, delayed = answered, answered.message, popdecr.Header
+		if answeredVR != nil {
+			vr = answeredVR
+			if vr.ProtectionCertificate != nil {
+				knownSigner = vr.ProtectionCertificate
+			}
+		}
 	}
 
 	if resp.Body.Type == pkicmp.BodyTypeError {
@@ -63,7 +82,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		if err := checkCertReqID(certResp, certReqIDs); err != nil {
 			return nil, cmpResp.wrapError(err)
 		}
-		cmpResp, vr, err = c.poll(ctx, msg.Header, resp, creds, certResp.CertReqID, knownSigner)
+		cmpResp, vr, err = c.poll(ctx, delayed, resp, creds, certResp.CertReqID, knownSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +100,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, cmpResp.wrapError(certResp.Status.AsError())
 	}
 
-	cert, err := extractCertificate(certResp)
+	cert, err := extractCertificate(certResp, proof)
 	if err != nil {
 		return nil, cmpResp.wrapError(err)
 	}
@@ -189,6 +208,8 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 		},
 	)
 	confMsg.Header.TransactionID = conf.req.Header.TransactionID
+	// The messages of one transaction keep the version of its first request.
+	confMsg.Header.PVNO = conf.req.Header.PVNO
 	// Preserve senderKID across all messages in this transaction (RFC 9810 §5.1.1).
 	// For signature-based creds, ProtectWithSignature will overwrite this with the
 	// cert SubjectKeyId; for MAC-based creds it must be set explicitly.
@@ -280,6 +301,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 		Sender:    sender,
 		Recipient: recipient,
 	})
+	if opts.cmp2021 {
+		msg.Header.PVNO = pkicmp.PVNO3
+	}
 
 	for _, cert := range c.extraCerts {
 		msg.ExtraCerts = append(msg.ExtraCerts, pkicmp.CMPCertificate{Raw: cert.Raw})
@@ -523,29 +547,35 @@ func checkIssuedKey(cert *x509.Certificate, requested crypto.PublicKey) error {
 	// this exchange.
 	issuedKey := cert.PublicKey
 	if issuedKey == nil {
-		// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
-		issuedKey, _ = compositex509.ParsePKIXPublicKey(cert.RawSubjectPublicKeyInfo)
+		// crypto/x509 leaves PublicKey nil for composite ML-DSA and ML-KEM keys.
+		issuedKey, _ = pkicmp.ParsePublicKey(cert.RawSubjectPublicKeyInfo)
 	}
-	type publicKeyComparer interface{ Equal(crypto.PublicKey) bool }
-	issued, ok := issuedKey.(publicKeyComparer)
-	if !ok {
-		return &Error{
-			Op: fmt.Sprintf("cannot compare issued certificate public key of type %T with the requested key", issuedKey),
-		}
+	if issuedKey == nil {
+		return &Error{Op: "cannot parse the public key of the issued certificate"}
 	}
-	if !issued.Equal(requested) {
+	if !pkicmp.PublicKeysEqual(issuedKey, requested) {
 		return &Error{Op: "issued certificate does not certify the requested public key"}
 	}
 	return nil
 }
 
-func extractCertificate(resp *pkicmp.CertResponse) (*x509.Certificate, error) {
+// extractCertificate returns the certificate of resp, decrypting an encrypted one with proof.
+func extractCertificate(resp *pkicmp.CertResponse, proof *decryptionProof) (*x509.Certificate, error) {
 	if resp.CertifiedKeyPair == nil {
 		return nil, &Error{Op: "missing certifiedKeyPair in response"}
 	}
-	cert := resp.CertifiedKeyPair.CertOrEncCert.Certificate
+	certOrEncCert := &resp.CertifiedKeyPair.CertOrEncCert
+	if envelope := certOrEncCert.EncryptedCertificate(); envelope != nil {
+		return decryptCertificate(envelope, cms.Decrypt, proof)
+	}
+	// RFC 9810 §5.2.2 keeps EncryptedValue for CMP version 2 CAs, which send it
+	// whatever version the request had.
+	if value := certOrEncCert.EncryptedValueCertificate(); value != nil {
+		return decryptCertificate(value, cms.DecryptEncryptedValue, proof)
+	}
+	cert := certOrEncCert.Certificate
 	if cert == nil {
-		return nil, &Error{Op: "encrypted certificates not yet supported"}
+		return nil, &Error{Op: "unsupported encrypted certificate format"}
 	}
 	return cert.Parse()
 }
@@ -600,6 +630,7 @@ func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp
 			},
 		)
 		pollMsg.Header.TransactionID = origHeader.TransactionID
+		pollMsg.Header.PVNO = origHeader.PVNO
 		pollMsg.Header.SenderKID = origHeader.SenderKID
 
 		if err := creds.Protect(pollMsg); err != nil {
@@ -720,12 +751,13 @@ func (c *Client) verifyResponse(req *pkicmp.PKIMessage, resp *pkicmp.PKIMessage,
 			}
 			return nil
 		}(),
-		TrustPool:            trustedCAs,
-		ExtraCerts:           candidates,
-		SenderKID:            resp.Header.SenderKID,
-		AllowSHA1Signatures:  c.allowSHA1Signatures,
-		MinMACIterationCount: c.minMACIterations,
-		MaxMACIterationCount: c.maxMACIterations,
+		TrustPool:              trustedCAs,
+		ExtraCerts:             candidates,
+		SenderKID:              resp.Header.SenderKID,
+		AllowSenderKIDMismatch: c.allowKIDMismatch,
+		AllowSHA1Signatures:    c.allowSHA1Signatures,
+		MinMACIterationCount:   c.minMACIterations,
+		MaxMACIterationCount:   c.maxMACIterations,
 	})
 	if err != nil {
 		if hint := c.verificationHint(err, trustedCAs); hint != "" {
@@ -753,6 +785,11 @@ func (c *Client) verificationHint(err error, trustedCAs *x509.CertPool) string {
 	case verifyErr.Reason == pkicmp.ReasonNoCandidateSigner && len(c.serverCerts) == 0:
 		return "the response does not carry its protection certificate in extraCerts, " +
 			"so configure the certificate the server signs with through WithServerCerts"
+	case verifyErr.Reason == pkicmp.ReasonSenderKIDMismatch && len(c.serverCerts) == 0:
+		return "configure the certificate the server signs with through WithServerCerts " +
+			"or use WithSenderKIDMismatch if the server puts another value in senderKID"
+	case verifyErr.Reason == pkicmp.ReasonSenderKIDMismatch:
+		return "use WithSenderKIDMismatch if the server puts another value in senderKID"
 	default:
 		return ""
 	}

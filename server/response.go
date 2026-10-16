@@ -26,19 +26,10 @@ func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIB
 	senderNonce := make([]byte, 16)
 	_, _ = rand.Read(senderNonce)
 
-	senderName := pkicmp.GeneralName{}
-	if len(s.cfg.sender.CommonName) > 0 || len(s.cfg.sender.Organization) > 0 {
-		senderName = pkicmp.NewDirectoryName(s.cfg.sender)
-	} else if s.cfg.signerCert != nil {
-		// Use RawSubject to preserve the original DER encoding (e.g., PrintableString
-		// vs UTF8String) from the certificate, avoiding re-encoding through pkix.Name.
-		senderName = pkicmp.NewDirectoryNameFromRawDER(s.cfg.signerCert.RawSubject)
-	}
-
 	resp := &pkicmp.PKIMessage{
 		Header: pkicmp.PKIHeader{
 			PVNO:          req.Header.PVNO,
-			Sender:        senderName,
+			Sender:        s.responseSender(),
 			Recipient:     req.Header.Sender,
 			MessageTime:   time.Now(),
 			TransactionID: req.Header.TransactionID,
@@ -83,6 +74,19 @@ func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIB
 	return resp
 }
 
+// responseSender returns the sender name of every response.
+func (s *Server) responseSender() pkicmp.GeneralName {
+	if len(s.cfg.sender.CommonName) > 0 || len(s.cfg.sender.Organization) > 0 {
+		return pkicmp.NewDirectoryName(s.cfg.sender)
+	}
+	if s.cfg.signerCert != nil {
+		// Use RawSubject to preserve the original DER encoding (e.g., PrintableString
+		// vs UTF8String) from the certificate, avoiding re-encoding through pkix.Name.
+		return pkicmp.NewDirectoryNameFromRawDER(s.cfg.signerCert.RawSubject)
+	}
+	return pkicmp.GeneralName{}
+}
+
 // buildErrorResponse creates an error response message. Pass the authenticated
 // sender whenever there is one: RFC 9483 §3.1 keeps one protection mechanism per
 // operation, and a shared-secret client with no trust anchor cannot verify a
@@ -96,30 +100,47 @@ func (s *Server) buildRevRepResponse(req *pkicmp.PKIMessage, si pkicmp.PKIStatus
 	return s.buildResponse(req, pkicmp.NewRPBody(&pkicmp.RevRepContent{Status: []pkicmp.PKIStatusInfo{si}}), sender)
 }
 
-// buildCertRepResponseForType creates a CertRepMessage with the specified response type.
-func (s *Server) buildCertRepResponseForType(req *pkicmp.PKIMessage, certReqID int64, si pkicmp.PKIStatusInfo, cert *x509.Certificate, caCerts []*x509.Certificate, sender *SenderIdentity, reqType RequestType, protectionParams ...pkicmp.MACCredentialOption) *pkicmp.PKIMessage {
+// certRep describes the single CertResponse of an ip, cp or kup.
+type certRep struct {
+	certReqID int64
+	status    pkicmp.PKIStatusInfo
+	cert      *x509.Certificate
+	// encrypted carries cert instead of the plaintext certificate, for the
+	// encrypted certificate proof of possession.
+	encrypted *pkicmp.CertOrEncCert
+	caCerts   []*x509.Certificate
+	reqType   RequestType
+	// implicit reports that the client asked for implicit confirmation and may
+	// be granted it. The server grants it only with a certificate, so a waiting
+	// or rejected response carries none.
+	implicit         bool
+	protectionParams pkicmp.MACCredentialOption
+}
+
+// buildCertRep creates the ip, cp or kup that answers req, choosing the body from the request type.
+func (s *Server) buildCertRep(req *pkicmp.PKIMessage, sender *SenderIdentity, r certRep) *pkicmp.PKIMessage {
 	certResp := pkicmp.CertResponse{
-		CertReqID: certReqID,
-		Status:    si,
+		CertReqID: r.certReqID,
+		Status:    r.status,
 	}
 
-	if cert != nil && si.Status == pkicmp.StatusAccepted {
-		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{
-			CertOrEncCert: pkicmp.CertOrEncCert{
-				Certificate: &pkicmp.CMPCertificate{Raw: cert.Raw},
-			},
+	if r.cert != nil && grantsCertificate(r.status) {
+		certOrEncCert := pkicmp.CertOrEncCert{Certificate: &pkicmp.CMPCertificate{Raw: r.cert.Raw}}
+		if r.encrypted != nil {
+			certOrEncCert = *r.encrypted
 		}
+		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{CertOrEncCert: certOrEncCert}
 	}
 
 	rep := &pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{certResp}}
 
-	for _, ca := range caCerts {
+	for _, ca := range r.caCerts {
 		rep.CAPubs = append(rep.CAPubs, pkicmp.CMPCertificate{Raw: ca.Raw})
 	}
 
 	// Select response body type: ir→ip, cr→cp, kur→kup, p10cr→cp.
 	var body *pkicmp.PKIBody
-	switch reqType {
+	switch r.reqType {
 	case RequestIR:
 		body = pkicmp.NewIPBody(rep)
 	case RequestKUR:
@@ -132,18 +153,61 @@ func (s *Server) buildCertRepResponseForType(req *pkicmp.PKIMessage, certReqID i
 	// the server is configured for implicit confirm AND the client requested it.
 	// RFC 9810 §5.1.1.2: Otherwise include confirmWaitTime if configured.
 	var generalInfo []pkicmp.InfoTypeAndValue
-	if s.cfg.implicitConfirm && requestHasImplicitConfirm(req) {
+	if s.grantsImplicitConfirm(r.implicit) && grantsCertificate(r.status) {
 		generalInfo = append(generalInfo, pkicmp.ImplicitConfirmInfoValue())
-	} else if s.cfg.confirmWait > 0 && si.Status == pkicmp.StatusAccepted {
+	} else if s.cfg.confirmWait > 0 && grantsCertificate(r.status) {
 		generalInfo = append(generalInfo, pkicmp.ConfirmWaitTimeInfoValue(s.cfg.confirmWait))
 	}
 
-	return s.buildResponseInternal(req, body, sender, generalInfo, func() pkicmp.MACCredentialOption {
-		if len(protectionParams) > 0 {
-			return protectionParams[0]
-		}
-		return nil
-	}())
+	return s.buildResponseInternal(req, body, sender, generalInfo, r.protectionParams)
+}
+
+// grantsImplicitConfirm reports whether the server skips confirmation when requested
+// says that the client asked for implicit confirmation.
+func (s *Server) grantsImplicitConfirm(requested bool) bool {
+	return s.cfg.implicitConfirm && requested
+}
+
+// waitingStatus returns the status of a response that delays a request, carrying the CA's reason when it gave one.
+func waitingStatus(w *WaitingResponse) pkicmp.PKIStatusInfo {
+	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusWaiting}
+	if w.Reason != "" {
+		si.StatusString = pkicmp.PKIFreeText{w.Reason}
+	}
+	return si
+}
+
+// advertisedCheckAfter returns the CheckAfter a pollRep advertises: whole seconds, at least one.
+// The server enforces the same value, so a client that waits exactly as told is never early.
+func advertisedCheckAfter(d time.Duration) time.Duration {
+	return time.Duration(max(int64(d/time.Second), 1)) * time.Second
+}
+
+// grantsCertificate reports whether si delivers a certificate: accepted or grantedWithMods.
+func grantsCertificate(si pkicmp.PKIStatusInfo) bool {
+	return si.Status == pkicmp.StatusAccepted || si.Status == pkicmp.StatusGrantedWithMods
+}
+
+// issuedStatus returns the status of a response that is not waiting, with the handler's
+// grantedWithMods choice and status text.
+func issuedStatus(resp *Response) pkicmp.PKIStatusInfo {
+	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
+	if resp.GrantedWithMods {
+		si.Status = pkicmp.StatusGrantedWithMods
+	}
+	if resp.StatusText != "" {
+		si.StatusString = pkicmp.PKIFreeText{resp.StatusText}
+	}
+	return si
+}
+
+// certRequestInfo is what the server keeps of a certificate request across its messages.
+type certRequestInfo struct {
+	certReqID int64
+	reqType   RequestType
+	// implicit reports that the client asked for implicit confirmation.
+	implicit bool
+	method   POPMethod
 }
 
 // handleCertRequest processes certificate requests through the configured handler.
@@ -164,48 +228,99 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 		})
 	}
 
-	certReqID := certReqIDFromRequest(msg)
-	reqType := requestTypeFromBody(msg.Body.Type)
+	req := certRequestInfo{
+		certReqID: certReqIDFromRequest(msg),
+		reqType:   requestTypeFromBody(msg.Body.Type),
+		implicit:  requestHasImplicitConfirm(msg),
+		method:    requestPOPMethod(msg),
+	}
+	ctx = contextWithPOPMethod(ctx, req.method)
+	if req.method == POPChallengeResponse {
+		return s.challengePossession(ctx, msg, sender, credID, req)
+	}
+	return s.issue(ctx, msg, msg, sender, credID, req)
+}
 
+// issue passes the certificate request in msg to the handler and answers reply
+// with the result. reply is msg itself, or the popdecr that completed the
+// challenge of msg and whose header the response must answer.
+func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, req certRequestInfo) *pkicmp.PKIMessage {
 	resp, err := s.handler.HandleCMP(ctx, msg, sender)
 	if err != nil {
 		si := errorToStatusInfo(err)
 		// RFC 9810 §5.3.21: Use error body for fundamental request failures (e.g., unknown
 		// algorithm in P10CR CSR) where the request cannot be processed at all.
 		if si.FailInfo&pkicmp.FailBadAlg != 0 && msg.Body.Type == pkicmp.BodyTypeP10CR {
-			return s.buildErrorResponse(msg, sender, si)
+			return s.buildErrorResponse(reply, sender, si)
 		}
 		// Header-level validation failures (e.g., missing directoryName, missing extraCerts)
 		// produce error body responses since the request was not processable.
 		if si.FailInfo&pkicmp.FailBadMessageCheck != 0 {
-			return s.buildErrorResponse(msg, sender, si)
+			return s.buildErrorResponse(reply, sender, si)
 		}
-		return s.buildCertRepResponseForType(msg, certReqID, si, nil, nil, sender, reqType)
+		return s.buildCertRep(reply, sender, certRep{
+			certReqID: req.certReqID, status: si, reqType: req.reqType, implicit: req.implicit,
+		})
 	}
 
-	// Waiting response → store request type and pollRef for polling.
+	// Waiting response → keep what the final response needs for polling (RFC 9483 §4.4).
 	if resp.Waiting != nil {
-		si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusWaiting}
-		respMsg := s.buildCertRepResponseForType(msg, certReqID, si, nil, nil, sender, reqType)
-		if !s.setPending(
-			credID, txnID, reqType, resp.Waiting.PollRef,
-			respMsg.Header.SenderNonce, resp.Waiting.CheckAfter, time.Time{},
-		) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+		respMsg := s.buildCertRep(reply, sender, certRep{
+			certReqID: req.certReqID, status: waitingStatus(resp.Waiting), reqType: req.reqType, implicit: req.implicit,
+		})
+		if !s.setPending(credID, reply.Header.TransactionID, waitingState{
+			reqType:         req.reqType,
+			certReqID:       req.certReqID,
+			implicitConfirm: req.implicit,
+			popMethod:       req.method,
+			pollRef:         resp.Waiting.PollRef,
+			senderNonce:     respMsg.Header.SenderNonce,
+			checkAfter:      advertisedCheckAfter(resp.Waiting.CheckAfter),
+		}) {
+			return s.buildErrorResponse(reply, sender, pkicmp.PKIStatusInfo{
 				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
 			})
 		}
 		return respMsg
 	}
+	return s.deliver(ctx, reply, sender, credID, req, resp)
+}
 
-	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
-	protectionParams := sender.protectionParams
-	respMsg := s.buildCertRepResponseForType(
-		msg, certReqID, si, resp.Certificate, resp.CACerts, sender, reqType, protectionParams,
-	)
+// deliver answers reply with the certificate the CA issued and records what its
+// confirmation needs. The certificate is encrypted for its own key when the
+// request chose the encrypted certificate proof of possession, and such a
+// request is never granted implicit confirmation, because its certConf is the proof.
+func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, req certRequestInfo, resp *Response) *pkicmp.PKIMessage {
+	txnID := reply.Header.TransactionID
+	r := certRep{
+		certReqID:        req.certReqID,
+		status:           issuedStatus(resp),
+		cert:             resp.Certificate,
+		caCerts:          resp.CACerts,
+		reqType:          req.reqType,
+		implicit:         req.implicit && req.method != POPEncryptedCertificate,
+		protectionParams: sender.protectionParams,
+	}
+	if req.method == POPEncryptedCertificate && resp.Certificate != nil && grantsCertificate(r.status) {
+		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO, s.cfg.envelopedDataForVersion2)
+		if err != nil {
+			// The certificate exists but cannot reach its holder, so the CA hears that it was not accepted.
+			s.setCompleted(credID, txnID)
+			if s.cfg.confirmer != nil {
+				_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmRejected, resp.IssueRef)
+			}
+			return s.buildCertRep(reply, sender, certRep{
+				certReqID: req.certReqID,
+				status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
+				reqType:   req.reqType,
+			})
+		}
+		r.encrypted = &encrypted
+	}
+	respMsg := s.buildCertRep(reply, sender, r)
 
 	if resp.Certificate != nil {
-		if s.cfg.implicitConfirm && requestHasImplicitConfirm(msg) {
+		if s.grantsImplicitConfirm(r.implicit) {
 			// Mark the transaction completed but keep it in the table until
 			// cleanupExpired runs, so the transactionID cannot be reused within
 			// the same confirmWaitTime window (RFC 9483 §3.5).
@@ -213,11 +328,18 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 			if s.cfg.confirmer != nil {
 				_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmImplicit, resp.IssueRef)
 			}
-		} else if !s.setIssued(
-			credID, txnID, reqType, certReqID, resp.Certificate, resp.IssueRef,
-			respMsg.Header.SenderNonce, msg.Header.SenderNonce, protectionParams, msg.Header.ProtectionAlg,
-		) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+		} else if !s.setIssued(credID, txnID, issuedState{
+			reqType:             req.reqType,
+			certReqID:           req.certReqID,
+			cert:                resp.Certificate,
+			issueRef:            resp.IssueRef,
+			popMethod:           req.method,
+			senderNonce:         respMsg.Header.SenderNonce,
+			clientSenderNonce:   reply.Header.SenderNonce,
+			protectionParams:    sender.protectionParams,
+			protectionAlgorithm: reply.Header.ProtectionAlg,
+		}) {
+			return s.buildErrorResponse(reply, sender, pkicmp.PKIStatusInfo{
 				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailTransactionIdInUse,
 			})
 		}
@@ -226,7 +348,11 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 	return respMsg
 }
 
-// handlePollReq resumes pending certificate requests through the configured handler.
+// handlePollReq answers a pollReq for a waiting request with a pollRep or the final response (RFC 9483 §4.4).
+//
+// The final response repeats the senderNonce of the pollReq that collects it, as
+// OpenSSL sends and checks. RFC 9483 §4.4 has the client keep the delayed
+// request's nonce for this check, and the client in this module accepts either.
 func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIdentity) *pkicmp.PKIMessage {
 	pollReq, err := msg.Body.PollReq()
 	if err != nil {
@@ -235,7 +361,9 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 		})
 	}
 
-	var certReqID int64
+	// One request per message is supported, so -1 for the whole message and the
+	// request's own certReqId refer to the same request. An empty pollReq does too.
+	certReqID := int64(-1)
 	if len(*pollReq) > 0 {
 		certReqID = (*pollReq)[0]
 	}
@@ -259,77 +387,121 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 	}
 
 	// RFC 9483 §3.5: recipNonce MUST equal the senderNonce of the previous message.
-	if len(msg.Header.RecipNonce) == 0 {
+	// WithStrictProfileValidation overrides WithOptionalPollReqRecipNonce.
+	missingRecipNonce := len(msg.Header.RecipNonce) == 0
+	if missingRecipNonce && (!s.cfg.optionalPollReqRecipNonce || s.cfg.strictProfile) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"missing recipNonce"},
 		})
 	}
-	if !bytes.Equal(msg.Header.RecipNonce, pending.senderNonce) {
+	if !missingRecipNonce && !bytes.Equal(msg.Header.RecipNonce, pending.senderNonce) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"recipNonce mismatch"},
 		})
 	}
 
-	if !pending.lastPollTime.IsZero() && time.Since(pending.lastPollTime) < pending.checkAfter {
+	waiting := pending.waiting()
+	if pending.certReqID != nil && !pollRefersTo(certReqID, waiting.certReqID) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRequest,
-			StatusString: pkicmp.PKIFreeText{"polling too frequently"},
+			StatusString: pkicmp.PKIFreeText{"certReqId does not refer to the waiting request"},
 		})
+	}
+	// A snapshot taken before the certReqId was kept leaves the pollReq to name it.
+	if pending.certReqID == nil {
+		waiting.certReqID = certReqID
+	}
+
+	// RFC 9483 §4.4: polling early only costs another round trip. The answer is
+	// another pollRep with the time left, and the CA is not asked.
+	if !pending.lastPollTime.IsZero() {
+		if left := pending.checkAfter - time.Since(pending.lastPollTime); left > 0 {
+			return s.answerPoll(msg, sender, credID, waiting, certReqID, (left+time.Second-1)/time.Second*time.Second, "")
+		}
 	}
 
 	ctx = contextWithPollRef(ctx, pending.pollRef)
+	ctx = contextWithPOPMethod(ctx, waiting.popMethod)
 
 	resp, err := s.handler.HandleCMP(ctx, msg, sender)
 	if err != nil {
-		si := errorToStatusInfo(err)
-		return s.buildErrorResponse(msg, sender, si)
+		return s.rejectWaiting(msg, sender, credID, waiting, errorToStatusInfo(err))
 	}
 
-	// Still waiting → update pollRef and respond with PollRep.
-	if resp.Waiting != nil {
-		checkAfter := max(int64(resp.Waiting.CheckAfter/time.Second), 1)
-		item := pkicmp.PollRepItem{CertReqID: certReqID, CheckAfter: checkAfter}
-		if resp.Waiting.Reason != "" {
-			item.Reason = pkicmp.PKIFreeText{resp.Waiting.Reason}
+	// Still waiting → keep the request and respond with a pollRep.
+	if resp != nil && resp.Waiting != nil {
+		if resp.Waiting.PollRef != "" {
+			waiting.pollRef = resp.Waiting.PollRef
 		}
-		pollRep := pkicmp.PollRepContent{item}
-		respMsg := s.buildResponse(msg, pkicmp.NewPollRepBody(&pollRep), sender)
-		if !s.setPending(
-			credID, txnID, pending.reqType, resp.Waiting.PollRef,
-			respMsg.Header.SenderNonce, resp.Waiting.CheckAfter, time.Now(),
-		) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
-			})
-		}
-		return respMsg
+		waiting.lastPollTime = time.Now()
+		waiting.checkAfter = advertisedCheckAfter(resp.Waiting.CheckAfter)
+		return s.answerPoll(msg, sender, credID, waiting, certReqID, waiting.checkAfter, resp.Waiting.Reason)
+	}
+
+	if waiting.reqType == requestRR {
+		s.setCompleted(credID, txnID)
+		return s.buildRevRepResponse(msg, pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}, sender)
+	}
+	if resp == nil || resp.Certificate == nil {
+		return s.rejectWaiting(msg, sender, credID, waiting, pkicmp.PKIStatusInfo{
+			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
+		})
 	}
 
 	// Certificate ready → respond with ip/cp/kup matching original request type.
-	si := pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted}
-	respMsg := s.buildCertRepResponseForType(msg, certReqID, si, resp.Certificate, resp.CACerts, sender, pending.reqType)
+	return s.deliver(ctx, msg, sender, credID, certRequestInfo{
+		certReqID: waiting.certReqID,
+		reqType:   waiting.reqType,
+		implicit:  waiting.implicitConfirm,
+		method:    waiting.popMethod,
+	}, resp)
+}
 
-	if resp.Certificate != nil {
-		if s.cfg.implicitConfirm && requestHasImplicitConfirm(msg) {
-			// Mark the transaction completed but keep it in the table until
-			// cleanupExpired runs, so the transactionID cannot be reused within
-			// the same confirmWaitTime window (RFC 9483 §3.5).
-			s.setCompleted(credID, txnID)
-			if s.cfg.confirmer != nil {
-				_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmImplicit, resp.IssueRef)
-			}
-		} else if !s.setIssued(
-			credID, txnID, pending.reqType, certReqID, resp.Certificate, resp.IssueRef,
-			respMsg.Header.SenderNonce, msg.Header.SenderNonce, sender.protectionParams, msg.Header.ProtectionAlg,
-		) {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailTransactionIdInUse,
-			})
-		}
+// pollRefersTo reports whether the certReqId of a pollReq names the waiting request with certReqId original.
+//
+// RFC 9483 §4.4 polls with 0 for the CertResponse of an ip, cp or kup and -1 for
+// the whole message. RFC 9810 §5.3.22 uses the CertResponse's own certReqId,
+// which is -1 for a p10cr.
+func pollRefersTo(certReqID, original int64) bool {
+	return certReqID == original || certReqID == -1 || original == -1 && certReqID == 0
+}
+
+// answerPoll keeps a request waiting and answers its pollReq with a pollRep that asks the client to wait checkAfter.
+func (s *Server) answerPoll(msg *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, waiting waitingState, certReqID int64, checkAfter time.Duration, reason string) *pkicmp.PKIMessage {
+	// RFC 9483 §4.4: the pollRep repeats the certReqId of the pollReq.
+	item := pkicmp.PollRepItem{CertReqID: certReqID, CheckAfter: int64(checkAfter / time.Second)}
+	if reason != "" {
+		item.Reason = pkicmp.PKIFreeText{reason}
+	}
+	pollRep := pkicmp.PollRepContent{item}
+	respMsg := s.buildResponse(msg, pkicmp.NewPollRepBody(&pollRep), sender)
+	waiting.senderNonce = respMsg.Header.SenderNonce
+	if !s.setPending(credID, msg.Header.TransactionID, waiting) {
+		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
+		})
 	}
 	return respMsg
+}
+
+// rejectWaiting ends a waiting transaction with the rejection si, sent as the final response to the delayed request.
+//
+// RFC 9810 §5.3.22 lets the final response be an ip, cp or kup, which a client
+// handles like an immediate one, so a rejected certificate request gets the
+// same body as one refused at once. A revocation gets an rp. A problem with the
+// message itself gets an error message, as for a request that did not wait.
+func (s *Server) rejectWaiting(msg *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, waiting waitingState, si pkicmp.PKIStatusInfo) *pkicmp.PKIMessage {
+	s.setCompleted(credID, msg.Header.TransactionID)
+	switch {
+	case si.FailInfo&pkicmp.FailBadMessageCheck != 0:
+		return s.buildErrorResponse(msg, sender, si)
+	case waiting.reqType == requestRR:
+		return s.buildRevRepResponse(msg, si, sender)
+	default:
+		return s.buildCertRep(msg, sender, certRep{certReqID: waiting.certReqID, status: si, reqType: waiting.reqType})
+	}
 }
 
 // certReqIDFromRequest extracts the certReqID from a cert request message.
@@ -354,6 +526,9 @@ func requestHasImplicitConfirm(msg *pkicmp.PKIMessage) bool {
 	}
 	return false
 }
+
+// requestRR is the request type of a delayed revocation request.
+const requestRR = RequestType(pkicmp.BodyTypeRR & 0x1f)
 
 // requestTypeFromBody maps a CMP body type to the handler's request type.
 func requestTypeFromBody(bodyType pkicmp.BodyType) RequestType {

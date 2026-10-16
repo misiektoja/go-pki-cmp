@@ -19,14 +19,23 @@ jobs:
   openssl:
     permissions:
       contents: read
-    name: OpenSSL
+    name: OpenSSL ${{ matrix.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # OpenSSL 3.2 added the CMP mock server options the tests use, such as -port and -rsp_key.
+    # ubuntu-latest ships an older 3.x release, so releases are built and cached instead: the
+    # 3.5 LTS release and 4.0, the first release with ML-KEM in CMS.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "3.5.6"
+            sha256: deae7c80cba99c4b4f940ecadb3c3338b13cb77418409238e57d7f31f2a3b736
+          - version: "4.0.3"
+            sha256: 325b5c806167c13b40b1ffeadfe0248197c00eccc4cf123ec1e28d2d2fd216d9
     env:
-      # OpenSSL 3.2 added the CMP mock server options the tests use, such as -port and -rsp_key.
-      # ubuntu-latest ships an older 3.x release, so an LTS release is built and cached instead.
-      OPENSSL_VERSION: "3.5.6"
-      OPENSSL_SHA256: deae7c80cba99c4b4f940ecadb3c3338b13cb77418409238e57d7f31f2a3b736
+      OPENSSL_VERSION: ${{ matrix.version }}
+      OPENSSL_SHA256: ${{ matrix.sha256 }}
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +51,7 @@ jobs:
         id: cache-openssl
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /opt/openssl-lts
+          path: /opt/openssl
           key: ${{ runner.os }}-openssl-${{ env.OPENSSL_VERSION }}
 
       # The tarball is checked against the SHA-256 digest openssl.org publishes for the release.
@@ -56,14 +65,14 @@ jobs:
           echo "${OPENSSL_SHA256}  ${tarball}" | sha256sum -c -
           tar -xf "$tarball"
           cd "openssl-${OPENSSL_VERSION}"
-          ./config --prefix=/opt/openssl-lts --openssldir=/opt/openssl-lts shared zlib
+          ./config --prefix=/opt/openssl --openssldir=/opt/openssl shared zlib
           make -j"$(nproc)" > /dev/null
           sudo make install_sw > /dev/null
 
       - name: Put OpenSSL on the path
         run: |
-          echo "/opt/openssl-lts/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=/opt/openssl-lts/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "/opt/openssl/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=/opt/openssl/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Run the OpenSSL tests
         run: |

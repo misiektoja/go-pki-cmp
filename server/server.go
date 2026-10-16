@@ -37,6 +37,9 @@ func New(handler Handler, opts ...Option) *Server {
 	if s.cfg.confirmWait == 0 {
 		s.cfg.confirmWait = 10 * time.Second
 	}
+	if s.cfg.waitingLifetime == 0 {
+		s.cfg.waitingLifetime = defaultWaitingLifetime
+	}
 	maxTxn := s.cfg.maxTransactions
 	if maxTxn == 0 {
 		maxTxn = 10000
@@ -243,6 +246,8 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		resp = s.handleCertConf(ctx, msg, sender)
 	case pkicmp.BodyTypePollReq:
 		resp = s.handlePollReq(ctx, msg, sender)
+	case pkicmp.BodyTypePopDecR:
+		resp = s.handlePopDecR(ctx, msg, sender)
 	case pkicmp.BodyTypeRR:
 		resp = s.handleRevocation(ctx, msg, sender)
 	case pkicmp.BodyTypeGenM:
@@ -267,30 +272,44 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 func (s *Server) policyConfig() policyConfig {
 	relaxed := !s.cfg.strictProfile
 	return policyConfig{
-		allowSHA1Signatures:      s.cfg.allowSHA1Signatures,
-		allowPoposkInputVariants: s.cfg.allowPoposkInputVariants && relaxed,
-		minMACIterationCount:     s.cfg.minMACIterationCount,
-		maxMACIterationCount:     s.cfg.maxMACIterationCount,
-		optionalSubject:          s.cfg.optionalSubject && relaxed,
-		optionalRevocationReason: s.cfg.optionalRevocationReason && relaxed,
-		optionalRevocationIssuer: s.cfg.optionalRevocationIssuer && relaxed,
-		macRevocation:            s.cfg.macRevocation && relaxed,
-		signatureProtectionPOP:   s.cfg.signatureProtectionPOP && relaxed,
+		allowSHA1Signatures:       s.cfg.allowSHA1Signatures,
+		allowPoposkInputVariants:  s.cfg.allowPoposkInputVariants && relaxed,
+		minMACIterationCount:      s.cfg.minMACIterationCount,
+		maxMACIterationCount:      s.cfg.maxMACIterationCount,
+		optionalSubject:           s.cfg.optionalSubject && relaxed,
+		optionalRevocationReason:  s.cfg.optionalRevocationReason && relaxed,
+		optionalRevocationIssuer:  s.cfg.optionalRevocationIssuer && relaxed,
+		macRevocation:             s.cfg.macRevocation && relaxed,
+		signatureProtectionPOP:    s.cfg.signatureProtectionPOP && relaxed,
+		encryptedCertPOP:          s.cfg.encryptedCertPOP,
+		challengeResponsePOP:      s.cfg.challengeResponsePOP,
+		indirectPOPForSigningKeys: relaxed,
 	}
 }
 
-// CleanupExpired removes pending transactions and issued certificates that
-// have exceeded the configured confirmWaitTime (default 10s). Call this
-// periodically.
+// defaultWaitingLifetime is how long a waiting request stays without a poll unless
+// [WithWaitingLifetime] says otherwise.
+const defaultWaitingLifetime = 24 * time.Hour
+
+// CleanupExpired removes transactions idle for longer than the configured
+// confirmWaitTime (default 10s) and waiting requests whose client has not
+// polled within the waiting lifetime (default 24h). Call this periodically.
 //
 // If the CA implements [CertificateConfirmer], it is notified with
 // [ConfirmExpired] for each issued certificate that timed out without
-// receiving a certConf message.
+// receiving a certConf message. A [WaitingExpirer] hears about each waiting
+// request removed.
 func (s *Server) CleanupExpired() {
-	expired := s.transactionTracker.cleanupExpired(s.cfg.confirmWait)
+	expired := s.transactionTracker.cleanupExpired(s.cfg.confirmWait, s.cfg.waitingLifetime)
 	if s.cfg.confirmer != nil {
-		for _, e := range expired {
-			_ = s.cfg.confirmer.ConfirmCertificate(context.Background(), e.cert, ConfirmExpired, e.issueRef)
+		for _, e := range expired.issued {
+			ctx := contextWithPOPMethod(context.Background(), e.popMethod)
+			_ = s.cfg.confirmer.ConfirmCertificate(ctx, e.cert, ConfirmExpired, e.issueRef)
+		}
+	}
+	if s.cfg.waitingExpirer != nil {
+		for _, pollRef := range expired.waiting {
+			s.cfg.waitingExpirer.ExpireWaiting(context.Background(), pollRef)
 		}
 	}
 }

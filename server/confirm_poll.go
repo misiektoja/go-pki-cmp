@@ -6,8 +6,6 @@ import (
 	"crypto"
 	"crypto/x509"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -129,6 +127,7 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 
 	// Notify handler about the confirmation, passing issuance details via context.
 	ctx = context.WithValue(ctx, issuedInfoContextKey{}, issuedInfo{cert: entry.cert, issueRef: entry.issueRef})
+	ctx = contextWithPOPMethod(ctx, entry.popMethod)
 	if _, err := s.handler.HandleCMP(ctx, msg, sender); err != nil {
 		// RFC 9483 §3.6.2: an error condition on a certConf MUST be reported
 		// downstream. Keep the transaction so the client can retry and so the
@@ -160,6 +159,11 @@ func (s *Server) checkCertStatuses(statuses pkicmp.CertConfirmContent, entry *tr
 			return rejection(pkicmp.FailBadAlg, "cannot compute certHash")
 		}
 		if !bytes.Equal(cs.CertHash, expectedHash) {
+			// The hash of an encrypted certificate is the proof of possession
+			// (RFC 9810 §5.2.8.3.1), so a wrong one fails that proof.
+			if entry.popMethod == POPEncryptedCertificate {
+				return rejection(pkicmp.FailBadPOP, "certHash does not match the encrypted certificate")
+			}
 			return rejection(pkicmp.FailBadCertId, "certHash mismatch")
 		}
 		if !certReqIDMatches(entry, cs.CertReqID) {
@@ -190,12 +194,12 @@ func certStatusRejects(cs *pkicmp.CertStatus) bool {
 }
 
 // certificatePublicKey returns the key a certificate certifies. crypto/x509
-// leaves PublicKey nil for a composite ML-DSA key, so that key is parsed here.
+// leaves PublicKey nil for composite ML-DSA and ML-KEM keys, so those are parsed here.
 func certificatePublicKey(cert *x509.Certificate) crypto.PublicKey {
 	if cert.PublicKey != nil {
 		return cert.PublicKey
 	}
-	pub, err := compositex509.ParsePKIXPublicKey(cert.RawSubjectPublicKeyInfo)
+	pub, err := pkicmp.ParsePublicKey(cert.RawSubjectPublicKeyInfo)
 	if err != nil {
 		return nil
 	}

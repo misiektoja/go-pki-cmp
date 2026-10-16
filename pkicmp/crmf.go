@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -162,7 +161,7 @@ func (m *CertReqMsg) PublicKey() (any, error) {
 	if len(m.CertReq.CertTemplate.PublicKey) == 0 {
 		return nil, nil
 	}
-	return compositex509.ParsePKIXPublicKey(m.CertReq.CertTemplate.PublicKey)
+	return ParsePublicKey(m.CertReq.CertTemplate.PublicKey)
 }
 
 // Extensions parses and returns the extensions from the CertTemplate.
@@ -630,76 +629,6 @@ func (p *popoPrivKey) unmarshal(s *cryptobyte.String) error {
 	default:
 		return &ParseError{Detail: fmt.Sprintf("unsupported popoPrivKey variant: %d", tag)}
 	}
-	return nil
-}
-
-// challenge per RFC 9810 §5.2.8.3.3.
-//
-//	challenge ::= SEQUENCE {
-//	    owf                 AlgorithmIdentifier OPTIONAL,
-//	    witness             OCTET STRING,
-//	    challenge           OCTET STRING,           -- deprecated
-//	    encryptedRand   [0] envelopedData OPTIONAL
-//	}
-type challenge struct {
-	// OWF is the optional hash/KDF used for witness handling.
-	OWF *AlgorithmIdentifier
-	// Witness is the challenge witness used in POP verification.
-	Witness []byte
-	// EncryptedRand carries an encrypted random challenge value.
-	EncryptedRand *envelopedData
-}
-
-func (c *challenge) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
-	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
-		if c.OWF != nil {
-			c.OWF.marshal(mctx, b)
-		}
-		b.AddASN1OctetString(c.Witness)
-		b.AddASN1OctetString(nil) // Empty deprecated challenge
-		if c.EncryptedRand != nil {
-			mctx.MinRequiredPVNO = PVNO3
-			// encryptedRand [0] envelopedData (IMPLICIT)
-			b.AddASN1(cbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
-				c.EncryptedRand.marshalInner(b)
-			})
-		}
-	})
-}
-
-func (c *challenge) unmarshal(s *cryptobyte.String) error {
-	var seq cryptobyte.String
-	if !s.ReadASN1(&seq, cbasn1.SEQUENCE) {
-		return &ParseError{Detail: "invalid challenge sequence"}
-	}
-
-	if !seq.Empty() && seq.PeekASN1Tag(cbasn1.SEQUENCE) {
-		c.OWF = &AlgorithmIdentifier{}
-		if err := c.OWF.unmarshal(&seq); err != nil {
-			return err
-		}
-	}
-
-	if !seq.ReadASN1Bytes(&c.Witness, cbasn1.OCTET_STRING) {
-		return &ParseError{Detail: "invalid witness"}
-	}
-
-	var deprecatedChallenge []byte
-	if !seq.ReadASN1Bytes(&deprecatedChallenge, cbasn1.OCTET_STRING) {
-		return &ParseError{Detail: "missing deprecated challenge"}
-	}
-
-	if !seq.Empty() && seq.PeekASN1Tag(cbasn1.Tag(0).ContextSpecific().Constructed()) {
-		var sub cryptobyte.String
-		if !seq.ReadASN1(&sub, cbasn1.Tag(0).ContextSpecific().Constructed()) {
-			return &ParseError{Detail: "invalid encryptedRand tag"}
-		}
-		c.EncryptedRand = &envelopedData{}
-		if err := c.EncryptedRand.unmarshalInner(&sub); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

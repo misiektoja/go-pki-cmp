@@ -80,6 +80,30 @@
 // [pkicmp.CRLReasonRemoveFromCRL] releases it, if the CA supports holds. A CA
 // that delays its answer is polled as described below, without certConf.
 //
+// # Keys that cannot sign
+//
+// An ML-KEM key, or an RSA or elliptic curve key kept for encryption only,
+// proves possession by decryption (RFC 9810 §5.2.8.3).
+// [Client.SendIRWithIndirectPOP], [Client.SendCRWithIndirectPOP] and
+// [Client.SendKURWithIndirectPOP] take its private key and the method:
+//
+//	kemKey, _ := mlkem.GenerateKey768()
+//	result, err := c.SendIRWithIndirectPOP(ctx, kemKey, client.EncryptedCertificate, creds,
+//	    client.WithTemplateSubject(pkix.Name{CommonName: "my-device-encryption"}),
+//	)
+//
+// With [EncryptedCertificate] the CA returns the certificate encrypted for the
+// key, and the hash in the certConf the client sends is the proof. With
+// [ChallengeResponse] the CA first sends a popdecc challenge encrypted for the
+// key and issues the certificate after the client returns the decrypted number.
+// The CA must support the method. RFC 9483 §4.1.1 lets it refuse both for a key
+// that can sign.
+//
+// These requests are sent as version 3 (cmp2021), because the EnvelopedData the
+// CA answers with is cmp2021 syntax (RFC 9810 §7). Every later message of the
+// transaction keeps that version. A CMP version 2 CA may still send an RSA
+// certificate in the older EncryptedValue, which the client decrypts as well.
+//
 // # Support messages
 //
 // General messages ask the CA for information rather than a certificate:
@@ -168,6 +192,11 @@
 // attaching their certificate. Such a response fails with
 // [pkicmp.ReasonNoCandidateSigner] unless the certificate is configured with
 // [WithServerCerts]. It is tried last and must pass the same checks.
+//
+// Only candidates whose subject key identifier equals the senderKID of the
+// response are tried. A response whose senderKID names none of them fails with
+// [pkicmp.ReasonSenderKIDMismatch]. Some CAs copy the senderKID of the request
+// into the response. [WithSenderKIDMismatch] accepts that.
 //
 // A certificate response must hold exactly one CertResponse with the certReqId
 // of the request. A p10cr has no certReqId, so both -1 (RFC 9810 §5.3.4) and 0

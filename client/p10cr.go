@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -22,11 +20,11 @@ func (c *Client) SendP10CR(ctx context.Context, csrDER []byte, creds pkicmp.Cred
 		return nil, err
 	}
 	// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
-	requestedKey, err := compositex509.ParsePKIXPublicKey(csr.RawSubjectPublicKeyInfo)
+	requestedKey, err := pkicmp.ParsePublicKey(csr.RawSubjectPublicKeyInfo)
 	if err != nil {
 		return nil, err
 	}
 
 	body := pkicmp.NewP10CRBody(csr)
-	return c.enroll(ctx, body, pkicmp.BodyTypeCP, creds, ropts, requestedKey)
+	return c.enroll(ctx, body, pkicmp.BodyTypeCP, creds, ropts, requestedKey, nil)
 }

@@ -466,7 +466,7 @@ func TestRevocationHandlerResults(t *testing.T) {
 		return signedRR(t, f.ee, pkicmp.RevReqContent{revDetails(t, f.ee.cert, pkicmp.CRLReasonUnspecified)}, pkicmp.MessageOptions{})
 	}
 
-	t.Run("WaitingIsNotSupported", func(t *testing.T) {
+	t.Run("WaitingWithoutPollRefIsRefused", func(t *testing.T) {
 		ts := serve(t, func(context.Context, *pkicmp.PKIMessage, *server.SenderIdentity) (*server.Response, error) {
 			return &server.Response{Waiting: &server.WaitingResponse{CheckAfter: 10}}, nil
 		})

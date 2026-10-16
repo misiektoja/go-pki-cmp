@@ -32,7 +32,7 @@ The integration tests run the library against independent CMP implementations: t
 
 > [!IMPORTANT]
 > **Prerequisites**: Docker, OpenSSL 3.2 or newer, Git and `uv`.
-> The certificate request template test against the OpenSSL mock server needs OpenSSL 4.0 or newer, because the OpenSSL 3 server crashes on that request.
+> The certificate request template test against the OpenSSL mock server needs OpenSSL 4.0 or newer, because the OpenSSL 3 server crashes on that request. The ML-KEM cases of the CMS and proof-of-possession tests also need OpenSSL 4.0, the first release with ML-KEM in CMS, and skip on OpenSSL 3. The elliptic curve case of the encrypted certificate test needs OpenSSL 3.5 or newer because earlier releases cannot read a certificate in EnvelopedData. It skips on them. CI runs the OpenSSL tests with 3.5 and 4.0.
 
 ```bash
 make setup             # Start the EJBCA container and clone the CMP test suite

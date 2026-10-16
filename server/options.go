@@ -72,6 +72,7 @@ type serverConfig struct {
 	maxTransactionsPerCredential int
 	strictProfile                bool
 	optionalCertConfRecipNonce   bool
+	optionalPollReqRecipNonce    bool
 	allowSHA1Signatures          bool
 	allowPoposkInputVariants     bool
 	rawSubject                   bool
@@ -80,11 +81,16 @@ type serverConfig struct {
 	optionalRevocationIssuer     bool
 	macRevocation                bool
 	signatureProtectionPOP       bool
+	encryptedCertPOP             bool
+	envelopedDataForVersion2     bool
+	challengeResponsePOP         bool
 	messageTimeTolerance         time.Duration
 	raAuthorizer                 RAAuthorizer
 	minMACIterationCount         int                  // zero selects pkicmp.DefaultMinMACIterationCount
 	maxMACIterationCount         int                  // zero selects pkicmp.DefaultMaxMACIterationCount
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
+	waitingLifetime              time.Duration        // zero selects defaultWaitingLifetime
+	waitingExpirer               WaitingExpirer       // set by WithWaitingExpirer or NewCAServer
 
 	// Built once by New from signerKey and signerCert. signerErr records a
 	// rejected pair so responses fail visibly instead of going out unprotected.
@@ -132,11 +138,36 @@ func WithSender(name pkix.Name) Option {
 }
 
 // WithConfirmWaitTime sets the confirmWaitTime included in certificate responses
-// and controls when [Server.CleanupExpired] considers transactions stale.
-// The default is 10 seconds. RFC 9810 §5.1.1.2.
+// and controls when [Server.CleanupExpired] considers transactions stale, except
+// waiting requests, which [WithWaitingLifetime] governs. The default is 10
+// seconds. RFC 9810 §5.1.1.2.
 func WithConfirmWaitTime(d time.Duration) Option {
 	return func(c *serverConfig) {
 		c.confirmWait = d
+	}
+}
+
+// WithWaitingLifetime sets how long a waiting request stays after its last
+// message when the client stops polling. [Server.CleanupExpired] then removes
+// it and tells the [WaitingExpirer]. The default is 24 hours.
+//
+// The lifetime counts from the waiting response or the last pollRep, so it must
+// exceed the CheckAfter a CA returns. It does not limit how long a CA may take
+// to decide, which is the CA's own policy: a client that keeps polling keeps
+// the request. Confirmation of an issued certificate keeps using
+// [WithConfirmWaitTime].
+func WithWaitingLifetime(d time.Duration) Option {
+	return func(c *serverConfig) {
+		c.waitingLifetime = d
+	}
+}
+
+// WithWaitingExpirer sets the [WaitingExpirer] that [Server.CleanupExpired]
+// tells about waiting requests whose client stopped polling. [NewCAServer] sets
+// it for a CA that implements the interface.
+func WithWaitingExpirer(expirer WaitingExpirer) Option {
+	return func(c *serverConfig) {
+		c.waitingExpirer = expirer
 	}
 }
 
@@ -170,6 +201,9 @@ func WithImplicitConfirm() Option {
 //   - a CRMF request whose signature proof of possession carries poposkInput
 //     (§4.1.1), even with [WithPoposkInputVariants].
 //
+// It also limits [WithEncryptedCertificatePOP] and [WithChallengeResponsePOP]
+// to keys that cannot sign (§4.1.1).
+//
 // It also overrides the options that relax RFC 9483 rules:
 // [WithOptionalCertConfRecipNonce], [WithPoposkInputVariants],
 // [WithOptionalSubject], [WithOptionalRevocationReason],
@@ -202,6 +236,28 @@ func WithStrictProfileValidation() Option {
 func WithOptionalCertConfRecipNonce() Option {
 	return func(c *serverConfig) {
 		c.optionalCertConfRecipNonce = true
+	}
+}
+
+// WithOptionalPollReqRecipNonce accepts a pollReq that carries no recipNonce.
+// RFC 9483 §3.1 requires every message after the first of a transaction to
+// repeat the senderNonce of the previous message, so the server answers a
+// pollReq without one with badRecipientNonce by default. Use the option for
+// clients that leave the field out, such as the Insta Certifier 10 cmpclient
+// and the Nokia ssh-cmpclient. Without it they cannot collect a certificate
+// or a revocation that waited for a decision.
+//
+// A recipNonce that is present must still match. The poll stays bound to the
+// waiting request by its protection, the sender's credential and its
+// transactionID. Without the nonce a recorded pollReq of the same transaction
+// can be sent again, which can collect the final response before the device
+// does. That response holds no secret: a certificate, a refusal or an
+// encrypted certificate only the requested key can read.
+// [WithStrictProfileValidation] refuses a pollReq without recipNonce whether
+// or not this option is set.
+func WithOptionalPollReqRecipNonce() Option {
+	return func(c *serverConfig) {
+		c.optionalPollReqRecipNonce = true
 	}
 }
 
@@ -326,6 +382,69 @@ func WithMACRevocation() Option {
 func WithSignatureProtectionPOP() Option {
 	return func(c *serverConfig) {
 		c.signatureProtectionPOP = true
+	}
+}
+
+// WithEncryptedCertificatePOP accepts the encrypted certificate method of proof
+// of possession (RFC 9810 §5.2.8.3.2): a request whose popo is keyEncipherment
+// or keyAgreement with subsequentMessage encrCert. The server returns the
+// certificate in an EnvelopedData for the requested key, and the client proves
+// possession by sending certConf with the hash of the decrypted certificate.
+// A request with a key the server cannot encrypt for is refused with badAlg.
+// See the cms package for the supported keys.
+//
+// EnvelopedData is cmp2021 syntax, so the response is version 3. A version 2
+// request for an RSA key gets the certificate in the EncryptedValue of CMP
+// version 2 instead and a version 2 response, because clients such as OpenSSL
+// 3.0 and 3.2 cannot parse EnvelopedData there. Other keys have no EncryptedValue
+// form. A client that sends version 2 but reads only EnvelopedData, such as one
+// built on the CertificateResponse class of Bouncy Castle 1.86, must send version
+// 3 for an RSA key, as RFC 9810 §7 asks of a client that expects cmp2021 syntax,
+// or the server must use [WithEnvelopedDataForVersion2].
+//
+// Implicit confirmation is never granted to such a request. A certConf with
+// another hash is refused with badPOP. Until a matching certConf arrives the
+// certificate must be treated as undelivered: [CA.IssueCertificate] and
+// [CertificateConfirmer.ConfirmCertificate] see the method through
+// [POPMethodFromContext], and a CA should not publish the certificate before
+// [ConfirmAccepted] and should revoke it on [ConfirmExpired] or [ConfirmRejected]
+// (RFC 9810 §5.2.8.3.2 and §8.11).
+//
+// RFC 9483 §4.1.1 requires a signature proof for a key that can sign. Under
+// [WithStrictProfileValidation] only an ML-KEM key may use this method.
+func WithEncryptedCertificatePOP() Option {
+	return func(c *serverConfig) {
+		c.encryptedCertPOP = true
+	}
+}
+
+// WithEnvelopedDataForVersion2 sends EnvelopedData and a version 3 response to a
+// version 2 request for an RSA key that uses [WithEncryptedCertificatePOP], as
+// for every other key, instead of the EncryptedValue of CMP version 2. Use it
+// for clients that send version 2 but read only EnvelopedData, such as those
+// built on the CertificateResponse class of Bouncy Castle 1.86. OpenSSL 3.0 and
+// 3.2 clients cannot read the certificate in such a response.
+func WithEnvelopedDataForVersion2() Option {
+	return func(c *serverConfig) {
+		c.envelopedDataForVersion2 = true
+	}
+}
+
+// WithChallengeResponsePOP accepts the challenge-response method of proof of
+// possession (RFC 9810 §5.2.8.3.3): a request whose popo is keyEncipherment or
+// keyAgreement with subsequentMessage challengeResp. Before the request reaches
+// the [Handler], the server answers it with a popdecc that encrypts a random
+// number for the requested key. A popdecr with that number continues the request
+// as if it had just arrived, and the response to the popdecr is the ip, cp or kup.
+// A wrong number ends the transaction with badPOP, and the certificate is never
+// created.
+//
+// The challenge waits for its answer as long as an issued certificate waits for
+// certConf, see [WithConfirmWaitTime]. The same profile restriction as for
+// [WithEncryptedCertificatePOP] applies.
+func WithChallengeResponsePOP() Option {
+	return func(c *serverConfig) {
+		c.challengeResponsePOP = true
 	}
 }
 

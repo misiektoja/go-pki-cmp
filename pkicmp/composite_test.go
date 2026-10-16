@@ -173,6 +173,32 @@ func TestCompositeSignerChain(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestCompositeSignerChainCurrentTime checks the certificates of a path through a composite CA at VerifyOptions.CurrentTime.
+func TestCompositeSignerChainCurrentTime(t *testing.T) {
+	caKey, err := compositemldsa.GenerateKey(compositemldsa.MLDSA65ECDSAP256SHA512)
+	require.NoError(t, err)
+	caCert := newCompositeTestCert(t, "Composite CA", true, caKey, nil, nil)
+	signerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	signerCert := newCompositeTestCert(t, "CMP signer", false, signerKey, caCert, caKey)
+	creds, err := NewSignatureCredentials(signerKey, signerCert, caCert)
+	require.NoError(t, err)
+	parsed := roundTrip(t, creds, signerCert.Subject)
+
+	// The CA was certified first, so it is valid from the signer's first second.
+	result, err := parsed.Verify(VerifyOptions{TrustPool: x509pool(caCert), ExtraCerts: parsed.ExtraCerts, CurrentTime: signerCert.NotBefore})
+	require.NoError(t, err)
+	require.True(t, result.ProtectionCertificate.Equal(signerCert))
+
+	// Both times lie outside the signer's validity, the first one also while it is valid at the time of the call.
+	for _, at := range []time.Time{signerCert.NotBefore.Add(-time.Second), signerCert.NotAfter.Add(time.Second)} {
+		_, err = parsed.Verify(VerifyOptions{TrustPool: x509pool(caCert), ExtraCerts: parsed.ExtraCerts, CurrentTime: at})
+		var ve *VerificationError
+		require.ErrorAs(t, err, &ve)
+		require.Equal(t, ReasonUntrustedSigner, ve.Reason)
+	}
+}
+
 // TestCompositeCertHash hashes certificates signed by a composite CA with the pre-hash of its algorithm.
 func TestCompositeCertHash(t *testing.T) {
 	cases := []struct {

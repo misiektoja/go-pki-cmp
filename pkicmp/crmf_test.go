@@ -428,36 +428,45 @@ func TestPOPOPrivKeyASN1(t *testing.T) {
 
 func TestChallengeASN1(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
-		c := challenge{
+		c := Challenge{
 			Witness: []byte{0x01, 0x02},
 		}
 
 		var b cryptobyte.Builder
-		c.marshal(&marshalContext{MinRequiredPVNO: PVNO2}, &b)
+		mctx := &marshalContext{MinRequiredPVNO: PVNO2}
+		c.marshal(mctx, &b)
 		marshaled, _ := b.Bytes()
+		assert.Equal(t, PVNO2, mctx.MinRequiredPVNO)
 
-		var unmarshaled challenge
+		var unmarshaled Challenge
 		s := cryptobyte.String(marshaled)
 		err := unmarshaled.unmarshal(&s)
 		require.NoError(t, err)
 		assert.Equal(t, c.Witness, unmarshaled.Witness)
+		assert.Nil(t, unmarshaled.EncryptedRand)
 	})
 
 	t.Run("WithEnvelopedDataTriggeringPVNO3", func(t *testing.T) {
-		c := challenge{
+		c := Challenge{
+			OWF:           &AlgorithmIdentifier{Algorithm: oidSHA256},
 			Witness:       []byte{0x01, 0x02},
-			EncryptedRand: &envelopedData{Raw: []byte{0x30, 0x03, 0x02, 0x01, 0x01}},
+			EncryptedRand: []byte{0x30, 0x03, 0x02, 0x01, 0x01},
 		}
 
 		var b cryptobyte.Builder
-		c.marshal(&marshalContext{MinRequiredPVNO: PVNO2}, &b)
+		mctx := &marshalContext{MinRequiredPVNO: PVNO2}
+		c.marshal(mctx, &b)
 		marshaled, _ := b.Bytes()
+		assert.Equal(t, PVNO3, mctx.MinRequiredPVNO)
+		// encryptedRand is [0] EXPLICIT EnvelopedData (RFC 9810 uses EXPLICIT TAGS).
+		assert.Contains(t, string(marshaled), string([]byte{0xa0, 0x05, 0x30, 0x03, 0x02, 0x01, 0x01}))
 
-		var unmarshaled challenge
+		var unmarshaled Challenge
 		s := cryptobyte.String(marshaled)
 		err := unmarshaled.unmarshal(&s)
 		require.NoError(t, err)
-		assert.NotNil(t, unmarshaled.EncryptedRand)
+		assert.Equal(t, c.EncryptedRand, unmarshaled.EncryptedRand)
+		assert.True(t, unmarshaled.OWF.Algorithm.Equal(oidSHA256))
 	})
 }
 

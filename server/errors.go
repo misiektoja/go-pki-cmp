@@ -32,6 +32,21 @@ func (e *Error) Error() string {
 	return msg
 }
 
+// WaitingError delays the answer to a revocation request (RFC 9483 §4.4).
+// Return it from [Revoker.RevokeCertificate] or
+// [RevocationAuthorizer.AuthorizeRevocation] when the decision has to wait, for
+// example for an operator. The client gets an error message with status
+// waiting and polls. Each poll reaches [PendingChecker.CheckPending] with the
+// PollRef, which must not be empty.
+type WaitingError struct {
+	WaitingResponse
+}
+
+// Error describes the delay without disclosing the pollRef.
+func (e *WaitingError) Error() string {
+	return "server: request is waiting"
+}
+
 // rejection returns an Error that rejects the request with failInfo and StatusText text.
 func rejection(failInfo pkicmp.PKIFailureInfo, text string) *Error {
 	return &Error{Status: pkicmp.StatusRejection, FailureInfo: failInfo, StatusText: text}

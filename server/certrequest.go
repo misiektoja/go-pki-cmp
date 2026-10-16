@@ -23,6 +23,8 @@ type parsedCRMF struct {
 	extensions   []pkix.Extension
 	signaturePOP bool // request carries a signature proof of possession
 	popoAbsent   bool // request carries no proof of possession at all
+	// subsequentMessage is the method a keyEncipherment or keyAgreement proof asks for.
+	subsequentMessage *int64
 }
 
 // parseCRMFMsg extracts fields from a CRMF request body.
@@ -62,7 +64,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 
 	// Extract public key.
 	if len(reqMsg.CertReq.CertTemplate.PublicKey) > 0 {
-		pub, err := compositex509.ParsePKIXPublicKey(reqMsg.CertReq.CertTemplate.PublicKey)
+		pub, err := pkicmp.ParsePublicKey(reqMsg.CertReq.CertTemplate.PublicKey)
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
 		}
@@ -72,6 +74,11 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 
 	result.signaturePOP = reqMsg.Popo != nil && reqMsg.Popo.Signature != nil
 	result.popoAbsent = reqMsg.Popo == nil
+	if reqMsg.Popo != nil {
+		if v, ok := reqMsg.Popo.SubsequentMessage(); ok {
+			result.subsequentMessage = &v
+		}
+	}
 
 	// Extract extensions.
 	if len(reqMsg.CertReq.CertTemplate.Extensions) > 0 {
@@ -134,14 +141,17 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage, sende
 			return rejection(pkicmp.FailBadCertTemplate, "public key required")
 		}
 		// verifyPOPMsg checks only a signature proof and passes a request that
-		// omits popo or uses another variant. A key that cannot sign would need
-		// the indirect method of RFC 9810 §5.2.8.3, which is not implemented, so
-		// such requests are refused rather than issued for an unproven key.
+		// omits popo or uses another variant. The indirect methods of RFC 9810
+		// §5.2.8.3 prove possession later in the exchange, so they are accepted
+		// here only when the server is configured to complete them.
 		if !crmf.signaturePOP {
-			if crmf.popoAbsent && policyConfigFrom(ctx).signatureProtectionPOP && signedWithRequestedKey(crmf, sender) {
-				return nil
+			if crmf.popoAbsent {
+				if policyConfigFrom(ctx).signatureProtectionPOP && signedWithRequestedKey(crmf, sender) {
+					return nil
+				}
+				return rejection(pkicmp.FailBadPOP, "proof of possession by signature required")
 			}
-			return rejection(pkicmp.FailBadPOP, "proof of possession by signature required")
+			return checkIndirectPOP(ctx, crmf)
 		}
 		return nil
 	default:
