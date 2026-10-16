@@ -60,9 +60,10 @@ func newCertReqMsg(t *testing.T, key *ecdsa.PrivateKey, subject string) pkicmp.C
 	return msg
 }
 
-// Nokia's ssh-cmpclient reuses the senderNonce of its request in the following
-// certConf. RFC 9483 §3.5 does not list nonce freshness among the receiver-side
-// checks, and rejecting it discards a certificate the CA already issued.
+// The Insta Certifier 7 ssh-cmpclient reuses the senderNonce of its request in
+// the following certConf. RFC 9483 §3.5 does not list nonce freshness among the
+// receiver-side checks, and rejecting it discards a certificate the CA already
+// issued.
 func TestCertConfAcceptsRepeatedSenderNonce(t *testing.T) {
 	ca := &certyaml.Certificate{Subject: "CN=Test CA"}
 	caCert, err := ca.X509Certificate()
