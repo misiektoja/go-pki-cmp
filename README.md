@@ -64,6 +64,8 @@ Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
   handles revocation and support messages, lets issuance and revocation wait for a decision such as
   an operator's approval, accepts requests a registration authority forwards in nested messages and
   applies policy middleware such as the lightweight profile.
+* **[`cms`](./cms/)**: CMS EnvelopedData and CMP version 2 EncryptedValue encryption and decryption for
+  proof of possession by decryption.
 
 ## Compatibility
 
