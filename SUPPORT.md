@@ -1,6 +1,6 @@
 # Getting help
 
-Start with the [README](README.md), which shows client and server usage and lists the supported RFCs. The package documentation on [pkg.go.dev](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp) describes every exported type and option. The [examples](examples/) directory holds a runnable mock CA and a client that enrolls, updates and revokes a certificate against it.
+Start with the [documentation site](https://misiektoja.github.io/go-pki-cmp/). [Getting started](https://misiektoja.github.io/go-pki-cmp/getting-started/) runs the example CA and client. The client and server guides cover enrollment, response verification, authentication, policy and the options deployed clients need. [Troubleshooting](https://misiektoja.github.io/go-pki-cmp/operations/troubleshooting/) maps refusals to their causes. The package documentation on [pkg.go.dev](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp) describes every exported type and option.
 
 ## Check your integration first
 
@@ -8,15 +8,7 @@ Most problems come from configuration that differs between CMP peers. Before ask
 
 * The client has a trust anchor through `client.WithTrustedCAs` wherever one is available. Signed responses, including error messages to a MAC-protected request, are verified against it.
 * The MAC secret and the reference sent as `senderKID` match what the CA expects. A peer that implements only RFC 4210 may need `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)`.
-* A request refused with "MAC protection parameters not accepted" uses an iteration count outside `server.WithMACIterationLimits`, which accepts 1 to 500000 by default. `client.WithMACIterationLimits` sets the range for responses.
-* A certConf refused with "missing recipNonce" comes from a client that leaves the field out. `server.WithOptionalCertConfRecipNonce` accepts it.
-* A request refused with "poposkInput not allowed when the template contains the subject and public key" comes from a client such as the Insta Certifier 10 cmpclient. `server.WithPoposkInputVariants` accepts it.
-* A key update refused with "proof of possession by signature required" carries no proof of possession. When it keeps the key of the certificate that signs it, `server.WithSignatureProtectionPOP` accepts it.
-* A request refused with "subject required" has no subject field in its certificate template. A request that names the device only in subjectAltName must carry a NULL-DN subject, which the server accepts by default. `server.WithOptionalSubject` accepts a template without the field.
-* A revocation request refused with "reasonCode required", "issuer required" or "revocation requires signature protection" is accepted with `server.WithOptionalRevocationReason`, `server.WithOptionalRevocationIssuer` or `server.WithMACRevocation`. A MAC-protected one also needs a CA that implements `server.RevocationAuthorizer`.
-* A request refused with "unsupported pvno 0" uses a protocol version the server does not support. No option changes that.
-* SHA-1 signatures are enabled with `WithSHA1Signatures` in the `client` or `server` package when the peer still uses them. They are off by default.
-* A signed response refused with "senderKID names no candidate signer certificate" lacks the certificate its senderKID names. `client.WithServerCerts` supplies a certificate the CA leaves out. Some CAs copy the senderKID of the request into their responses instead. `client.WithSenderKIDMismatch` accepts that.
+* The status text of a refused request appears in [Troubleshooting](https://misiektoja.github.io/go-pki-cmp/operations/troubleshooting/), which names the option that accepts it.
 * `Err` on a server built with `server.New` or `server.NewCAServer` returns nil. It reports a signer key that does not match its certificate.
 * `server.WithStrictProfileValidation` is set only when every client follows RFC 9483 exactly. It rejects requests that many deployed clients send.
 
