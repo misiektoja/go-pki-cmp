@@ -1,8 +1,8 @@
 # Keeps dependencies current without letting updates arrive faster than they can be reviewed.
 #
-# Go modules, GitHub Actions and the EJBCA test images are grouped so one pull request carries a whole
-# ecosystem's patch and minor updates. Major updates stay separate, because they need their own
-# validation run.
+# Go modules, GitHub Actions, the documentation toolchain and the EJBCA test images are grouped so one
+# pull request carries a whole ecosystem's patch and minor updates. Major updates stay separate,
+# because they need their own validation run.
 version: 2
 
 updates:
@@ -36,6 +36,27 @@ updates:
       include: scope
     groups:
       actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The documentation toolchain is pinned in docs/requirements.txt and the site build runs with
+  # --strict, so a MkDocs or theme release that changes a warning into an error breaks the build. That
+  # is worth learning from a pull request rather than from the first push after a release.
+  - package-ecosystem: pip
+    directory: "/docs"
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      docs-minor-and-patch:
         patterns:
           - "*"
         update-types:
