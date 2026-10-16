@@ -12,38 +12,18 @@ Go library for the **Certificate Management Protocol (CMP)**. Its core encodes, 
 verifies CMP and CRMF messages. On top of it, the `client` package enrolls, updates and revokes
 certificates and the `server` package serves the same operations to CMP clients as an `http.Handler`
 in front of a CA. [cmp-issuer](https://github.com/misiektoja/cmp-issuer), a cert-manager external
-issuer, is built on this library. The library implements:
+issuer, is built on this library.
 
-- **RFC 9810** (obsoletes RFC 4210 and RFC 9480): Certificate Management Protocol (CMP), CMPv2 and CMPv3
-- **RFC 9483**: Lightweight CMP Profile
-- **RFC 4211**: Certificate Request Message Format (CRMF)
-- **RFC 9811** (obsoletes RFC 6712): HTTP Transfer for the Certificate Management Protocol (CMP)
+## Contents
 
-Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, `genm` and `nested`
-with their responses. General messages carry the RFC 9483 support requests for CA certificates, a root
-CA update, a certificate request template and CRL updates. A key that cannot sign, such as an ML-KEM
-key, proves possession by decryption: the CA returns the certificate encrypted for the key or sends a
-`popdecc` challenge first (RFC 9810 §5.2.8.3). Key recovery, central key generation,
-cross-certification and announcements are not implemented.
-
-## Interoperability and testing
-
-CI runs the library against independent CMP implementations:
-
-* **[EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp)**: the client enrolls and updates certificates.
-* **[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html)** 3.5 and 4.0: the client
-  enrolls, updates, revokes and sends support messages against the mock server. OpenSSL as a client
-  revokes at the server and sends support messages to it. It also enrolls RSA and EC keys at the server
-  with the encrypted certificate method (`-popo 2`). OpenSSL 4.0 enrolls ML-KEM keys that way too.
-* **[Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)**:
-  the client enrolls, re-enrolls, updates and revokes certificates against a hosted instance on every push to
-  `dev` and `main` and once a week.
-* **[Siemens CMP test suite](https://github.com/siemens/cmp-test-suite)**: runs its conformance tests
-  against the server.
-
-Local tests also run the Insta Certifier 10 cmpclient and the Nokia ssh-cmpclient against the server.
-Both clients are proprietary, so CI does not run them. See
-[test/integration/certifier](test/integration/certifier/README.md).
+* [Install](#install)
+* [Scope](#scope)
+* [Getting started](#getting-started)
+* [Interoperability](#interoperability)
+* [Documentation](#documentation)
+* [Credits](#credits)
+* [Support and contributing](#support-and-contributing)
+* [License](#license)
 
 ## Install
 
@@ -54,47 +34,45 @@ go get github.com/misiektoja/go-pki-cmp
 Requires Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
 `github.com/misiektoja/go-pkicmp-ng`.
 
-## Package structure
+| Package | Content |
+| --- | --- |
+| [`pkicmp`](./pkicmp/) | CMP and CRMF types with parsing, serialization and MAC or signature protection |
+| [`client`](./client/) | Enrollment, key update, revocation and support messages with polling, response verification and certificate confirmation |
+| [`server`](./server/) | An `http.Handler` that authenticates clients, tracks transactions and applies policy in front of your CA |
+| [`cms`](./cms/) | EnvelopedData and EncryptedValue for proof of possession by decryption |
 
-* **[`pkicmp`](./pkicmp/)**: CMP and CRMF ASN.1 types with parsing, serialization and MAC or signature
-  protection.
-* **[`client`](./client/)**: IR, CR, KUR, P10CR, RR and support message flows with polling, response
-  verification and certificate confirmation.
-* **[`server`](./server/)**: an `http.Handler` that authenticates clients, tracks transactions,
-  handles revocation and support messages, lets issuance and revocation wait for a decision such as
-  an operator's approval, accepts requests a registration authority forwards in nested messages and
-  applies policy middleware such as the lightweight profile.
-* **[`cms`](./cms/)**: CMS EnvelopedData and CMP version 2 EncryptedValue encryption and decryption for
-  proof of possession by decryption.
+## Scope
 
-## Compatibility
+| Standard | Coverage |
+| --- | --- |
+| RFC 9810 (obsoletes RFC 4210 and RFC 9480) | CMP version 2 and version 3 |
+| RFC 9483 | Lightweight CMP Profile |
+| RFC 4211 | Certificate Request Message Format (CRMF) |
+| RFC 9811 (obsoletes RFC 6712) | HTTP transfer for CMP |
 
-* **Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
-  [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) support enrollment and CMP
-  signatures. Older Dilithium encodings are not supported. ML-KEM-768 and ML-KEM-1024 keys can be
-  certified through a proof of possession by decryption. ML-KEM-512 is not supported.
-* **RFC 4210 peers** are supported by default. SHA-1 signatures and additional device compatibility
-  options are opt-in. [Server options](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#Option)
-  describe these exceptions and the stricter `WithStrictProfileValidation` checks.
+Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, `genm` and `nested`
+with their responses. General messages carry the RFC 9483 support requests for CA certificates, a
+root CA update, a certificate request template and CRL updates.
 
-For manual certificate confirmation, use
-[`pkicmp.NewCertStatus`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/pkicmp#NewCertStatus).
-Composite certificate chains have additional
-[verification limits](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/pkicmp#VerifyOptions) and
-[client trust requirements](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTrustedCAs).
+**Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
+[composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) keys can enroll and sign CMP
+messages. ML-KEM-768 and ML-KEM-1024 keys, which cannot sign, prove possession by decryption.
 
-## Usage
+**RFC 4210 peers** work with the defaults. Options accept deployed clients that break RFC 9483 rules.
 
-### Client
+Key recovery, central key generation, cross-certification and announcements are not implemented.
 
-Initialization Request (IR) with a shared secret:
+The [support matrix](https://misiektoja.github.io/go-pki-cmp/support-matrix/) and
+[known limitations](https://misiektoja.github.io/go-pki-cmp/known-limitations/) give the details.
+
+## Getting started
+
+Enroll a certificate with a shared secret:
 
 ```go
 key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 creds, _ := pkicmp.NewMACCredentials([]byte("my-shared-secret"))
 
-// A bootstrapping device has no trust anchor yet. Add client.WithTrustedCAs when
-// one is available, so that a signed rejection can be verified.
 c := client.NewClient("http://localhost:8080/cmp")
 result, err := c.SendIR(context.Background(), key, creds,
 	client.WithSenderKID([]byte("my-device")),
@@ -102,125 +80,22 @@ result, err := c.SendIR(context.Background(), key, creds,
 )
 ```
 
-Key Update Request (KUR) with signature protection:
+Serve CMP in front of your CA, which implements `server.CA` and the credential lookups:
 
 ```go
-creds, _ := pkicmp.NewSignatureCredentials(existingKey, existingCert)
-c := client.NewClient("http://localhost:8080/cmp", client.WithTrustedCAs(trustedCAs))
-
-// SignatureCredentials lets SendKUR name existingCert in the CRMF oldCertID control.
-// The sender and template subject repeat existingCert's subject with its original encoding.
-result, err := c.SendKUR(context.Background(), newKey, creds)
-```
-
-Revocation Request (RR):
-
-```go
-// RFC 9483 expects the request to be signed with the certificate being revoked.
-creds, _ := pkicmp.NewSignatureCredentials(certKey, cert)
-
-// Some CAs sign the response without attaching their certificate. WithServerCerts
-// supplies it, and it must still chain to trustedCAs and match the response sender.
-c := client.NewClient("http://localhost:8080/cmp",
-	client.WithTrustedCAs(trustedCAs),
-	client.WithServerCerts([]*x509.Certificate{issuingCA}),
-)
-
-// A nil error means the CA revoked the certificate. A rejection such as
-// certRevoked is returned as *pkicmp.PKIStatusError.
-err := c.SendRR(context.Background(), cert, pkicmp.CRLReasonKeyCompromise, creds)
-```
-
-Root CA update (RFC 9483 §4.3.2):
-
-```go
-update, err := c.GetRootCAUpdate(context.Background(), currentRoot, creds)
-switch {
-case errors.Is(err, client.ErrInfoTypeNotSupported):
-	// The CA does not offer root updates. RFC 4210 CAs often ignore the request.
-case err != nil:
-	return err
-case update != nil:
-	// update.NewWithNew is the new root. The client has checked that currentRoot
-	// signed update.NewWithOld.
-}
-```
-
-`GetCACertificates`, `GetCertReqTemplate`, `GetCRLUpdate` and `GetCurrentCRL` follow the same pattern.
-
-Enrollment of a key that cannot sign (RFC 9810 §5.2.8.3):
-
-```go
-// An ML-KEM key proves possession by decrypting what the CA sends. The CA must
-// support the chosen method. client.ChallengeResponse asks for a challenge first.
-kemKey, _ := mlkem.GenerateKey768()
-result, err := c.SendIRWithIndirectPOP(context.Background(), kemKey, client.EncryptedCertificate, creds,
-	client.WithTemplateSubject(pkix.Name{CommonName: "my-device-encryption"}),
-)
-```
-
-### Server
-
-Implement the `server.CA` interface and the credential lookups:
-
-```go
-type MyCA struct{}
-
-func (ca *MyCA) IssueCertificate(ctx, reqType, template, sender) {
-	// Called on enrollment requests (IR/CR/KUR). Signs template with CA private key.
-}
-func (ca *MyCA) LookupSecret(sender, senderKID) {
-	// Called to verify MAC-protected requests. Finds pre-shared secret by DN or key ID.
-}
-func (ca *MyCA) LookupCertificate(issuer, subject, senderKID) {
-	// Called to verify signature-protected requests. Finds existing cert by DN or Subject Key ID.
-}
-func (ca *MyCA) RevokeCertificate(ctx, req, sender) {
-	// Optional. Called on revocation requests (RR) signed with the certificate being revoked.
-	// Implement server.RevocationAuthorizer to also accept requests from other signers.
-}
-```
-
-Support messages are answered by optional interfaces: `server.CACertificatesProvider`,
-`server.RootCAUpdateProvider`, `server.CertReqTemplateProvider` and `server.CRLProvider`. The server
-lists a requested type without a provider as unsupported.
-
-`server.WithEncryptedCertificatePOP` and `server.WithChallengeResponsePOP` accept requests for keys
-that cannot sign. With the encrypted certificate method, the certificate exists before the client has
-proved anything, so the CA should publish it only after `ConfirmAccepted` and revoke it on
-`ConfirmExpired` or `ConfirmRejected`. `server.POPMethodFromContext` tells the CA which method a
-request used. crypto/x509 cannot certify an ML-KEM key, so the CA needs another way to sign such a
-certificate. A CMP version 2 request for an RSA key gets its certificate in the older EncryptedValue
-format, because OpenSSL 3.0 and 3.2 cannot read the EnvelopedData that other keys get. A Bouncy Castle
-client must send version 3 for an RSA key, because its `CertificateResponse` reads only EnvelopedData.
-`server.WithEnvelopedDataForVersion2` sends EnvelopedData to such requests too, for servers whose
-version 2 clients read only that format.
-
-Then serve it:
-
-```go
-myCA := &MyCA{}
 srv := server.NewCAServer(myCA,
 	server.LightweightPolicy(),
 	server.WithSigner(caKey, caCert),
 	server.WithSecretLookup(myCA),
 	server.WithCertificateLookup(myCA),
-	// A present messageTime outside this local tolerance is rejected as badTime.
-	server.WithMessageTimeTolerance(5*time.Minute),
 )
-// Reports a misconfiguration such as a signer key that does not match its cert.
 if err := srv.Err(); err != nil {
 	log.Fatal(err)
 }
-
 http.Handle("/cmp", srv)
-http.ListenAndServe(":8080", nil)
 ```
 
-## Runnable examples
-
-[examples](./examples/) holds a [mock CA server](./examples/mockserver/) and a
-[client](./examples/mockclient/) that runs a MAC-protected IR, a signature-protected KUR and an RR
+[examples](./examples/) holds a mock CA and a client that enrolls, updates and revokes a certificate
 against it. Run them in two terminals:
 
 ```bash
@@ -228,20 +103,53 @@ go run ./examples/mockserver/cmd
 go run ./examples/mockclient/cmd
 ```
 
-## Credits and relationship to go-pkicmp
+[Getting started](https://misiektoja.github.io/go-pki-cmp/getting-started/) walks through both
+programs and names what to replace before production.
+
+## Interoperability
+
+CI runs the library against [EJBCA](https://docs.keyfactor.com/ejbca/latest/cmp),
+[OpenSSL](https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html) 3.5 and 4.0 in both
+directions, a hosted [Nokia NCM](https://www.nokia.com/networks/products/pki-authority-with-netguard-certificate-manager/)
+instance and the [Siemens CMP test suite](https://github.com/siemens/cmp-test-suite). Local tests
+also run the Insta Certifier 10 cmpclient and the Insta Certifier 7 ssh-cmpclient against the server.
+Both clients are proprietary, so CI does not run them.
+
+[Tested implementations](https://misiektoja.github.io/go-pki-cmp/interoperability/tested-implementations/)
+lists the scenarios and the server options each client needs.
+
+## Documentation
+
+Full documentation is at [misiektoja.github.io/go-pki-cmp](https://misiektoja.github.io/go-pki-cmp/).
+
+* [Getting started](https://misiektoja.github.io/go-pki-cmp/getting-started/)
+* [Support matrix](https://misiektoja.github.io/go-pki-cmp/support-matrix/)
+* [Architecture](https://misiektoja.github.io/go-pki-cmp/architecture/)
+* Client: [Enrollment](https://misiektoja.github.io/go-pki-cmp/client/enrollment/), [Response verification](https://misiektoja.github.io/go-pki-cmp/client/response-verification/), [Revocation](https://misiektoja.github.io/go-pki-cmp/client/revocation/) and [Keys that cannot sign](https://misiektoja.github.io/go-pki-cmp/client/indirect-pop/)
+* Server: [Implementing a CA](https://misiektoja.github.io/go-pki-cmp/server/ca/), [Authentication](https://misiektoja.github.io/go-pki-cmp/server/authentication/), [Policy and client compatibility](https://misiektoja.github.io/go-pki-cmp/server/policy/) and [Transactions and recovery](https://misiektoja.github.io/go-pki-cmp/server/transactions/)
+* [Client options](https://misiektoja.github.io/go-pki-cmp/reference/client-options/) and [Server options](https://misiektoja.github.io/go-pki-cmp/reference/server-options/)
+* [Troubleshooting](https://misiektoja.github.io/go-pki-cmp/operations/troubleshooting/)
+* [Security model](https://misiektoja.github.io/go-pki-cmp/security/security-model/)
+
+The package documentation on [pkg.go.dev](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp)
+describes every exported type and option. [RELEASE_NOTES.md](RELEASE_NOTES.md) records the changes in
+each release.
+
+## Credits
 
 This project began as a fork of [tsaarni/go-pkicmp](https://github.com/tsaarni/go-pkicmp) by
 [Tero Saarni (@tsaarni)](https://github.com/tsaarni). Its package layout, ASN.1 types and client and
-server design come from that project.
+server design come from that project. Early hardening changes were submitted in
+[tsaarni/go-pkicmp#3](https://github.com/tsaarni/go-pkicmp/pull/3). This fork is maintained
+separately. [NOTICE](NOTICE) records the attribution.
 
-Early hardening changes were submitted in
-[tsaarni/go-pkicmp#3](https://github.com/tsaarni/go-pkicmp/pull/3). This fork is maintained separately.
-See the [release notes](RELEASE_NOTES.md) for changes and [NOTICE](NOTICE) for attribution.
+## Support and contributing
 
-## Contributing and support
-
-The [Contributing Guide](CONTRIBUTING.md) describes the development checks, the integration tests and the release process. [SUPPORT.md](SUPPORT.md) says where to ask a question or report a bug. Report vulnerabilities privately as [SECURITY.md](SECURITY.md) describes.
+[SUPPORT.md](SUPPORT.md) says where to ask a question or report a bug. Report vulnerabilities
+privately as [SECURITY.md](SECURITY.md) describes. The [Contributing Guide](CONTRIBUTING.md) lists
+the development checks.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). [DEPENDENCIES.md](DEPENDENCIES.md) lists third-party dependencies and their licenses.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). [DEPENDENCIES.md](DEPENDENCIES.md)
+lists third-party dependencies and their licenses.
