@@ -1,0 +1,90 @@
+site_name: go-pki-cmp
+site_description: A Go library for the Certificate Management Protocol (CMP) with a client, a server and the message layer
+site_url: https://misiektoja.github.io/go-pki-cmp/
+repo_url: https://github.com/misiektoja/go-pki-cmp
+repo_name: misiektoja/go-pki-cmp
+copyright: Copyright the go-pki-cmp Authors, licensed under Apache-2.0
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# The pip requirements file lives next to the pages for Dependabot but is not a page. The RFC texts
+# under specs/ are kept for development and are not published.
+exclude_docs: |
+  requirements.txt
+  specs/
+
+# The documentation build runs with --strict so every one of these findings fails the build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  # Code listings are included from the repository so the pages and the examples cannot drift.
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Support matrix: support-matrix.md
+  - Architecture: architecture.md
+  - Client guide:
+      - Enrollment: client/enrollment.md
+      - Response verification: client/response-verification.md
+      - Revocation: client/revocation.md
+      - Support messages: client/support-messages.md
+      - Keys that cannot sign: client/indirect-pop.md
+  - Server guide:
+      - Implementing a CA: server/ca.md
+      - Authentication: server/authentication.md
+      - Policy and client compatibility: server/policy.md
+      - Delayed issuance and confirmation: server/delayed-issuance.md
+      - Revocation: server/revocation.md
+      - Support messages: server/support-messages.md
+      - Keys that cannot sign: server/indirect-pop.md
+      - Registration authorities: server/registration-authorities.md
+      - Transactions and recovery: server/transactions.md
+  - Message layer:
+      - Messages and protection: pkicmp/messages-and-protection.md
+  - Reference:
+      - Client options: reference/client-options.md
+      - Server options: reference/server-options.md
+      - Compatibility policy: reference/compatibility.md
+  - Interoperability:
+      - Tested implementations: interoperability/tested-implementations.md
+  - Operations:
+      - Troubleshooting: operations/troubleshooting.md
+  - Security:
+      - Security model: security/security-model.md
+  - Development:
+      - Development: development/development.md
+      - Testing: development/testing.md
+      - Release process: development/release-process.md
+  - Known limitations: known-limitations.md
