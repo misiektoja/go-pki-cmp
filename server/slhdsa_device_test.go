@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"math/big"
 	"net/http/httptest"
 	"testing"
@@ -182,4 +183,74 @@ func TestSLHDSADeviceKeyRejections(t *testing.T) {
 		status := statusInfoOf(t, postCMP(t, ts, req))
 		require.Equal(t, pkicmp.FailBadPOP, status.FailInfo)
 	})
+}
+
+// oidHashSLHDSASHA2128f is id-hash-slh-dsa-sha2-128f-with-sha256, the
+// HashSLH-DSA identifier of SLH-DSA-SHA2-128f (RFC 9909 §3).
+var oidHashSLHDSASHA2128f = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 36}
+
+// TestHashSLHDSARequestsRefused refuses requests that use the HashSLH-DSA
+// identifiers, which the library does not support. Each request carries a pure
+// SLH-DSA signature under a HashSLH-DSA identifier, so a server that treated the
+// identifiers as aliases of the pure ones would issue the certificate.
+func TestHashSLHDSARequestsRefused(t *testing.T) {
+	secret := []byte("slh-dsa-device-secret")
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	ca := &slhdsaDeviceCA{newDeviceCA(t, caKey)}
+	ts := ca.serve(t, secret)
+	key := newSLHDSAKey(t, slhdsa.SHA2_128f)
+	pubDER, err := pkicmp.MarshalPublicKey(key.Public())
+	require.NoError(t, err)
+	// irWithKey returns an ir for spki whose proof the SLH-DSA key signs under the identifier popAlg.
+	irWithKey := func(spki []byte, popAlg asn1.ObjectIdentifier) *pkicmp.PKIMessage {
+		reqMsg := pkicmp.CertReqMsg{CertReq: pkicmp.CertRequest{CertTemplate: pkicmp.CertTemplate{
+			Subject:   pkicmp.NewDirectoryName(pkix.Name{CommonName: "slh-dsa-device"}),
+			PublicKey: spki,
+		}}}
+		require.NoError(t, reqMsg.GeneratePOP(key))
+		reqMsg.Popo.Signature.Algorithm.Algorithm = popAlg
+		req := pkicmp.NewPKIMessage(pkicmp.NewIRBody(&pkicmp.CertReqMessages{reqMsg}), macMessageOpts())
+		protectMAC(req, secret)
+		return req
+	}
+	pure, ok := pkicmp.SLHDSAAlgorithmOID(key.ID)
+	require.True(t, ok)
+
+	t.Run("POP", func(t *testing.T) {
+		status := statusInfoOf(t, postCMP(t, ts, irWithKey(pubDER, oidHashSLHDSASHA2128f)))
+		require.Equal(t, pkicmp.StatusRejection, status.Status)
+		require.Equal(t, pkicmp.FailBadPOP, status.FailInfo)
+	})
+
+	t.Run("PKCS#10 signature", func(t *testing.T) {
+		der, err := kemcert.CreateCertificateRequest(&x509.CertificateRequest{Subject: pkix.Name{CommonName: "slh-dsa-p10cr"}}, pubDER, oidHashSLHDSASHA2128f, key)
+		require.NoError(t, err)
+		csr, err := x509.ParseCertificateRequest(der)
+		require.NoError(t, err)
+		req := pkicmp.NewPKIMessage(pkicmp.NewP10CRBody(csr), macMessageOpts())
+		protectMAC(req, secret)
+		status := statusInfoOf(t, postCMP(t, ts, req))
+		require.Equal(t, pkicmp.StatusRejection, status.Status)
+		require.Equal(t, pkicmp.FailBadAlg, status.FailInfo)
+	})
+
+	t.Run("public key", func(t *testing.T) {
+		var spki struct {
+			Algorithm pkix.AlgorithmIdentifier
+			PublicKey asn1.BitString
+		}
+		_, err := asn1.Unmarshal(pubDER, &spki)
+		require.NoError(t, err)
+		spki.Algorithm.Algorithm = oidHashSLHDSASHA2128f
+		hashed, err := asn1.Marshal(spki)
+		require.NoError(t, err)
+		status := statusInfoOf(t, postCMP(t, ts, irWithKey(hashed, pure)))
+		require.Equal(t, pkicmp.StatusRejection, status.Status)
+		require.Equal(t, pkicmp.FailBadAlg, status.FailInfo)
+	})
+
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	require.Empty(t, ca.issued, "a refused request never reaches the CA")
 }
