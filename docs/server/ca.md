@@ -81,6 +81,10 @@ should clear the flag.
   [circl](https://github.com/cloudflare/circl), which crypto/x509 cannot certify either.
   `pkicmp.MarshalPublicKey` encodes its SubjectPublicKeyInfo (RFC 9909). Its key usage may include
   digitalSignature, nonRepudiation, keyCertSign and cRLSign but no encipherment.
+* A CA with an SLH-DSA key signs its certificates outside crypto/x509 too, with the RFC 9909
+  identifier and absent parameters. It can also be the `WithSigner` key. Clients and the server
+  verify paths through it and confirm its certificates with an explicit SHA-512 hash. Each signature
+  is slow, see [Known limitations](../known-limitations.md#slh-dsa-cas-sign-slowly).
 
 The [example CA](https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver) uses
 `compositex509.CreateCertificate` for every key, so it certifies composite keys as well as the key

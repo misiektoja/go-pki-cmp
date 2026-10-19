@@ -91,7 +91,6 @@ through the `*WithIndirectPOP` methods.
 | ML-KEM-512 | Refused, the Go standard library does not implement it |
 | Older Dilithium encodings | Not supported |
 | HashSLH-DSA, the pre-hash variant of SLH-DSA | Refused |
-| Certificates signed with an SLH-DSA key, such as those of an SLH-DSA CA | Not supported, see [Known limitations](known-limitations.md#slh-dsa-ca-certificates) |
 | X25519 keys for proof by decryption | Refused with badAlg |
 | RSA PKCS #1 v1.5 key transport in EnvelopedData | Refused |
 | Protocol versions other than 2 and 3, such as `pvno` 0 or 1 | Refused with unsupportedVersion |
