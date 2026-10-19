@@ -83,9 +83,12 @@ test-integration: test-integration-ejbca test-integration-openssl test-integrati
 test-integration-ejbca: ## Run the client against EJBCA. Needs make setup-ejbca.
 	go test -v -count=1 -tags integration ./test/integration/ejbca
 
+# The OpenSSL that CI builds with make install_sw has no openssl.cnf. OPENSSL_CONF points to a path that
+# cannot exist, so a test that needs the file fails locally as it does in CI. An empty file is not
+# enough, because openssl req accepts it.
 .PHONY: test-integration-openssl
 test-integration-openssl: ## Run the client and server against OpenSSL. Needs OpenSSL 3.2 or newer.
-	go test -v -count=1 -tags integration ./test/integration/openssl
+	OPENSSL_CONF=/dev/null/openssl.cnf go test -v -count=1 -tags integration ./test/integration/openssl
 
 .PHONY: test-integration-cmp-test-suite
 test-integration-cmp-test-suite: ## Run the server against the Siemens CMP test suite. Needs make setup-cmp-test-suite.
