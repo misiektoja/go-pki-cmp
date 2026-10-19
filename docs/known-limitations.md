@@ -20,11 +20,11 @@ A registration authority may forward one request per nested message. Batches (RF
 ML-KEM-512 keys are refused because the Go standard library does not implement them. Only the final
 ML-DSA encodings are supported, not the older Dilithium ones.
 
-### Composite ML-DSA chains
+### Composite ML-DSA and SLH-DSA chains
 
-crypto/x509 cannot check composite ML-DSA signatures, so the library verifies such paths itself. A
-certificate signed with a composite key is accepted only when its issuer certificate travels in the
-message, in `extraCerts` or `caPubs`, even if that issuer is a trust anchor. No certificate in such a
+crypto/x509 cannot check composite ML-DSA or SLH-DSA signatures, so the library verifies such paths
+itself. A certificate signed with a composite or SLH-DSA key is accepted only when its issuer
+certificate travels in the message, in `extraCerts` or `caPubs`, even if that issuer is a trust anchor. No certificate in such a
 path may carry name constraints.
 
 ### SLH-DSA CAs sign slowly

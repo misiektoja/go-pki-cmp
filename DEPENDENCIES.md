@@ -18,5 +18,5 @@ Exact Go versions and checksums are in `go.mod` and `go.sum`. The EJBCA and ngin
 `test/integration/ejbca/docker-compose.yml`, the CMP test suite commit in the `Makefile` and the OpenSSL
 release in `.github/workflows/integration.yml`. golang.org/x/crypto, go-composite-mldsa and circl are
 the dependencies of the library itself. go-composite-mldsa has no dependencies beyond the Go standard
-library, and circl needs golang.org/x/sys. The others are used by the tests. Each dependency retains its own license and notices in the
+library. circl needs golang.org/x/sys. The others are used by the tests. Each dependency retains its own license and notices in the
 downloaded module or distribution.
