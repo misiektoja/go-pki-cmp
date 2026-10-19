@@ -77,6 +77,10 @@ should clear the flag.
 * An ML-KEM key arrives as `*mlkem.EncapsulationKey768` or `*mlkem.EncapsulationKey1024`, which
   crypto/x509 cannot certify. `pkicmp.MarshalPublicKey` encodes its SubjectPublicKeyInfo, whose only
   allowed key usage is keyEncipherment. See [Keys that cannot sign](indirect-pop.md).
+* An SLH-DSA key arrives as an `slhdsa.PublicKey` value from
+  [circl](https://github.com/cloudflare/circl), which crypto/x509 cannot certify either.
+  `pkicmp.MarshalPublicKey` encodes its SubjectPublicKeyInfo (RFC 9909). Its key usage may include
+  digitalSignature, nonRepudiation, keyCertSign and cRLSign but no encipherment.
 
 The [example CA](https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver) uses
 `compositex509.CreateCertificate` for every key, so it certifies composite keys as well as the key

@@ -27,6 +27,13 @@ certificate signed with a composite key is accepted only when its issuer certifi
 message, in `extraCerts` or `caPubs`, even if that issuer is a trust anchor. No certificate in such a
 path may carry name constraints.
 
+### SLH-DSA CA certificates
+
+SLH-DSA keys can enroll, prove possession, sign PKCS #10 requests and protect CMP messages. A
+certificate signed with an SLH-DSA key cannot be used yet: the library does not verify such a
+certificate in a path and has no confirmation hash for it. An SLH-DSA key can therefore not be the
+key of a CA whose certificates the client checks.
+
 ### Proof by decryption needs a capable CA
 
 The client can enroll a key that cannot sign only at a CA that supports the encrypted certificate or
@@ -53,8 +60,8 @@ emailAddress and may reorder the rest. `WithRawSubject` keeps the requested enco
 
 ### crypto/x509 cannot certify every key
 
-Composite ML-DSA keys need `compositex509.CreateCertificate` and ML-KEM keys need a signer outside
-crypto/x509.
+Composite ML-DSA keys need `compositex509.CreateCertificate`. ML-KEM and SLH-DSA keys need a signer
+outside crypto/x509.
 
 ### No built-in rate limits
 

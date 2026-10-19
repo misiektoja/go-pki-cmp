@@ -54,7 +54,7 @@ Supported messages are `ir`, `cr`, `kur`, `p10cr`, `rr`, `certConf`, `pollReq`, 
 with their responses. General messages carry the RFC 9483 support requests for CA certificates, a
 root CA update, a certificate request template and CRL updates.
 
-**Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87 and
+**Post-quantum keys:** ML-DSA-44, ML-DSA-65, ML-DSA-87, the twelve SLH-DSA parameter sets and
 [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) keys can enroll and sign CMP
 messages. ML-KEM-768 and ML-KEM-1024 keys, which cannot sign, prove possession by decryption.
 
