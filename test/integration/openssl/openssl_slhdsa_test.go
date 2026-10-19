@@ -246,7 +246,8 @@ func TestOpenSSLClientSLHDSAKeys(t *testing.T) {
 
 	csrKey := genkey("csr-key", "SLH-DSA-SHAKE-192f")
 	csrFile := filepath.Join(dir, "request.csr")
-	runOpenSSL(t, "req", "-new", "-key", csrKey, "-subj", "/CN=openssl-slh-dsa-p10cr", "-out", csrFile)
+	// An empty -config replaces openssl.cnf, which an installation with make install_sw lacks.
+	runOpenSSL(t, "req", "-new", "-config", os.DevNull, "-key", csrKey, "-subj", "/CN=openssl-slh-dsa-p10cr", "-out", csrFile)
 	p10Cert := filepath.Join(dir, "p10cr-cert.pem")
 	_, err = runOpenSSLCMPClient(t, append(endpoint,
 		"-cmd", "p10cr", "-ref", "test-ref", "-secret", "pass:enrollment-secret",
