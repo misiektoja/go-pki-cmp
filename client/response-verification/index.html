@@ -1761,8 +1761,8 @@ asks.</p>
 from <code>caPubs</code>. Errors are signed however the request was protected (RFC 9810 section 5.3.21), so
 without a pool a rejection such as transactionIdInUse arrives as an <code>UnverifiedStatusError</code>: safe to
 log, not to act on. A CA that signs every response cannot be used without a pool at all.</p>
-<p>The pool also validates the issued certificate. A CA with a composite ML-DSA key is trusted as an
-issuer only when the response also carries its certificate in <code>extraCerts</code> or <code>caPubs</code>. The pool
+<p>The pool also validates the issued certificate. A CA with a composite ML-DSA or SLH-DSA key is
+trusted as an issuer only when the response also carries its certificate in <code>extraCerts</code> or <code>caPubs</code>. The pool
 entry still decides whether that certificate is trusted.</p>
 <h2 id="signer-certificate">Signer certificate<a class="headerlink" href="#signer-certificate" title="Permanent link">&para;</a></h2>
 <p>The signer certificate comes from <code>extraCerts</code>. A server may send <code>extraCerts</code> only on its first

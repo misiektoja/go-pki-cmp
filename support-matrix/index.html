@@ -1826,6 +1826,10 @@ was tested with.</p>
 <td>ML-KEM public keys in certificates</td>
 </tr>
 <tr>
+<td>RFC 9909</td>
+<td>SLH-DSA keys and pure signatures for the twelve FIPS 205 parameter sets, through <a href="https://github.com/cloudflare/circl">circl</a></td>
+</tr>
+<tr>
 <td>draft-ietf-lamps-pq-composite-sigs-19</td>
 <td>Composite ML-DSA keys and signatures, through <a href="https://github.com/misiektoja/go-composite-mldsa">go-composite-mldsa</a></td>
 </tr>
@@ -1913,7 +1917,7 @@ was tested with.</p>
 </tr>
 <tr>
 <td>Signature</td>
-<td>RSA PKCS #1 v1.5 and ECDSA with SHA-256, SHA-384 or SHA-512, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87 and composite ML-DSA</td>
+<td>RSA PKCS #1 v1.5 and ECDSA with SHA-256, SHA-384 or SHA-512, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87, SLH-DSA and composite ML-DSA</td>
 </tr>
 <tr>
 <td>SHA-1 signatures</td>
@@ -1969,7 +1973,7 @@ through the <code>*WithIndirectPOP</code> methods.</p>
 <tbody>
 <tr>
 <td>Certificates that sign</td>
-<td>RSA, ECDSA on P-256, P-384 and P-521, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87 and composite ML-DSA</td>
+<td>RSA, ECDSA on P-256, P-384 and P-521, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87, the twelve SLH-DSA parameter sets and composite ML-DSA</td>
 </tr>
 <tr>
 <td>Proof by decryption</td>
@@ -2071,6 +2075,14 @@ through the <code>*WithIndirectPOP</code> methods.</p>
 <tr>
 <td>Older Dilithium encodings</td>
 <td>Not supported</td>
+</tr>
+<tr>
+<td>HashSLH-DSA, the pre-hash variant of SLH-DSA</td>
+<td>Refused</td>
+</tr>
+<tr>
+<td>SHAKE256 as the <code>hashAlg</code> of a certificate confirmation</td>
+<td>Refused. An explicit <code>hashAlg</code> may be SHA-256, SHA-384 or SHA-512</td>
 </tr>
 <tr>
 <td>X25519 keys for proof by decryption</td>

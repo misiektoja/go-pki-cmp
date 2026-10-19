@@ -1895,6 +1895,14 @@ should clear the flag.</p>
 <li>An ML-KEM key arrives as <code>*mlkem.EncapsulationKey768</code> or <code>*mlkem.EncapsulationKey1024</code>, which
   crypto/x509 cannot certify. <code>pkicmp.MarshalPublicKey</code> encodes its SubjectPublicKeyInfo, whose only
   allowed key usage is keyEncipherment. See <a href="../indirect-pop/">Keys that cannot sign</a>.</li>
+<li>An SLH-DSA key arrives as an <code>slhdsa.PublicKey</code> value from
+  <a href="https://github.com/cloudflare/circl">circl</a>, which crypto/x509 cannot certify either.
+  <code>pkicmp.MarshalPublicKey</code> encodes its SubjectPublicKeyInfo (RFC 9909). Its key usage may include
+  digitalSignature, nonRepudiation, keyCertSign and cRLSign but no encipherment.</li>
+<li>A CA with an SLH-DSA key signs its certificates outside crypto/x509 too, with the RFC 9909
+  identifier and absent parameters. It can also be the <code>WithSigner</code> key. Clients and the server
+  verify paths through it and confirm its certificates with an explicit SHA-512 hash. Each signature
+  is slow, see <a href="../../known-limitations/#slh-dsa-cas-sign-slowly">Known limitations</a>.</li>
 </ul>
 <p>The <a href="https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver">example CA</a> uses
 <code>compositex509.CreateCertificate</code> for every key, so it certifies composite keys as well as the key

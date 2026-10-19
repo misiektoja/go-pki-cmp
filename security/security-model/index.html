@@ -1802,7 +1802,8 @@ Everything else goes to your <code>RevocationAuthorizer</code>.</p>
 systemFailure. Its text never reaches the peer.</p>
 <p><strong>Bounded parsing.</strong> Request bodies, transaction counts and snapshot sizes are limited. Every parser
 in <code>pkicmp</code> reads bytes a peer chose, before anything establishes who that peer is, so the
-whole-message parser, MAC parameters and signature verification have fuzz targets that CI runs.</p>
+whole-message parser, MAC parameters, signature verification and the SLH-DSA key and signature
+checks have fuzz targets that CI runs.</p>
 <h2 id="what-the-client-enforces">What the client enforces<a class="headerlink" href="#what-the-client-enforces" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Every response is verified with the shared secret or against the trust anchors.</li>

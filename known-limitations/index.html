@@ -1615,10 +1615,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#composite-ml-dsa-chains" class="md-nav__link">
+  <a href="#composite-ml-dsa-and-slh-dsa-chains" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Composite ML-DSA chains
+        Composite ML-DSA and SLH-DSA chains
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slh-dsa-cas-sign-slowly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLH-DSA CAs sign slowly
       
     </span>
   </a>
@@ -1843,10 +1854,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#composite-ml-dsa-chains" class="md-nav__link">
+  <a href="#composite-ml-dsa-and-slh-dsa-chains" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Composite ML-DSA chains
+        Composite ML-DSA and SLH-DSA chains
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slh-dsa-cas-sign-slowly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLH-DSA CAs sign slowly
       
     </span>
   </a>
@@ -2024,11 +2046,16 @@ Requests for them are refused with badRequest and the text "message type not sup
 <h3 id="ml-kem-512-and-older-dilithium-encodings">ML-KEM-512 and older Dilithium encodings<a class="headerlink" href="#ml-kem-512-and-older-dilithium-encodings" title="Permanent link">&para;</a></h3>
 <p>ML-KEM-512 keys are refused because the Go standard library does not implement them. Only the final
 ML-DSA encodings are supported, not the older Dilithium ones.</p>
-<h3 id="composite-ml-dsa-chains">Composite ML-DSA chains<a class="headerlink" href="#composite-ml-dsa-chains" title="Permanent link">&para;</a></h3>
-<p>crypto/x509 cannot check composite ML-DSA signatures, so the library verifies such paths itself. A
-certificate signed with a composite key is accepted only when its issuer certificate travels in the
-message, in <code>extraCerts</code> or <code>caPubs</code>, even if that issuer is a trust anchor. No certificate in such a
+<h3 id="composite-ml-dsa-and-slh-dsa-chains">Composite ML-DSA and SLH-DSA chains<a class="headerlink" href="#composite-ml-dsa-and-slh-dsa-chains" title="Permanent link">&para;</a></h3>
+<p>crypto/x509 cannot check composite ML-DSA or SLH-DSA signatures, so the library verifies such paths
+itself. A certificate signed with a composite or SLH-DSA key is accepted only when its issuer
+certificate travels in the message, in <code>extraCerts</code> or <code>caPubs</code>, even if that issuer is a trust anchor. No certificate in such a
 path may carry name constraints.</p>
+<h3 id="slh-dsa-cas-sign-slowly">SLH-DSA CAs sign slowly<a class="headerlink" href="#slh-dsa-cas-sign-slowly" title="Permanent link">&para;</a></h3>
+<p>An SLH-DSA CA key signs every issued certificate and, as the <code>WithSigner</code> key, every protected
+response. The small parameter sets, whose names end in <code>s</code>, can take hundreds of milliseconds or more
+per signature. An enrollment with explicit confirmation needs at least two signatures. A separate
+classical or ML-DSA signer certificate in <code>WithSigner</code> keeps the responses fast.</p>
 <h3 id="proof-by-decryption-needs-a-capable-ca">Proof by decryption needs a capable CA<a class="headerlink" href="#proof-by-decryption-needs-a-capable-ca" title="Permanent link">&para;</a></h3>
 <p>The client can enroll a key that cannot sign only at a CA that supports the encrypted certificate or
 challenge-response method. RFC 9483 lets a CA refuse both for keys that can sign. X25519 keys are
@@ -2045,8 +2072,8 @@ a second certificate. Keep a response cache when that matters.</p>
 <p>The template subject is rebuilt from <code>pkix.Name</code>, which drops types such as domainComponent and
 emailAddress and may reorder the rest. <code>WithRawSubject</code> keeps the requested encoding.</p>
 <h3 id="cryptox509-cannot-certify-every-key">crypto/x509 cannot certify every key<a class="headerlink" href="#cryptox509-cannot-certify-every-key" title="Permanent link">&para;</a></h3>
-<p>Composite ML-DSA keys need <code>compositex509.CreateCertificate</code> and ML-KEM keys need a signer outside
-crypto/x509.</p>
+<p>Composite ML-DSA keys need <code>compositex509.CreateCertificate</code>. ML-KEM and SLH-DSA subject keys need
+a signer outside crypto/x509, and so does a CA whose own key is SLH-DSA.</p>
 <h3 id="no-built-in-rate-limits">No built-in rate limits<a class="headerlink" href="#no-built-in-rate-limits" title="Permanent link">&para;</a></h3>
 <p>The server caps transactions in total and per credential. Other limits belong in your middleware.</p>
 <h2 id="client">Client<a class="headerlink" href="#client" title="Permanent link">&para;</a></h2>

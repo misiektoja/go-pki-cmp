@@ -1786,7 +1786,8 @@ have no external dependencies.</p>
 make<span class="w"> </span>fuzz<span class="w"> </span><span class="nv">FUZZTIME</span><span class="o">=</span>10m
 </code></pre></div>
 <p>Fuzzes whole-message parsing, MAC protection parameters and signature verification in <code>pkicmp</code>, each
-for <code>FUZZTIME</code>. CI runs 30 seconds per target. Go writes a failing input under <code>pkicmp/testdata/fuzz</code>.
+for <code>FUZZTIME</code>. Separate targets cover SLH-DSA keys, PKCS #10 requests, proofs of possession,
+certificate signatures, message protection and root CA key updates. CI runs 30 seconds per target. Go writes a failing input under <code>pkicmp/testdata/fuzz</code>.
 Commit that input with the fix so it stays a regression test.</p>
 <p>Minimization is off by default, because a worker still minimizing when <code>FUZZTIME</code> expires makes Go
 report the run as failed. Set <code>FUZZMINIMIZETIME</code> to a duration such as <code>1m</code> to minimize a crashing
@@ -1842,7 +1843,9 @@ make<span class="w"> </span>teardown<span class="w">          </span><span class
 <li>The elliptic curve case of the encrypted certificate test needs OpenSSL 3.5, because earlier
   releases cannot read a certificate in EnvelopedData.</li>
 </ul>
-<p>CI runs the OpenSSL tests with 3.5 and 4.0.</p>
+<p>CI runs the OpenSSL tests with 3.5 and 4.0. Its OpenSSL builds have no <code>openssl.cnf</code>, so
+<code>make test-integration-openssl</code> points <code>OPENSSL_CONF</code> to a missing file. A test that needs the local
+<code>openssl.cnf</code> then fails locally too. Plain <code>go test</code> still reads your <code>openssl.cnf</code>.</p>
 <h3 id="nokia-ncm">Nokia NCM<a class="headerlink" href="#nokia-ncm" title="Permanent link">&para;</a></h3>
 <p>The NCM tests need the endpoint and credentials in <code>NCM_CMP_*</code> variables and skip without them.
 <a href="https://github.com/misiektoja/go-pki-cmp/blob/main/test/integration/ncm/README.md">test/integration/ncm/README.md</a>

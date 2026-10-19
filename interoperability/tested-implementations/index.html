@@ -1733,19 +1733,19 @@ on every push and pull request. The proprietary clients run locally only.</p>
 <td><a href="https://docs.keyfactor.com/ejbca/latest/cmp">EJBCA</a> Community Edition</td>
 <td>9.6.3</td>
 <td>Client against EJBCA</td>
-<td><code>ir</code> with RSA and P-384 keys, <code>cr</code>, <code>kur</code> with a new and the same key, <code>p10cr</code>, extension override, chain verification, wrong secret and wrong subject refusals, general messages refused with badRequest</td>
+<td><code>ir</code> with RSA, P-384 and SLH-DSA keys, <code>cr</code> including one protected with an SLH-DSA key, <code>kur</code> with a new and the same key, <code>p10cr</code> including an SLH-DSA request, extension override, chain verification, wrong secret and wrong subject refusals, general messages refused with badRequest</td>
 </tr>
 <tr>
 <td><a href="https://www.openssl.org/docs/manmaster/man1/openssl-cmp.html">OpenSSL</a> <code>cmp</code></td>
 <td>3.5 and 4.0</td>
 <td>Client against the OpenSSL mock server</td>
-<td><code>ir</code>, <code>cr</code>, <code>kur</code>, <code>p10cr</code>, <code>rr</code>, polling, failure info and support messages</td>
+<td><code>ir</code>, <code>cr</code>, <code>kur</code>, <code>p10cr</code>, <code>rr</code>, polling, failure info and support messages. SLH-DSA proofs, PKCS #10 requests and message protection. Root CA key updates made by OpenSSL whose old or new root has an SLH-DSA key, and a refused forged one</td>
 </tr>
 <tr>
 <td>OpenSSL <code>cmp</code></td>
 <td>3.5 and 4.0</td>
 <td>OpenSSL client against the server</td>
-<td>Revocation, delayed enrollment and revocation with polling, support messages and the encrypted certificate method (<code>-popo 2</code>) for RSA and EC keys. OpenSSL 4.0 also enrolls ML-KEM keys that way</td>
+<td>Revocation, delayed enrollment and revocation with polling, support messages and the encrypted certificate method (<code>-popo 2</code>) for RSA and EC keys. OpenSSL 4.0 also enrolls ML-KEM keys that way. <code>ir</code>, <code>cr</code>, <code>kur</code> and <code>p10cr</code> with SLH-DSA keys, the <code>cr</code> and <code>kur</code> protected with an SLH-DSA key. <code>ir</code> and <code>kur</code> at a CA with an SLH-DSA key that also signs the responses. Root CA key updates whose old or new root has an SLH-DSA key, which OpenSSL verifies</td>
 </tr>
 <tr>
 <td>OpenSSL <code>cms</code></td>
