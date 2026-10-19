@@ -2,6 +2,23 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.7.0 - TBD
+
+This release adds **SLH-DSA keys** (FIPS 205, RFC 9909) for all twelve parameter sets. Devices can enroll SLH-DSA keys with `ir`, `cr`, `kur` and `p10cr` and protect CMP messages with them. It works with OpenSSL 3.5 and later in both directions and with EJBCA 9.6.3. Certificates signed with an SLH-DSA key, such as those of an SLH-DSA CA, are not supported yet. The library now depends on `github.com/cloudflare/circl` for SLH-DSA.
+
+### `pkicmp`
+
+* **SLH-DSA keys.** `ParsePublicKey` returns an SLH-DSA key as an `slhdsa.PublicKey` value from `github.com/cloudflare/circl/sign/slhdsa`. `MarshalPublicKey`, `PublicKeysEqual`, `GeneratePOP`, `VerifyPOP`, `NewSignatureCredentials` and `Verify` support SLH-DSA keys and signatures. Signatures use the pure mode with an empty context. The pre-hash variant HashSLH-DSA is refused. **`SLHDSAAlgorithmOID`** and **`SLHDSAAlgorithmFromOID`** map parameter sets to their identifiers.
+* **`CheckCertificateRequestSignature`** checks the self-signature of a PKCS #10 request, SLH-DSA requests included, which crypto/x509 cannot check.
+
+### `client`
+
+* `SendIR`, `SendCR`, `SendKUR` and `SendP10CR` accept SLH-DSA keys and requests. `NewSignatureCredentials` with an SLH-DSA key protects requests with SLH-DSA signatures.
+
+### `server`
+
+* The server checks SLH-DSA proofs of possession, PKCS #10 requests and message protection. The CA receives an SLH-DSA key in the template as `slhdsa.PublicKey`. crypto/x509 cannot certify it, so the CA encodes the SubjectPublicKeyInfo with `pkicmp.MarshalPublicKey` and signs the certificate itself. Its key usage must not allow encipherment.
+
 ## v0.6.0 - 16 Oct 2026
 
 This release enrolls keys that cannot sign, such as ML-KEM-768 and ML-KEM-1024, through proof of possession by decryption: the encrypted certificate and challenge-response methods of RFC 9810. It works against EJBCA, with OpenSSL 3.0 and later for RSA keys and with OpenSSL 4.0 for ML-KEM keys. CAs can hold enrollment and revocation requests until someone approves or rejects them. They can also answer grantedWithMods. Some refusal reasons and the handling of waiting requests changed. Code that checks refusal reasons or relies on waiting requests should read the `pkicmp` and `server` entries before upgrading.
