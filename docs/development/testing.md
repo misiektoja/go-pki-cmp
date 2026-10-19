@@ -22,7 +22,8 @@ make fuzz FUZZTIME=10m
 ```
 
 Fuzzes whole-message parsing, MAC protection parameters and signature verification in `pkicmp`, each
-for `FUZZTIME`. CI runs 30 seconds per target. Go writes a failing input under `pkicmp/testdata/fuzz`.
+for `FUZZTIME`. Separate targets cover SLH-DSA keys, PKCS #10 requests, proofs of possession,
+certificate signatures, message protection and root CA key updates. CI runs 30 seconds per target. Go writes a failing input under `pkicmp/testdata/fuzz`.
 Commit that input with the fix so it stays a regression test.
 
 Minimization is off by default, because a worker still minimizing when `FUZZTIME` expires makes Go
