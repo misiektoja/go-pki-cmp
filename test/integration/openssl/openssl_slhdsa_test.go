@@ -42,12 +42,35 @@ func requireSLHDSA(t *testing.T) {
 	}
 }
 
-// slhdsaCA certifies SLH-DSA keys with a classical CA and finds the certificates it issued.
-type slhdsaCA struct {
-	ca *certyaml.Certificate
-
+// issuedLog records issued certificates so that signature-protected requests can name them.
+type issuedLog struct {
 	mu     sync.Mutex
 	issued []*x509.Certificate
+}
+
+// add records an issued certificate.
+func (l *issuedLog) add(cert *x509.Certificate) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.issued = append(l.issued, cert)
+}
+
+// LookupCertificate finds an issued certificate by subject and subject key identifier.
+func (l *issuedLog) LookupCertificate(_ pkix.Name, subject pkix.Name, senderKID []byte) (*x509.Certificate, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, cert := range l.issued {
+		if cert.Subject.String() == subject.String() && bytes.Equal(cert.SubjectKeyId, senderKID) {
+			return cert, nil
+		}
+	}
+	return nil, errors.New("certificate not found")
+}
+
+// slhdsaCA certifies SLH-DSA keys with a classical CA.
+type slhdsaCA struct {
+	issuedLog
+	ca *certyaml.Certificate
 }
 
 // IssueCertificate certifies the requested key for signing.
@@ -77,22 +100,68 @@ func (c *slhdsaCA) IssueCertificate(_ context.Context, _ server.RequestType, tmp
 	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.issued = append(c.issued, issued)
+	c.add(issued)
 	return &server.Response{Certificate: issued, CACerts: []*x509.Certificate{&caCert}}, nil
 }
 
-// LookupCertificate finds an issued certificate by subject and subject key identifier.
-func (c *slhdsaCA) LookupCertificate(_ pkix.Name, subject pkix.Name, senderKID []byte) (*x509.Certificate, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, cert := range c.issued {
-		if cert.Subject.String() == subject.String() && bytes.Equal(cert.SubjectKeyId, senderKID) {
-			return cert, nil
-		}
+// slhdsaRootCA issues certificates signed by a self-signed SLH-DSA CA, which
+// also signs the CMP responses.
+type slhdsaRootCA struct {
+	issuedLog
+	cert *x509.Certificate
+	key  slhdsa.PrivateKey
+}
+
+// newSLHDSARootCA creates a self-signed CA with an SLH-DSA key of parameter set id.
+func newSLHDSARootCA(t *testing.T, id slhdsa.ID) *slhdsaRootCA {
+	t.Helper()
+	_, key, err := slhdsa.GenerateKey(rand.Reader, id)
+	require.NoError(t, err)
+	spki, err := pkicmp.MarshalPublicKey(key.Public())
+	require.NoError(t, err)
+	oid, ok := pkicmp.SLHDSAAlgorithmOID(id)
+	require.True(t, ok)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "openssl-slh-dsa-root"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		// The CA signs the responses, which OpenSSL accepts only with digitalSignature (RFC 9483 §3.5).
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		SubjectKeyId:          []byte("openssl-slh-dsa-root"),
 	}
-	return nil, errors.New("certificate not found")
+	der, err := kemcert.CreateSLHDSACertificate(tmpl, tmpl, spki, oid, key)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return &slhdsaRootCA{cert: cert, key: key}
+}
+
+// IssueCertificate certifies the requested key for signing with the SLH-DSA CA key.
+func (c *slhdsaRootCA) IssueCertificate(_ context.Context, _ server.RequestType, tmpl *x509.Certificate, _ *server.SenderIdentity) (*server.Response, error) {
+	var err error
+	if tmpl.SerialNumber, err = server.GenerateSerial(); err != nil {
+		return nil, err
+	}
+	tmpl.NotBefore, tmpl.NotAfter = time.Now().Add(-time.Minute), time.Now().Add(time.Hour)
+	tmpl.KeyUsage = x509.KeyUsageDigitalSignature
+	spki, err := pkicmp.MarshalPublicKey(tmpl.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	oid, _ := pkicmp.SLHDSAAlgorithmOID(c.key.ID)
+	der, err := kemcert.CreateSLHDSACertificate(tmpl, c.cert, spki, oid, c.key)
+	if err != nil {
+		return nil, err
+	}
+	issued, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	c.add(issued)
+	return &server.Response{Certificate: issued, CACerts: []*x509.Certificate{c.cert}}, nil
 }
 
 // TestOpenSSLClientSLHDSAKeys enrolls OpenSSL SLH-DSA keys at the server with
@@ -248,4 +317,60 @@ func TestOpenSSLServerSLHDSAKeys(t *testing.T) {
 	cr, err := signed.SendCR(ctx, key, creds, client.WithSender(subject), client.WithTemplateSubject(subject))
 	require.NoError(t, err, "SendCR protected with an SLH-DSA key")
 	assert.True(t, cr.Certificate.Equal(rspCert))
+}
+
+// TestOpenSSLClientSLHDSACA enrolls OpenSSL keys at a server whose CA key is
+// SLH-DSA. The CA signs the certificates and the responses to signature-protected
+// requests, and OpenSSL confirms certificates whose signature names no hash.
+func TestOpenSSLClientSLHDSACA(t *testing.T) {
+	requireSLHDSA(t)
+	dir := t.TempDir()
+	backend := newSLHDSARootCA(t, slhdsa.SHA2_128f)
+	secret := server.SecretLookupFunc(func(pkix.Name, []byte) ([]byte, error) { return []byte("enrollment-secret"), nil })
+	srv := server.NewCAServer(backend, server.LightweightPolicy(),
+		server.WithSecretLookup(secret),
+		server.WithCertificateLookup(backend),
+		server.WithSigner(backend.key, backend.cert),
+	)
+	require.NoError(t, srv.Err())
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+	caFile := filepath.Join(dir, "ca.pem")
+	require.NoError(t, os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: backend.cert.Raw}), 0o600))
+	endpoint := []string{"-server", strings.TrimPrefix(ts.URL, "http://"), "-path", "/"}
+
+	// requireIssued checks that the certificate in file certifies the key in keyFile and that OpenSSL trusts it.
+	requireIssued := func(file, keyFile string) {
+		t.Helper()
+		pemBytes, err := os.ReadFile(file)
+		require.NoError(t, err)
+		block, _ := pem.Decode(pemBytes)
+		require.NotNil(t, block)
+		cert, err := x509.ParseCertificate(block.Bytes)
+		require.NoError(t, err)
+		pubOut := runOpenSSL(t, "pkey", "-in", keyFile, "-pubout", "-outform", "DER")
+		assert.Equal(t, pubOut, cert.RawSubjectPublicKeyInfo, "the certificate certifies the new key")
+		runOpenSSL(t, "verify", "-CAfile", caFile, file)
+	}
+
+	irKey := filepath.Join(dir, "ir-key.pem")
+	runOpenSSL(t, "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", irKey)
+	irCert := filepath.Join(dir, "ir-cert.pem")
+	_, err := runOpenSSLCMPClient(t, append(endpoint,
+		"-cmd", "ir", "-ref", "test-ref", "-secret", "pass:enrollment-secret",
+		"-newkey", irKey, "-subject", "/CN=openssl-device",
+		"-out_trusted", caFile, "-certout", irCert)...)
+	require.NoError(t, err, "openssl cmp ir at an SLH-DSA CA")
+	requireIssued(irCert, irKey)
+
+	// The kur is signed with the certificate the ir issued, so the response is
+	// signed with the SLH-DSA CA key and checked against -srvcert.
+	kurKey := filepath.Join(dir, "kur-key.pem")
+	runOpenSSL(t, "genpkey", "-algorithm", "SLH-DSA-SHA2-128f", "-out", kurKey)
+	kurCert := filepath.Join(dir, "kur-cert.pem")
+	_, err = runOpenSSLCMPClient(t, append(endpoint,
+		"-cmd", "kur", "-cert", irCert, "-key", irKey, "-srvcert", caFile,
+		"-newkey", kurKey, "-out_trusted", caFile, "-certout", kurCert)...)
+	require.NoError(t, err, "openssl cmp kur answered by an SLH-DSA CA")
+	requireIssued(kurCert, kurKey)
 }
