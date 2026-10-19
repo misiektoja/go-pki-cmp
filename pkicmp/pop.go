@@ -91,6 +91,20 @@ func VerifyPOPWithOptions(reqMsg *CertReqMsg, opts POPOptions) error {
 		return err
 	}
 
+	slh, ok, err := slhdsaSignatureAlgorithm(reqMsg.Popo.Signature.Algorithm)
+	if err != nil {
+		return err
+	}
+	if _, isSLHDSA := slhdsaPublicKey(pub); ok || isSLHDSA {
+		// The identifier fixes the parameter set, so it must match the requested key exactly.
+		if !ok {
+			return errors.New("pkicmp: POP algorithm does not match the requested public key")
+		}
+		return firstValid(signed, func(data []byte) error {
+			return verifySLHDSA(slh, pub, data, reqMsg.Popo.Signature.Signature)
+		})
+	}
+
 	composite, ok, err := compositeSignatureAlgorithm(reqMsg.Popo.Signature.Algorithm)
 	if err != nil {
 		return err

@@ -7,6 +7,7 @@ import (
 	"encoding/asn1"
 	"errors"
 
+	"github.com/cloudflare/circl/sign/slhdsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -26,10 +27,19 @@ var ErrMLKEM512 = errors.New("pkicmp: ML-KEM-512 keys are not supported")
 //
 // ML-KEM-768 and ML-KEM-1024 keys (RFC 9935) are returned as *mlkem.EncapsulationKey768
 // and *mlkem.EncapsulationKey1024, and ML-KEM-512 keys are refused with [ErrMLKEM512].
+// An SLH-DSA key (RFC 9909) is returned as an slhdsa.PublicKey value from
+// github.com/cloudflare/circl/sign/slhdsa, the type its PrivateKey.Public returns.
 // A composite ML-DSA key is returned as *compositemldsa.PublicKey and every other key
 // as crypto/x509 returns it.
 func ParsePublicKey(der []byte) (crypto.PublicKey, error) {
 	oid, key, ok := parseSPKI(der)
+	if id, isSLHDSA := SLHDSAAlgorithmFromOID(oid); ok && isSLHDSA {
+		pub := slhdsa.PublicKey{ID: id}
+		if err := pub.UnmarshalBinary(key); err != nil {
+			return nil, errors.New("pkicmp: malformed SLH-DSA public key")
+		}
+		return pub, nil
+	}
 	switch {
 	case !ok:
 		// Leave the error report for a malformed encoding to crypto/x509.
@@ -53,10 +63,20 @@ func MarshalPublicKey(pub crypto.PublicKey) ([]byte, error) {
 		oid, key = oidMLKEM768, k.Bytes()
 	case *mlkem.EncapsulationKey1024:
 		oid, key = oidMLKEM1024, k.Bytes()
+	case slhdsa.PublicKey, *slhdsa.PublicKey:
+		slh, _ := slhdsaPublicKey(k)
+		var known bool
+		if oid, known = SLHDSAAlgorithmOID(slh.ID); !known {
+			return nil, errors.New("pkicmp: unknown SLH-DSA parameter set")
+		}
+		var err error
+		if key, err = slh.MarshalBinary(); err != nil {
+			return nil, err
+		}
 	default:
 		return compositex509.MarshalPKIXPublicKey(pub)
 	}
-	// RFC 9935 §4: the parameters field is absent.
+	// RFC 9935 §4 and RFC 9909 §4: the parameters field is absent.
 	var b cryptobyte.Builder
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
@@ -94,8 +114,13 @@ func IsKEMKey(pub crypto.PublicKey) bool {
 
 // PublicKeysEqual reports whether a and b are the same public key. It compares
 // ML-KEM keys by their encoding, because the mlkem types have no Equal method,
-// and other keys with their Equal method.
+// SLH-DSA keys as values whether either is passed by pointer, and other keys
+// with their Equal method.
 func PublicKeysEqual(a, b crypto.PublicKey) bool {
+	if ka, ok := slhdsaPublicKey(a); ok {
+		kb, ok := slhdsaPublicKey(b)
+		return ok && ka.Equal(kb)
+	}
 	switch ka := a.(type) {
 	case *mlkem.EncapsulationKey768:
 		kb, ok := b.(*mlkem.EncapsulationKey768)

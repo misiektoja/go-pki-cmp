@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cloudflare/circl/sign/slhdsa"
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 )
@@ -312,6 +313,13 @@ func signatureAlgorithmFromKey(key crypto.Signer) (asn1.ObjectIdentifier, crypto
 	case *compositemldsa.PublicKey:
 		// Composite signing covers the whole message with an empty context.
 		return pub.Algorithm().OID(), crypto.Hash(0), nil
+	case slhdsa.PublicKey, *slhdsa.PublicKey:
+		// circl signs the whole message in pure mode with an empty context, as RFC 9909 §3 requires.
+		slh, _ := slhdsaPublicKey(pub)
+		if oid, ok := SLHDSAAlgorithmOID(slh.ID); ok {
+			return oid, crypto.Hash(0), nil
+		}
+		return nil, 0, &ParseError{Detail: "unsupported SLH-DSA parameter set"}
 	default:
 		return nil, 0, &ParseError{Detail: fmt.Sprintf("unsupported public key type: %T", pub)}
 	}
