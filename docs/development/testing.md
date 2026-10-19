@@ -22,7 +22,8 @@ make fuzz FUZZTIME=10m
 ```
 
 Fuzzes whole-message parsing, MAC protection parameters and signature verification in `pkicmp`, each
-for `FUZZTIME`. CI runs 30 seconds per target. Go writes a failing input under `pkicmp/testdata/fuzz`.
+for `FUZZTIME`. Separate targets cover SLH-DSA keys, PKCS #10 requests, proofs of possession,
+certificate signatures, message protection and root CA key updates. CI runs 30 seconds per target. Go writes a failing input under `pkicmp/testdata/fuzz`.
 Commit that input with the fix so it stays a regression test.
 
 Minimization is off by default, because a worker still minimizing when `FUZZTIME` expires makes Go
@@ -56,7 +57,9 @@ Some OpenSSL cases need a newer release and skip on older ones:
 * The elliptic curve case of the encrypted certificate test needs OpenSSL 3.5, because earlier
   releases cannot read a certificate in EnvelopedData.
 
-CI runs the OpenSSL tests with 3.5 and 4.0.
+CI runs the OpenSSL tests with 3.5 and 4.0. Its OpenSSL builds have no `openssl.cnf`, so
+`make test-integration-openssl` points `OPENSSL_CONF` to a missing file. A test that needs the local
+`openssl.cnf` then fails locally too. Plain `go test` still reads your `openssl.cnf`.
 
 ### Nokia NCM
 

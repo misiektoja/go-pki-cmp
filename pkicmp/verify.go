@@ -193,7 +193,8 @@ func (m *PKIMessage) Verify(opts VerifyOptions) (*VerifyResult, error) {
 	}
 	_, isSHA1 := sha1SigAlgFromOID(alg)
 	_, isComposite := compositemldsa.AlgorithmFromOID(alg)
-	if _, err := sigAlgFromOID(alg); err == nil || isSHA1 || isComposite {
+	_, isSLHDSA := SLHDSAAlgorithmFromOID(alg)
+	if _, err := sigAlgFromOID(alg); err == nil || isSHA1 || isComposite || isSLHDSA {
 		if opts.RequiredProtection == ProtectionMAC {
 			return nil, &VerificationError{
 				Reason: ReasonUnexpectedProtection,
@@ -524,8 +525,22 @@ func (o *VerifyOptions) verificationTime() time.Time {
 }
 
 // signatureChecker returns the check of a protection signature made with the
-// key of a certificate, for classical, ML-DSA and composite ML-DSA algorithms.
+// key of a certificate, for classical, ML-DSA, SLH-DSA and composite ML-DSA algorithms.
 func signatureChecker(alg AlgorithmIdentifier, allowSHA1 bool) (func(cert *x509.Certificate, data, signature []byte) error, error) {
+	slh, ok, err := slhdsaSignatureAlgorithm(alg)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return func(cert *x509.Certificate, data, signature []byte) error {
+			// crypto/x509 leaves PublicKey nil for an SLH-DSA certificate.
+			pub, err := ParsePublicKey(cert.RawSubjectPublicKeyInfo)
+			if err != nil {
+				return err
+			}
+			return verifySLHDSA(slh, pub, data, signature)
+		}, nil
+	}
 	composite, ok, err := compositeSignatureAlgorithm(alg)
 	if err != nil {
 		return nil, err

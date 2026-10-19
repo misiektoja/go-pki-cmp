@@ -13,5 +13,12 @@ openssl cmp -cmd kur -csr test_client.csr -newkey test_client.key -secret pass:p
 openssl cmp -cmd p10cr -csr test_client.csr -secret pass:pass -ref myref -reqout_only p10cr_golden.der
 openssl cmp -cmd rr -oldcert test_client.crt -revreason 1 -cert test_client.crt -key test_client.key -reqout_only rr_golden.der
 
+# Generate SLH-DSA (RFC 9909) messages, which need OpenSSL 3.5 or newer
+openssl genpkey -algorithm SLH-DSA-SHA2-128s -out test_slhdsa_ir.key
+openssl cmp -cmd ir -newkey test_slhdsa_ir.key -subject /CN=test -secret pass:pass -ref myref -reqout_only ir_slhdsa_golden.der
+openssl genpkey -algorithm SLH-DSA-SHAKE-128s -out test_slhdsa_p10cr.key
+openssl req -new -key test_slhdsa_p10cr.key -subj "/CN=test" -out test_slhdsa_p10cr.csr
+openssl cmp -cmd p10cr -csr test_slhdsa_p10cr.csr -secret pass:pass -ref myref -reqout_only p10cr_slhdsa_golden.der
+
 # Cleanup intermediate files
-rm test_client.key test_client.csr test_client.crt
+rm test_client.key test_client.csr test_client.crt test_slhdsa_ir.key test_slhdsa_p10cr.key test_slhdsa_p10cr.csr

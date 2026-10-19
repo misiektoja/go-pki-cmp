@@ -547,7 +547,7 @@ func checkIssuedKey(cert *x509.Certificate, requested crypto.PublicKey) error {
 	// this exchange.
 	issuedKey := cert.PublicKey
 	if issuedKey == nil {
-		// crypto/x509 leaves PublicKey nil for composite ML-DSA and ML-KEM keys.
+		// crypto/x509 leaves PublicKey nil for composite ML-DSA, SLH-DSA and ML-KEM keys.
 		issuedKey, _ = pkicmp.ParsePublicKey(cert.RawSubjectPublicKeyInfo)
 	}
 	if issuedKey == nil {

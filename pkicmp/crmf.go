@@ -155,8 +155,8 @@ func (m *CertReqMsg) Subject() pkix.Name {
 	return name
 }
 
-// PublicKey parses and returns the public key from the CertTemplate. A
-// composite ML-DSA key is returned as *compositemldsa.PublicKey.
+// PublicKey parses and returns the public key from the CertTemplate in the
+// form [ParsePublicKey] returns.
 func (m *CertReqMsg) PublicKey() (any, error) {
 	if len(m.CertReq.CertTemplate.PublicKey) == 0 {
 		return nil, nil

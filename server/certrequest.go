@@ -9,8 +9,6 @@ import (
 	"encoding/asn1"
 	"errors"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
-
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
@@ -111,7 +109,7 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage, sende
 			return rejection(pkicmp.FailBadDataFormat, "")
 		}
 		// For PKCS#10 the self-signature over the request is the proof.
-		if err := compositex509.CheckCertificateRequestSignature(csr); err != nil {
+		if err := pkicmp.CheckCertificateRequestSignature(csr); err != nil {
 			if errors.Is(err, x509.ErrUnsupportedAlgorithm) {
 				return rejection(pkicmp.FailBadAlg, "unsupported signature algorithm")
 			}

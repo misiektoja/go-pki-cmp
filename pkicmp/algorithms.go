@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cloudflare/circl/sign/slhdsa"
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
+
+	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
 var (
@@ -171,11 +174,14 @@ func compositeSignatureAlgorithm(alg AlgorithmIdentifier) (compositemldsa.Algori
 }
 
 // NewCertStatus computes confirmation with an explicit hash identifier for
-// ML-DSA and composite ML-DSA certificates.
+// ML-DSA, SLH-DSA and composite ML-DSA certificates.
 func NewCertStatus(cert *x509.Certificate, certReqID int64) (CertStatus, error) {
 	status := CertStatus{CertReqID: certReqID}
-	switch cert.SignatureAlgorithm {
-	case x509.MLDSA44, x509.MLDSA65, x509.MLDSA87:
+	_, slh, _ := slhdsasig.SignatureID(cert.Raw)
+	switch {
+	case cert.SignatureAlgorithm == x509.MLDSA44 || cert.SignatureAlgorithm == x509.MLDSA65 ||
+		cert.SignatureAlgorithm == x509.MLDSA87 || slh:
+		// These signatures name no hash, so the confirmation names SHA-512 explicitly.
 		sum := sha512.Sum512(cert.Raw)
 		status.CertHash = sum[:]
 		status.HashAlg = &AlgorithmIdentifier{Algorithm: oidSHA512}
@@ -312,6 +318,13 @@ func signatureAlgorithmFromKey(key crypto.Signer) (asn1.ObjectIdentifier, crypto
 	case *compositemldsa.PublicKey:
 		// Composite signing covers the whole message with an empty context.
 		return pub.Algorithm().OID(), crypto.Hash(0), nil
+	case slhdsa.PublicKey, *slhdsa.PublicKey:
+		// circl signs the whole message in pure mode with an empty context, as RFC 9909 §3 requires.
+		slh, _ := slhdsaPublicKey(pub)
+		if oid, ok := SLHDSAAlgorithmOID(slh.ID); ok {
+			return oid, crypto.Hash(0), nil
+		}
+		return nil, 0, &ParseError{Detail: "unsupported SLH-DSA parameter set"}
 	default:
 		return nil, 0, &ParseError{Detail: fmt.Sprintf("unsupported public key type: %T", pub)}
 	}

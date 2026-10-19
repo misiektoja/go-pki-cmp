@@ -37,8 +37,11 @@ type CA interface {
 	// arrives as *mlkem.EncapsulationKey768 or *mlkem.EncapsulationKey1024,
 	// which crypto/x509 cannot certify. [pkicmp.MarshalPublicKey] encodes its
 	// SubjectPublicKeyInfo (RFC 9935), whose only allowed key usage is
-	// keyEncipherment. [POPMethodFromContext] tells how the request proved
-	// possession.
+	// keyEncipherment. An SLH-DSA key arrives as an slhdsa.PublicKey value from
+	// github.com/cloudflare/circl/sign/slhdsa. crypto/x509 cannot certify it
+	// either, so [pkicmp.MarshalPublicKey] encodes its SubjectPublicKeyInfo
+	// (RFC 9909), whose key usage must not allow encipherment.
+	// [POPMethodFromContext] tells how the request proved possession.
 	IssueCertificate(
 		ctx context.Context, reqType RequestType, template *x509.Certificate, sender *SenderIdentity,
 	) (*Response, error)
@@ -269,7 +272,7 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadDataFormat, "")
 		}
-		// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
+		// crypto/x509 leaves PublicKey nil for composite ML-DSA and SLH-DSA keys.
 		pubKey, err = pkicmp.ParsePublicKey(csr.RawSubjectPublicKeyInfo)
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())

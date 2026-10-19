@@ -6,7 +6,7 @@ How the packages divide the work and what happens to a request on each side.
 
 | Package | Role | Depends on |
 | --- | --- | --- |
-| `pkicmp` | ASN.1 types for CMP and CRMF, message construction, parsing, MAC and signature protection, verification, proof of possession | golang.org/x/crypto, go-composite-mldsa |
+| `pkicmp` | ASN.1 types for CMP and CRMF, message construction, parsing, MAC and signature protection, verification, proof of possession | golang.org/x/crypto, go-composite-mldsa, circl |
 | `cms` | EnvelopedData and EncryptedValue for proof of possession by decryption | golang.org/x/crypto |
 | `client` | Request flows over HTTP: protection, response verification, polling and confirmation | `pkicmp`, `cms` |
 | `server` | An `http.Handler` with transactions, policy middleware and the CA interfaces | `pkicmp`, `cms` |

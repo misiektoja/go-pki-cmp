@@ -2,6 +2,30 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.7.0 - 19 Oct 2026
+
+This release adds **SLH-DSA keys** (FIPS 205, RFC 9909) for all twelve parameter sets. Devices can enroll SLH-DSA keys with `ir`, `cr`, `kur` and `p10cr` and protect CMP messages with them. A CA can hold an SLH-DSA key, sign the CMP responses with it and have clients verify its certificates. It works with OpenSSL 3.5 and later in both directions and with EJBCA 9.6.3. The library now depends on `github.com/cloudflare/circl` for SLH-DSA.
+
+### `pkicmp`
+
+* **SLH-DSA keys.** `ParsePublicKey` returns an SLH-DSA key as an `slhdsa.PublicKey` value from `github.com/cloudflare/circl/sign/slhdsa`. `MarshalPublicKey`, `PublicKeysEqual`, `GeneratePOP`, `VerifyPOP`, `NewSignatureCredentials` and `Verify` support SLH-DSA keys and signatures. Signatures use the pure mode with an empty context. The pre-hash variant HashSLH-DSA is refused. **`SLHDSAAlgorithmOID`** and **`SLHDSAAlgorithmFromOID`** map parameter sets to their identifiers.
+* **`CheckCertificateRequestSignature`** checks the self-signature of a PKCS #10 request, SLH-DSA requests included, which crypto/x509 cannot check.
+* **`NewCertStatus`** confirms a certificate signed by an SLH-DSA CA with SHA-512 and names it in `hashAlg`, as for ML-DSA. `Verify` checks protection certificates issued by an SLH-DSA CA and `RootCAKeyUpdate.Verify` checks SLH-DSA root certificates.
+
+### `client`
+
+* `SendIR`, `SendCR`, `SendKUR` and `SendP10CR` accept SLH-DSA keys and requests. `NewSignatureCredentials` with an SLH-DSA key protects requests with SLH-DSA signatures.
+* The client trusts certificates and responses from a CA with an SLH-DSA key when that CA certificate is in the trust pool and travels in the response.
+
+### `server`
+
+* The server checks SLH-DSA proofs of possession, PKCS #10 requests and message protection. The CA receives an SLH-DSA key in the template as `slhdsa.PublicKey`. crypto/x509 cannot certify it, so the CA encodes the SubjectPublicKeyInfo with `pkicmp.MarshalPublicKey` and signs the certificate itself. Its key usage must not allow encipherment.
+* **`WithSigner`** accepts an SLH-DSA CA key. `WithStrictProfileValidation` checks `extraCerts` chains that an SLH-DSA CA signed. Each SLH-DSA signature is slow, so a separate classical or ML-DSA signer keeps the responses fast.
+
+### Requirements
+
+* **github.com/cloudflare/circl v1.6.5** is now required for SLH-DSA. It brings in golang.org/x/sys v0.49.0.
+
 ## v0.6.0 - 16 Oct 2026
 
 This release enrolls keys that cannot sign, such as ML-KEM-768 and ML-KEM-1024, through proof of possession by decryption: the encrypted certificate and challenge-response methods of RFC 9810. It works against EJBCA, with OpenSSL 3.0 and later for RSA keys and with OpenSSL 4.0 for ML-KEM keys. CAs can hold enrollment and revocation requests until someone approves or rejects them. They can also answer grantedWithMods. Some refusal reasons and the handling of waiting requests changed. Code that checks refusal reasons or relies on waiting requests should read the `pkicmp` and `server` entries before upgrading.

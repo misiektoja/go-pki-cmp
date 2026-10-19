@@ -83,9 +83,12 @@ test-integration: test-integration-ejbca test-integration-openssl test-integrati
 test-integration-ejbca: ## Run the client against EJBCA. Needs make setup-ejbca.
 	go test -v -count=1 -tags integration ./test/integration/ejbca
 
+# The OpenSSL that CI builds with make install_sw has no openssl.cnf. OPENSSL_CONF points to a path that
+# cannot exist, so a test that needs the file fails locally as it does in CI. An empty file is not
+# enough, because openssl req accepts it.
 .PHONY: test-integration-openssl
 test-integration-openssl: ## Run the client and server against OpenSSL. Needs OpenSSL 3.2 or newer.
-	go test -v -count=1 -tags integration ./test/integration/openssl
+	OPENSSL_CONF=/dev/null/openssl.cnf go test -v -count=1 -tags integration ./test/integration/openssl
 
 .PHONY: test-integration-cmp-test-suite
 test-integration-cmp-test-suite: ## Run the server against the Siemens CMP test suite. Needs make setup-cmp-test-suite.
@@ -177,6 +180,10 @@ RELEASE_CHECK_DIR ?=
 require-version:
 	@test -n "$(VERSION)" || { echo "Set VERSION, for example VERSION=v0.2.0" >&2; exit 1; }
 
+# A go.work above the checkout or the check directory would replace the module's own requirements.
+release-check sbom: export GOWORK = off
+# The export step sets -e itself because make 3.81, the macOS default, ignores .SHELLFLAGS. Its steps
+# are separate commands because -e does not stop at a failure inside an && list.
 .PHONY: release-check
 release-check: ## Build, vet and test an export of HEAD in a new directory and import it from a separate module. Set VERSION to check the release notes heading.
 	@if grep -q '^replace ' go.mod; then echo "error: go.mod has a replace directive"; exit 1; fi
@@ -184,7 +191,7 @@ release-check: ## Build, vet and test an export of HEAD in a new directory and i
 		grep -q "^## $(VERSION) - " RELEASE_NOTES.md || { echo "error: RELEASE_NOTES.md has no heading for $(VERSION)"; exit 1; }; \
 		if grep -q '^## v.* - TBD$$' RELEASE_NOTES.md; then echo "error: RELEASE_NOTES.md still has a section dated TBD"; exit 1; fi; \
 	fi
-	@export="$(RELEASE_CHECK_DIR)"; \
+	@set -e; export="$(RELEASE_CHECK_DIR)"; \
 	if [ -z "$$export" ]; then \
 		tmp="$${TMPDIR:-/tmp}"; export="$$(mktemp -d "$${tmp%/}/go-pki-cmp-release-check.XXXXXX")"; \
 	elif [ -e "$$export" ]; then \
@@ -193,10 +200,10 @@ release-check: ## Build, vet and test an export of HEAD in a new directory and i
 	echo "release check directory: $$export"; \
 	mkdir -p "$$export/export" "$$export/consumer"; \
 	git archive --format=tar HEAD | tar -x -C "$$export/export"; \
-	cd "$$export/export" && go mod verify && go build ./... && go vet ./... && go test -count=1 ./...; \
-	cd "$$export/consumer" && printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-cmp v0.0.0\n\nreplace github.com/misiektoja/go-pki-cmp => ../export\n' "$(GO_VERSION)" > go.mod; \
+	cd "$$export/export"; go mod verify; go build ./...; go vet ./...; go test -count=1 ./...; \
+	cd "$$export/consumer"; printf 'module example.com/consumer\n\ngo %s\n\nrequire github.com/misiektoja/go-pki-cmp v0.0.0\n\nreplace github.com/misiektoja/go-pki-cmp => ../export\n' "$(GO_VERSION)" > go.mod; \
 	printf 'package main\n\nimport (\n\t"log"\n\n\t"github.com/misiektoja/go-pki-cmp/client"\n\t"github.com/misiektoja/go-pki-cmp/pkicmp"\n\t"github.com/misiektoja/go-pki-cmp/server"\n)\n\nfunc main() {\n\t_, err := pkicmp.NewMACCredentials([]byte("release-check"))\n\tlog.Println(client.NewClient("http://localhost/cmp") != nil, server.NewCAServer(nil, server.LightweightPolicy()).Err(), err)\n}\n' > main.go; \
-	go mod tidy && go build ./... && go run .; \
+	go mod tidy; go build ./...; go run .; \
 	echo "release check passed for $$(git -C "$(CURDIR)" rev-parse --short HEAD)"
 
 .PHONY: release-body

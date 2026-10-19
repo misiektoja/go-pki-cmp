@@ -47,6 +47,14 @@ type opensslCMPServerOpts struct {
 	// makes the server expect that certificate in the oldCertID of a kur.
 	RefCert bool
 
+	// CA replaces the generated CA, so that a test can certify keys certyaml
+	// cannot generate, such as SLH-DSA keys, before the server starts.
+	CA *certyaml.Certificate
+
+	// RspCertificate replaces the generated rsp certificate. The server then
+	// gets no -rsp_key, which only central key generation uses, and RspKey is nil.
+	RspCertificate *x509.Certificate
+
 	// Root CA key update and CRL returned in general responses.
 	RspNewWithNew *x509.Certificate
 	RspNewWithOld *x509.Certificate
@@ -99,13 +107,18 @@ func newOpenSSLCMPServer(t *testing.T, opts opensslCMPServerOpts) *opensslCMPSer
 	//    ca → rsp      (returned as the enrolled certificate)
 	//    ca → client   (used as existing cert in CR / KUR tests)
 	// -------------------------------------------------------------------
-	ca := &certyaml.Certificate{Subject: "cn=openssl-test-ca"}
+	ca := opts.CA
+	generate := []*certyaml.Certificate{}
+	if ca == nil {
+		ca = &certyaml.Certificate{Subject: "cn=openssl-test-ca"}
+		generate = append(generate, ca)
+	}
 	server := &certyaml.Certificate{Subject: "cn=openssl-test-server", Issuer: ca}
 	rsp := &certyaml.Certificate{Subject: "cn=openssl-test-rsp", Issuer: ca}
 	client := &certyaml.Certificate{Subject: "cn=openssl-test-client", Issuer: ca}
 
-	// Generate in dependency order.
-	for _, c := range []*certyaml.Certificate{ca, server, rsp, client} {
+	// Generate in dependency order. Generating a supplied CA again would replace its key.
+	for _, c := range append(generate, server, rsp, client) {
 		require.NoError(t, c.Generate(), "generate cert for %s", c.Subject)
 	}
 
@@ -120,8 +133,12 @@ func newOpenSSLCMPServer(t *testing.T, opts opensslCMPServerOpts) *opensslCMPSer
 	writeCertPEM(t, ca, caFile)
 	writeCertPEM(t, server, srvCertFile)
 	writeKeyPEM(t, server, srvKeyFile)
-	writeCertPEM(t, rsp, rspCertFile)
-	writeKeyPEM(t, rsp, rspKeyFile)
+	if opts.RspCertificate != nil {
+		writePEM(t, rspCertFile, "CERTIFICATE", opts.RspCertificate.Raw)
+	} else {
+		writeCertPEM(t, rsp, rspCertFile)
+		writeKeyPEM(t, rsp, rspKeyFile)
+	}
 	writeCertPEM(t, client, clientCertFile)
 
 	// -------------------------------------------------------------------
@@ -136,10 +153,12 @@ func newOpenSSLCMPServer(t *testing.T, opts opensslCMPServerOpts) *opensslCMPSer
 		"-srv_key", srvKeyFile,
 		"-srv_trusted", caFile,
 		"-rsp_cert", rspCertFile,
-		"-rsp_key", rspKeyFile,
 		"-rsp_capubs", caFile,
 		"-digest", "SHA256",
 		"-mac", "HMAC-SHA256",
+	}
+	if opts.RspCertificate == nil {
+		args = append(args, "-rsp_key", rspKeyFile)
 	}
 
 	if opts.SrvRef != "" {
@@ -226,6 +245,9 @@ func newOpenSSLCMPServer(t *testing.T, opts opensslCMPServerOpts) *opensslCMPSer
 
 	rspKey, err := rsp.PrivateKey()
 	require.NoError(t, err)
+	if opts.RspCertificate != nil {
+		rspCertX509, rspKey = *opts.RspCertificate, nil
+	}
 
 	clientCertX509, err := client.X509Certificate()
 	require.NoError(t, err)

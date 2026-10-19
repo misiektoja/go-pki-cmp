@@ -76,7 +76,10 @@
 // key calls compositex509.CreateCertificate from
 // github.com/misiektoja/go-composite-mldsa instead, with the same arguments.
 // The same applies to a composite subject key, which the template carries as
-// *compositemldsa.PublicKey.
+// *compositemldsa.PublicKey. crypto/x509 cannot certify an SLH-DSA subject key,
+// which the template carries as an slhdsa.PublicKey value. Encode its
+// SubjectPublicKeyInfo with [pkicmp.MarshalPublicKey] and sign the certificate
+// outside crypto/x509.
 // Clients can check such a signature only when the CA certificate travels in
 // the response, so pass it to [WithExtraCerts] or return it in
 // [Response].CACerts.

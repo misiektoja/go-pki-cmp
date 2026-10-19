@@ -30,8 +30,8 @@ from `caPubs`. Errors are signed however the request was protected (RFC 9810 sec
 without a pool a rejection such as transactionIdInUse arrives as an `UnverifiedStatusError`: safe to
 log, not to act on. A CA that signs every response cannot be used without a pool at all.
 
-The pool also validates the issued certificate. A CA with a composite ML-DSA key is trusted as an
-issuer only when the response also carries its certificate in `extraCerts` or `caPubs`. The pool
+The pool also validates the issued certificate. A CA with a composite ML-DSA or SLH-DSA key is
+trusted as an issuer only when the response also carries its certificate in `extraCerts` or `caPubs`. The pool
 entry still decides whether that certificate is trusted.
 
 ## Signer certificate

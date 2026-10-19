@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+
+	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
 // Info types of the general messages in RFC 9810 §5.3.19 and RFC 9483 §4.3.
@@ -315,7 +316,7 @@ func (u *RootCAKeyUpdate) Verify(oldRoot *x509.Certificate) error {
 	if u == nil || u.NewWithNew == nil {
 		return errors.New("pkicmp: root CA key update has no newWithNew")
 	}
-	if err := compositex509.CheckSignatureFrom(u.NewWithNew, u.NewWithNew); err != nil {
+	if err := slhdsasig.CheckSignatureFrom(u.NewWithNew, u.NewWithNew); err != nil {
 		return fmt.Errorf("pkicmp: newWithNew is not self-signed: %w", err)
 	}
 	if oldRoot == nil {
@@ -330,14 +331,14 @@ func (u *RootCAKeyUpdate) Verify(oldRoot *x509.Certificate) error {
 	if !bytes.Equal(u.NewWithOld.RawSubject, u.NewWithNew.RawSubject) {
 		return errors.New("pkicmp: newWithOld does not name the subject of newWithNew")
 	}
-	if err := compositex509.CheckSignatureFrom(u.NewWithOld, oldRoot); err != nil {
+	if err := slhdsasig.CheckSignatureFrom(u.NewWithOld, oldRoot); err != nil {
 		return fmt.Errorf("pkicmp: newWithOld is not signed by the old root: %w", err)
 	}
 	if u.OldWithNew != nil {
 		if !bytes.Equal(u.OldWithNew.RawSubjectPublicKeyInfo, oldRoot.RawSubjectPublicKeyInfo) {
 			return errors.New("pkicmp: oldWithNew does not carry the key of the old root")
 		}
-		if err := compositex509.CheckSignatureFrom(u.OldWithNew, u.NewWithNew); err != nil {
+		if err := slhdsasig.CheckSignatureFrom(u.OldWithNew, u.NewWithNew); err != nil {
 			return fmt.Errorf("pkicmp: oldWithNew is not signed by the new root: %w", err)
 		}
 	}

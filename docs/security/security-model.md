@@ -55,7 +55,8 @@ systemFailure. Its text never reaches the peer.
 
 **Bounded parsing.** Request bodies, transaction counts and snapshot sizes are limited. Every parser
 in `pkicmp` reads bytes a peer chose, before anything establishes who that peer is, so the
-whole-message parser, MAC parameters and signature verification have fuzz targets that CI runs.
+whole-message parser, MAC parameters, signature verification and the SLH-DSA key and signature
+checks have fuzz targets that CI runs.
 
 ## What the client enforces
 

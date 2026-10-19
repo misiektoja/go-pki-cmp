@@ -20,12 +20,19 @@ A registration authority may forward one request per nested message. Batches (RF
 ML-KEM-512 keys are refused because the Go standard library does not implement them. Only the final
 ML-DSA encodings are supported, not the older Dilithium ones.
 
-### Composite ML-DSA chains
+### Composite ML-DSA and SLH-DSA chains
 
-crypto/x509 cannot check composite ML-DSA signatures, so the library verifies such paths itself. A
-certificate signed with a composite key is accepted only when its issuer certificate travels in the
-message, in `extraCerts` or `caPubs`, even if that issuer is a trust anchor. No certificate in such a
+crypto/x509 cannot check composite ML-DSA or SLH-DSA signatures, so the library verifies such paths
+itself. A certificate signed with a composite or SLH-DSA key is accepted only when its issuer
+certificate travels in the message, in `extraCerts` or `caPubs`, even if that issuer is a trust anchor. No certificate in such a
 path may carry name constraints.
+
+### SLH-DSA CAs sign slowly
+
+An SLH-DSA CA key signs every issued certificate and, as the `WithSigner` key, every protected
+response. The small parameter sets, whose names end in `s`, can take hundreds of milliseconds or more
+per signature. An enrollment with explicit confirmation needs at least two signatures. A separate
+classical or ML-DSA signer certificate in `WithSigner` keeps the responses fast.
 
 ### Proof by decryption needs a capable CA
 
@@ -53,8 +60,8 @@ emailAddress and may reorder the rest. `WithRawSubject` keeps the requested enco
 
 ### crypto/x509 cannot certify every key
 
-Composite ML-DSA keys need `compositex509.CreateCertificate` and ML-KEM keys need a signer outside
-crypto/x509.
+Composite ML-DSA keys need `compositex509.CreateCertificate`. ML-KEM and SLH-DSA subject keys need
+a signer outside crypto/x509, and so does a CA whose own key is SLH-DSA.
 
 ### No built-in rate limits
 

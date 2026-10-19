@@ -17,6 +17,7 @@ was tested with.
 | RFC 5652, RFC 4211 | CMS EnvelopedData and CMP version 2 EncryptedValue for encrypted certificates |
 | RFC 9629, RFC 9936 | KEMRecipientInfo for ML-KEM recipients |
 | RFC 9935 | ML-KEM public keys in certificates |
+| RFC 9909 | SLH-DSA keys and pure signatures for the twelve FIPS 205 parameter sets, through [circl](https://github.com/cloudflare/circl) |
 | draft-ietf-lamps-pq-composite-sigs-19 | Composite ML-DSA keys and signatures, through [go-composite-mldsa](https://github.com/misiektoja/go-composite-mldsa) |
 
 ## Messages
@@ -40,7 +41,7 @@ was tested with.
 | Mechanism | Algorithms |
 | --- | --- |
 | MAC | PBMAC1 (default) and PasswordBasedMac with HMAC-SHA1 to HMAC-SHA512. Iteration counts from 1 to 500000 are accepted by default |
-| Signature | RSA PKCS #1 v1.5 and ECDSA with SHA-256, SHA-384 or SHA-512, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87 and composite ML-DSA |
+| Signature | RSA PKCS #1 v1.5 and ECDSA with SHA-256, SHA-384 or SHA-512, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87, SLH-DSA and composite ML-DSA |
 | SHA-1 signatures | RSA and ECDSA with SHA-1, off by default. `WithSHA1Signatures` in the `client` or `server` package accepts them |
 
 ## Proof of possession
@@ -61,7 +62,7 @@ through the `*WithIndirectPOP` methods.
 
 | Use | Accepted |
 | --- | --- |
-| Certificates that sign | RSA, ECDSA on P-256, P-384 and P-521, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87 and composite ML-DSA |
+| Certificates that sign | RSA, ECDSA on P-256, P-384 and P-521, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87, the twelve SLH-DSA parameter sets and composite ML-DSA |
 | Proof by decryption | ML-KEM-768 and ML-KEM-1024, RSA and elliptic curve keys on P-256, P-384 and P-521 |
 | EncryptedValue for CMP version 2 | RSA only |
 
@@ -89,6 +90,8 @@ through the `*WithIndirectPOP` methods.
 | Sending nested messages from the client | Not implemented |
 | ML-KEM-512 | Refused, the Go standard library does not implement it |
 | Older Dilithium encodings | Not supported |
+| HashSLH-DSA, the pre-hash variant of SLH-DSA | Refused |
+| SHAKE256 as the `hashAlg` of a certificate confirmation | Refused. An explicit `hashAlg` may be SHA-256, SHA-384 or SHA-512 |
 | X25519 keys for proof by decryption | Refused with badAlg |
 | RSA PKCS #1 v1.5 key transport in EnvelopedData | Refused |
 | Protocol versions other than 2 and 3, such as `pvno` 0 or 1 | Refused with unsupportedVersion |

@@ -19,8 +19,8 @@ certificate confirmation. Your application supplies issuance, credential lookup 
 policy through Go interfaces. [cmp-issuer](https://github.com/misiektoja/cmp-issuer), a cert-manager
 external issuer, is built on this library.
 
-Certificates can carry **post-quantum ML-DSA** keys or **composite ML-DSA** keys and both can sign
-CMP messages. **ML-KEM** keys are certified through proof of possession by decryption. The
+Certificates can carry **post-quantum ML-DSA**, **SLH-DSA** or **composite ML-DSA** keys and all of
+them can sign CMP messages. **ML-KEM** keys are certified through proof of possession by decryption. The
 [support matrix](support-matrix.md) lists what is covered.
 
 ## Install

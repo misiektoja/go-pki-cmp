@@ -1,5 +1,5 @@
 // Package certpath verifies certification paths that contain composite ML-DSA
-// signatures, which crypto/x509 cannot check.
+// or SLH-DSA signatures, which crypto/x509 cannot check.
 package certpath
 
 import (
@@ -9,13 +9,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
+	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
-// maxDepth bounds the number of composite links followed below a trusted path.
+// maxDepth bounds the number of composite or SLH-DSA links followed below a trusted path.
 const maxDepth = 8
 
-// maxSignatureChecks bounds the composite signature checks of one verification,
+// maxSignatureChecks bounds the composite and SLH-DSA signature checks of one verification,
 // as crypto/x509 bounds its own, so that crafted candidates sharing a name and
 // key cannot force an exponential search.
 const maxSignatureChecks = 100
@@ -27,8 +27,8 @@ var oidNameConstraints = asn1.ObjectIdentifier{2, 5, 29, 30}
 var errUntrusted = errors.New("certificate does not chain to a trusted certificate")
 
 // Verify checks that cert chains to a certificate in roots, taking issuers from
-// candidates. Paths without composite signatures are checked by crypto/x509
-// alone. A composite link is followed only when its issuer is in candidates,
+// candidates. Paths without composite or SLH-DSA signatures are checked by
+// crypto/x509 alone. Such a link is followed only when its issuer is in candidates,
 // because a CertPool cannot return the anchor it holds. Such paths are refused
 // when a certificate in them carries name constraints, which this check cannot
 // enforce.
@@ -94,7 +94,7 @@ func (s *search) trusted(cert *x509.Certificate, depth int) bool {
 			return false
 		}
 		s.checksLeft--
-		if compositex509.CheckSignatureFrom(cert, parent) != nil {
+		if slhdsasig.CheckSignatureFrom(cert, parent) != nil {
 			continue
 		}
 		if s.trusted(parent, depth+1) {
