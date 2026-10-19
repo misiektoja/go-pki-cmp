@@ -2,7 +2,7 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.7.0 - TBD
+## v0.7.0 - 19 Oct 2026
 
 This release adds **SLH-DSA keys** (FIPS 205, RFC 9909) for all twelve parameter sets. Devices can enroll SLH-DSA keys with `ir`, `cr`, `kur` and `p10cr` and protect CMP messages with them. A CA can hold an SLH-DSA key, sign the CMP responses with it and have clients verify its certificates. It works with OpenSSL 3.5 and later in both directions and with EJBCA 9.6.3. The library now depends on `github.com/cloudflare/circl` for SLH-DSA.
 
