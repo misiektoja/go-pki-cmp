@@ -19,7 +19,7 @@ func (c *Client) SendP10CR(ctx context.Context, csrDER []byte, creds pkicmp.Cred
 	if err != nil {
 		return nil, err
 	}
-	// crypto/x509 leaves PublicKey nil for a composite ML-DSA key.
+	// crypto/x509 leaves PublicKey nil for composite ML-DSA and SLH-DSA keys.
 	requestedKey, err := pkicmp.ParsePublicKey(csr.RawSubjectPublicKeyInfo)
 	if err != nil {
 		return nil, err
