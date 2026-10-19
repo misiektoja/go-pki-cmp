@@ -1,6 +1,6 @@
 // Package kemcert creates test certificates for keys that crypto/x509 cannot
-// certify, such as ML-KEM keys (RFC 9935), and test requests for keys it cannot
-// sign with, such as SLH-DSA keys (RFC 9909).
+// certify, such as ML-KEM keys (RFC 9935), and test certificates and requests
+// signed with keys it cannot sign with, such as SLH-DSA keys (RFC 9909).
 package kemcert
 
 import (
@@ -68,6 +68,85 @@ func CreateCertificate(template, parent *x509.Certificate, spki []byte, priv cry
 		b.AddBytes(sigAlg)
 		b.AddASN1BitString(signature)
 	})
+	return b.Bytes()
+}
+
+// CreateSLHDSACertificate works like CreateCertificate for a parent with an
+// SLH-DSA key, which crypto/x509 cannot sign with. sigAlg is the parent's RFC
+// 9909 identifier, written with absent parameters. A CA template needs its
+// SubjectKeyId set, because the placeholder key would otherwise determine it.
+func CreateSLHDSACertificate(template, parent *x509.Certificate, spki []byte, sigAlg asn1.ObjectIdentifier, priv crypto.Signer) ([]byte, error) {
+	if template.IsCA && len(template.SubjectKeyId) == 0 {
+		return nil, errors.New("kemcert: a CA template needs a SubjectKeyId")
+	}
+	placeholder, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	// crypto/x509 checks a parent key against the signer, which is the placeholder here.
+	layoutParent := *parent
+	layoutParent.PublicKey = nil
+	der, err := x509.CreateCertificate(rand.Reader, template, &layoutParent, &placeholder.PublicKey, placeholder)
+	if err != nil {
+		return nil, err
+	}
+	laid, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	var alg cryptobyte.Builder
+	alg.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) { b.AddASN1ObjectIdentifier(sigAlg) })
+	algorithm, err := alg.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	// version [0] and serialNumber precede the signature field.
+	tbs, err := replaceField(laid.RawTBSCertificate, 2, algorithm)
+	if err != nil {
+		return nil, err
+	}
+	if tbs, err = replaceSPKI(tbs, 6, spki); err != nil {
+		return nil, err
+	}
+	signature, err := priv.Sign(rand.Reader, tbs, crypto.Hash(0))
+	if err != nil {
+		return nil, err
+	}
+	var b cryptobyte.Builder
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		b.AddBytes(tbs)
+		b.AddBytes(algorithm)
+		b.AddASN1BitString(signature)
+	})
+	return b.Bytes()
+}
+
+// replaceField returns a DER SEQUENCE with its field at index replaced by value.
+func replaceField(sequence []byte, index int, value []byte) ([]byte, error) {
+	s := cryptobyte.String(sequence)
+	var fields cryptobyte.String
+	if !s.ReadASN1(&fields, cbasn1.SEQUENCE) {
+		return nil, errors.New("kemcert: invalid signed structure")
+	}
+	var b cryptobyte.Builder
+	var err error
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		for i := 0; !fields.Empty(); i++ {
+			var field cryptobyte.String
+			var tag cbasn1.Tag
+			if !fields.ReadAnyASN1Element(&field, &tag) {
+				err = errors.New("kemcert: truncated signed structure")
+				return
+			}
+			if i == index {
+				field = value
+			}
+			b.AddBytes(field)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	return b.Bytes()
 }
 
