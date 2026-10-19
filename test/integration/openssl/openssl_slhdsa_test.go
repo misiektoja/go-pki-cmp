@@ -5,7 +5,11 @@ package openssl
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -373,4 +377,215 @@ func TestOpenSSLClientSLHDSACA(t *testing.T) {
 		"-newkey", kurKey, "-out_trusted", caFile, "-certout", kurCert)...)
 	require.NoError(t, err, "openssl cmp kur answered by an SLH-DSA CA")
 	requireIssued(kurCert, kurKey)
+}
+
+// newRolloverKey returns an ECDSA P-256 key when id is zero and an SLH-DSA key of parameter set id otherwise.
+func newRolloverKey(t *testing.T, id slhdsa.ID) crypto.Signer {
+	t.Helper()
+	if id == 0 {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		return key
+	}
+	_, key, err := slhdsa.GenerateKey(rand.Reader, id)
+	require.NoError(t, err)
+	return key
+}
+
+// signRolloverCert issues a root CA certificate named "Test Root" for pub,
+// signed by signer under parent or self-signed when parent is nil. Either key
+// may be an SLH-DSA key, which crypto/x509 can neither certify nor sign with.
+func signRolloverCert(t *testing.T, pub crypto.PublicKey, parent *x509.Certificate, signer crypto.Signer) *x509.Certificate {
+	t.Helper()
+	spki, err := pkicmp.MarshalPublicKey(pub)
+	require.NoError(t, err)
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	require.NoError(t, err)
+	// The identifier depends only on the key, so a link certificate shares it
+	// with the root of its key and OpenSSL can build the chain by key identifier.
+	ski := sha256.Sum256(spki)
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "Test Root"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		SubjectKeyId:          ski[:20],
+	}
+	if parent == nil {
+		parent = tmpl
+	}
+	var der []byte
+	if key, ok := signer.Public().(slhdsa.PublicKey); ok {
+		oid, known := pkicmp.SLHDSAAlgorithmOID(key.ID)
+		require.True(t, known)
+		der, err = kemcert.CreateSLHDSACertificate(tmpl, parent, spki, oid, signer)
+	} else {
+		der, err = kemcert.CreateCertificate(tmpl, parent, spki, signer)
+	}
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return cert
+}
+
+// TestOpenSSLClientSLHDSARootCAUpdate fetches root CA key updates (RFC 9483
+// §4.3.2) from the server with the OpenSSL client, for rollovers in which the
+// old root, the new root or both have SLH-DSA keys. OpenSSL verifies the new
+// root through newWithOld against the old root and oldWithNew against the new root.
+func TestOpenSSLClientSLHDSARootCAUpdate(t *testing.T) {
+	requireSLHDSA(t)
+	dir := t.TempDir()
+	ca := &certyaml.Certificate{Subject: "cn=openssl-genm-ca", KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
+	ee := &certyaml.Certificate{Subject: "cn=openssl-genm-ee", Issuer: ca}
+	for _, c := range []*certyaml.Certificate{ca, ee} {
+		require.NoError(t, c.Generate(), "generate cert for %s", c.Subject)
+	}
+	caFile := filepath.Join(dir, "ca.pem")
+	eeCertFile := filepath.Join(dir, "ee.pem")
+	eeKeyFile := filepath.Join(dir, "ee-key.pem")
+	writeCertPEM(t, ca, caFile)
+	writeCertPEM(t, ee, eeCertFile)
+	writeKeyPEM(t, ee, eeKeyFile)
+	caCert, err := ca.X509Certificate()
+	require.NoError(t, err)
+	caKey, err := ca.PrivateKey()
+	require.NoError(t, err)
+	eeCert, err := ee.X509Certificate()
+	require.NoError(t, err)
+
+	rollovers := []struct {
+		name     string
+		old, new slhdsa.ID
+	}{
+		{"ECDSA to SLH-DSA", 0, slhdsa.SHA2_128f},
+		{"SLH-DSA to SLH-DSA", slhdsa.SHA2_128f, slhdsa.SHAKE_128f},
+		{"SLH-DSA to ECDSA", slhdsa.SHA2_128f, 0},
+	}
+	for _, r := range rollovers {
+		t.Run(r.name, func(t *testing.T) {
+			oldKey, newKey := newRolloverKey(t, r.old), newRolloverKey(t, r.new)
+			oldRoot := signRolloverCert(t, oldKey.Public(), nil, oldKey)
+			newRoot := signRolloverCert(t, newKey.Public(), nil, newKey)
+			update := &pkicmp.RootCAKeyUpdate{
+				NewWithNew: newRoot,
+				NewWithOld: signRolloverCert(t, newKey.Public(), oldRoot, oldKey),
+				OldWithNew: signRolloverCert(t, oldKey.Public(), newRoot, newKey),
+			}
+			backend := &supportCA{issued: []*x509.Certificate{&eeCert}, update: update}
+			srv := server.NewCAServer(backend, server.LightweightPolicy(),
+				server.WithSigner(caKey, &caCert),
+				server.WithCertificateLookup(backend),
+			)
+			require.NoError(t, srv.Err())
+			ts := httptest.NewServer(srv)
+			defer ts.Close()
+
+			out := t.TempDir()
+			oldFile := filepath.Join(out, "old-root.pem")
+			writePEM(t, oldFile, "CERTIFICATE", oldRoot.Raw)
+			newWithNew := filepath.Join(out, "newwithnew.pem")
+			newWithOld := filepath.Join(out, "newwithold.pem")
+			oldWithNew := filepath.Join(out, "oldwithnew.pem")
+			_, err := runOpenSSLCMPClient(t,
+				"-cmd", "genm",
+				"-server", strings.TrimPrefix(ts.URL, "http://"),
+				"-path", "/",
+				"-cert", eeCertFile,
+				"-key", eeKeyFile,
+				"-trusted", caFile,
+				"-infotype", "rootCaCert", "-oldwithold", oldFile,
+				"-newwithnew", newWithNew, "-newwithold", newWithOld, "-oldwithnew", oldWithNew,
+			)
+			require.NoError(t, err, "openssl cmp genm rootCaCert")
+			assert.Equal(t, update.NewWithNew.Raw, readDERFile(t, newWithNew))
+			assert.Equal(t, update.NewWithOld.Raw, readDERFile(t, newWithOld))
+			assert.Equal(t, update.OldWithNew.Raw, readDERFile(t, oldWithNew))
+			assert.True(t, backend.oldRoot.Equal(oldRoot), "the CA receives the root the request names")
+		})
+	}
+}
+
+// TestOpenSSLServerSLHDSARootCAUpdate fetches root CA key updates made by
+// OpenSSL from the OpenSSL mock server, for rollovers in which the old root,
+// the new root or both have SLH-DSA keys. The client verifies the SLH-DSA
+// signatures OpenSSL made and refuses a newWithOld that another root signed.
+func TestOpenSSLServerSLHDSARootCAUpdate(t *testing.T) {
+	requireSLHDSA(t)
+	ctx := context.Background()
+	rollovers := []struct{ name, old, new string }{
+		{"ECDSA to SLH-DSA", "EC", "SLH-DSA-SHA2-128f"},
+		{"SLH-DSA to SLH-DSA", "SLH-DSA-SHA2-128f", "SLH-DSA-SHAKE-128f"},
+		{"SLH-DSA to ECDSA", "SLH-DSA-SHA2-128f", "EC"},
+	}
+	for _, r := range rollovers {
+		t.Run(r.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ext := filepath.Join(dir, "ca.ext")
+			require.NoError(t, os.WriteFile(ext, []byte("basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\n"), 0o600))
+			// newRoot generates a key of algorithm alg and a self-signed root
+			// certificate for it, in files named after name. Every root is
+			// named "Test Root", because the OpenSSL mock server answers only
+			// a request for a root of that name.
+			newRoot := func(name, alg string) *x509.Certificate {
+				key := filepath.Join(dir, name+"-key.pem")
+				args := []string{"genpkey", "-algorithm", alg, "-out", key}
+				if alg == "EC" {
+					args = append(args, "-pkeyopt", "ec_paramgen_curve:P-256")
+				}
+				runOpenSSL(t, args...)
+				runOpenSSL(t, "pkey", "-in", key, "-pubout", "-out", filepath.Join(dir, name+"-pub.pem"))
+				file := filepath.Join(dir, name+".pem")
+				runOpenSSL(t, "x509", "-new", "-key", key, "-subj", "/CN=Test Root", "-days", "1", "-extfile", ext, "-out", file)
+				cert, err := x509.ParseCertificate(readDERFile(t, file))
+				require.NoError(t, err)
+				return cert
+			}
+			// link certifies the key of root subject with the key of root issuer.
+			link := func(subject, issuer string) *x509.Certificate {
+				file := filepath.Join(dir, subject+"-with-"+issuer+".pem")
+				runOpenSSL(t, "x509", "-new", "-force_pubkey", filepath.Join(dir, subject+"-pub.pem"), "-subj", "/CN=Test Root",
+					"-CA", filepath.Join(dir, issuer+".pem"), "-CAkey", filepath.Join(dir, issuer+"-key.pem"),
+					"-days", "1", "-extfile", ext, "-out", file)
+				cert, err := x509.ParseCertificate(readDERFile(t, file))
+				require.NoError(t, err)
+				return cert
+			}
+			// fetch asks a mock server that sends update for the root CA key update of oldRoot.
+			fetch := func(oldRoot *x509.Certificate, update *pkicmp.RootCAKeyUpdate) (*pkicmp.RootCAKeyUpdate, error) {
+				srv := newOpenSSLCMPServer(t, opensslCMPServerOpts{
+					RspNewWithNew: update.NewWithNew,
+					RspNewWithOld: update.NewWithOld,
+					RspOldWithNew: update.OldWithNew,
+				})
+				creds, err := pkicmp.NewSignatureCredentials(srv.ClientKey, srv.ClientCert)
+				require.NoError(t, err)
+				c := client.NewClient(srv.Endpoint, client.WithRecipient(srv.CACert.Subject), client.WithTrustedCAs(srv.TrustedCAs()))
+				return c.GetRootCAUpdate(ctx, oldRoot, creds)
+			}
+
+			oldRoot := newRoot("old", r.old)
+			update := &pkicmp.RootCAKeyUpdate{
+				NewWithNew: newRoot("new", r.new),
+				NewWithOld: link("new", "old"),
+				OldWithNew: link("old", "new"),
+			}
+			got, err := fetch(oldRoot, update)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.True(t, got.NewWithNew.Equal(update.NewWithNew))
+			assert.True(t, got.NewWithOld.Equal(update.NewWithOld))
+			assert.True(t, got.OldWithNew.Equal(update.OldWithNew))
+
+			// The other root has an SLH-DSA key, so the forged newWithOld
+			// carries a well-formed SLH-DSA signature by the wrong key.
+			newRoot("other", "SLH-DSA-SHA2-128f")
+			_, err = fetch(oldRoot, &pkicmp.RootCAKeyUpdate{NewWithNew: update.NewWithNew, NewWithOld: link("new", "other")})
+			var clientErr *client.Error
+			require.ErrorAs(t, err, &clientErr)
+			assert.Equal(t, "verify root CA update", clientErr.Op)
+		})
+	}
 }
