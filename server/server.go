@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
+	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
@@ -496,7 +496,7 @@ func validateProfileExtraCerts(msg *pkicmp.PKIMessage, sender *SenderIdentity) e
 	// below its root. Whether it reaches a trust anchor is for the
 	// CertificateLookup that authenticates the signer to decide.
 	for i := 0; i < len(certs)-1; i++ {
-		if err := compositex509.CheckSignatureFrom(certs[i], certs[i+1]); err != nil {
+		if err := slhdsasig.CheckSignatureFrom(certs[i], certs[i+1]); err != nil {
 			return errors.New("extraCerts is not an ordered certificate chain")
 		}
 	}

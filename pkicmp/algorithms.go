@@ -16,6 +16,8 @@ import (
 	"github.com/cloudflare/circl/sign/slhdsa"
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
+
+	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
 var (
@@ -172,11 +174,14 @@ func compositeSignatureAlgorithm(alg AlgorithmIdentifier) (compositemldsa.Algori
 }
 
 // NewCertStatus computes confirmation with an explicit hash identifier for
-// ML-DSA and composite ML-DSA certificates.
+// ML-DSA, SLH-DSA and composite ML-DSA certificates.
 func NewCertStatus(cert *x509.Certificate, certReqID int64) (CertStatus, error) {
 	status := CertStatus{CertReqID: certReqID}
-	switch cert.SignatureAlgorithm {
-	case x509.MLDSA44, x509.MLDSA65, x509.MLDSA87:
+	_, slh, _ := slhdsasig.SignatureID(cert.Raw)
+	switch {
+	case cert.SignatureAlgorithm == x509.MLDSA44 || cert.SignatureAlgorithm == x509.MLDSA65 ||
+		cert.SignatureAlgorithm == x509.MLDSA87 || slh:
+		// These signatures name no hash, so the confirmation names SHA-512 explicitly.
 		sum := sha512.Sum512(cert.Raw)
 		status.CertHash = sum[:]
 		status.HashAlg = &AlgorithmIdentifier{Algorithm: oidSHA512}
