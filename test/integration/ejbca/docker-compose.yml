@@ -20,7 +20,7 @@ services:
   nginx:
     profiles:
       - nginx
-    image: nginx:1.31.0-alpine3.23
+    image: nginx:1.31.2-alpine3.23
     ports:
       - "8081:8080"
     volumes:
