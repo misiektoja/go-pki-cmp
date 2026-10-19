@@ -57,7 +57,9 @@ Some OpenSSL cases need a newer release and skip on older ones:
 * The elliptic curve case of the encrypted certificate test needs OpenSSL 3.5, because earlier
   releases cannot read a certificate in EnvelopedData.
 
-CI runs the OpenSSL tests with 3.5 and 4.0.
+CI runs the OpenSSL tests with 3.5 and 4.0. Its OpenSSL builds have no `openssl.cnf`, so
+`make test-integration-openssl` points `OPENSSL_CONF` to a missing file. A test that needs the local
+`openssl.cnf` then fails locally too. Plain `go test` still reads your `openssl.cnf`.
 
 ### Nokia NCM
 
