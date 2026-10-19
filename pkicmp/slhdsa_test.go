@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/mldsa"
 	"crypto/rand"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -97,7 +98,14 @@ func TestSLHDSAAlgorithmIdentifiers(t *testing.T) {
 
 // TestSLHDSAPublicKeyEncoding round-trips every parameter set through a SubjectPublicKeyInfo.
 func TestSLHDSAPublicKeyEncoding(t *testing.T) {
-	for _, alg := range slhdsaAlgorithms {
+	for i := range 12 {
+		oid := asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 20 + i}
+		id, ok := SLHDSAAlgorithmFromOID(oid)
+		require.True(t, ok)
+		alg := struct {
+			id  slhdsa.ID
+			oid asn1.ObjectIdentifier
+		}{id, oid}
 		t.Run(alg.id.String(), func(t *testing.T) {
 			key := newSLHDSAKey(t, alg.id)
 			pub := key.PublicKey()
@@ -392,4 +400,39 @@ func TestSLHDSAOpenSSLMessages(t *testing.T) {
 		require.Equal(t, slhdsa.SHAKE_128s, pub.(slhdsa.PublicKey).ID)
 		require.NoError(t, CheckCertificateRequestSignature(csr))
 	})
+}
+
+// TestSLHDSACertStatus checks that the confirmation of a certificate signed by
+// an SLH-DSA CA names SHA-512, because the signature algorithm names no hash.
+func TestSLHDSACertStatus(t *testing.T) {
+	key := newSLHDSAKey(t, slhdsa.SHA2_128f)
+	spki, err := MarshalPublicKey(key.Public())
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "SLH-DSA CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		SubjectKeyId:          []byte("SLH-DSA CA"),
+	}
+	oid, _ := SLHDSAAlgorithmOID(key.ID)
+	der, err := kemcert.CreateSLHDSACertificate(tmpl, tmpl, spki, oid, key)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+
+	status, err := NewCertStatus(cert, 7)
+	require.NoError(t, err)
+	expected := sha512.Sum512(cert.Raw)
+	require.Equal(t, expected[:], status.CertHash)
+	require.Equal(t, oidSHA512, status.HashAlg.Algorithm)
+	actual, err := status.CertificateHash(cert)
+	require.NoError(t, err)
+	require.Equal(t, status.CertHash, actual)
+	status.HashAlg = nil
+	_, err = status.CertificateHash(cert)
+	require.Error(t, err, "without hashAlg the receiver cannot choose a hash")
 }
