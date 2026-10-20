@@ -125,6 +125,10 @@ func (e *ProtectionError) Unwrap() error {
 type ParseError struct {
 	Detail string // human-readable description of what failed
 	Err    error  // optional wrapped error
+	// Header is the message header when it was decoded before the failure,
+	// so a receiver can still answer the sender with an error message. It is
+	// nil when the header itself could not be decoded.
+	Header *PKIHeader
 }
 
 // ParseError details reported from more than one place.
