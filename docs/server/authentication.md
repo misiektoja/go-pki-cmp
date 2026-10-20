@@ -61,6 +61,12 @@ Any of them may be empty. The names are lookup keys only: the server verifies th
 the certificate you return, so a client that lies about its name either finds nothing or fails the
 signature check. Trust comes from your store and proof of the private key.
 
+A `senderKID` that is present must name the key that signed the message (RFC 9483 section 3.5). The
+server compares it with the subject key identifier of the certificate you return and refuses a
+mismatch with badMessageCheck. This holds also when your lookup ignores `senderKID`, for example
+because it takes the signer from `extraCerts`. A certificate without a subject key identifier is not
+compared.
+
 Return only certificates you issued or otherwise trust and do not return revoked ones.
 
 ## The sender identity

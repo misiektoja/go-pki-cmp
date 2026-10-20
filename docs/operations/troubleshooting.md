@@ -7,6 +7,7 @@ rule it broke in its status text. Find the text below.
 
 | Status text or failure | Cause | Fix |
 | --- | --- | --- |
+| "senderKID does not identify the protection certificate" | The senderKID names another key than the certificate that signed the request | Fix the client's senderKID or its protection certificate |
 | "MAC protection parameters not accepted" | The MAC iteration count is outside `WithMACIterationLimits`, 1 to 500000 by default | Widen the limits for that fleet |
 | "MAC protection not configured" | No `WithSecretLookup` | Configure the lookup |
 | "signature protection not configured" | No `WithCertificateLookup` | Configure the lookup |
