@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
@@ -81,6 +82,14 @@ func (s *Server) verifyProtection(msg *pkicmp.PKIMessage) (*SenderIdentity, erro
 	signerCert, err := s.cfg.certificateLookup.LookupCertificate(issuerName, senderName, msg.Header.SenderKID)
 	if err != nil {
 		return nil, rejection(pkicmp.FailSignerNotTrusted, "unknown sender")
+	}
+	// RFC 9483 §3.5: a present senderKID MUST identify the key that verifies
+	// the protection. A lookup may find the certificate without senderKID, for
+	// example from extraCerts, so the identifier is compared here. A
+	// certificate without a subject key identifier cannot be compared.
+	kid := msg.Header.SenderKID
+	if len(kid) > 0 && len(signerCert.SubjectKeyId) > 0 && !bytes.Equal(kid, signerCert.SubjectKeyId) {
+		return nil, rejection(pkicmp.FailBadMessageCheck, "senderKID does not identify the protection certificate")
 	}
 
 	// Verify the signature directly against the looked-up certificate. No chain
