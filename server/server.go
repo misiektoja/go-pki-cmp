@@ -92,13 +92,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var resp *pkicmp.PKIMessage
 	msg, err := pkicmp.ParsePKIMessage(body)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
+		// RFC 9483 §3.5 answers a malformed message with badDataFormat. That
+		// needs the header to address the sender, so input without a readable
+		// header stays an HTTP error (RFC 9811 §3.3).
+		pe, ok := errors.AsType[*pkicmp.ParseError](err)
+		if !ok || pe.Header == nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+		resp = s.malformedMessageResponse(pe.Header)
+	} else {
+		resp = s.processMessage(r.Context(), msg)
 	}
-
-	resp := s.processMessage(r.Context(), msg)
 
 	respDER, err := resp.MarshalBinary()
 	if err != nil {
@@ -109,6 +117,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/pkixcmp")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respDER)
+}
+
+// malformedMessageResponse refuses a message whose content after the header could not be decoded.
+//
+// The message was never authenticated, so the error is protected like any other
+// error raised before authentication.
+func (s *Server) malformedMessageResponse(header *pkicmp.PKIHeader) *pkicmp.PKIMessage {
+	req := &pkicmp.PKIMessage{Header: *header}
+	// RFC 9810 §7: answer with the closest supported version.
+	req.Header.PVNO = min(max(req.Header.PVNO, pkicmp.PVNO2), pkicmp.PVNO3)
+	return s.buildErrorResponse(req, nil, pkicmp.PKIStatusInfo{
+		Status:       pkicmp.StatusRejection,
+		FailInfo:     pkicmp.FailBadDataFormat,
+		StatusString: pkicmp.PKIFreeText{"malformed message"},
+	})
 }
 
 // processMessage handles a parsed PKIMessage and returns a response.
