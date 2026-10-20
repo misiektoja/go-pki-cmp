@@ -85,7 +85,7 @@ Every error is typed and carries an `InvalidReason`:
 
 | Type | Meaning |
 | --- | --- |
-| `ParseError` | Malformed message, missing field or a parameter outside the accepted range |
+| `ParseError` | Malformed message, missing field or a parameter outside the accepted range. When the failure comes after a readable header, its `Header` field holds that header, so a server can answer with an error message |
 | `ProtectionError` | Protection could not be applied |
 | `VerificationError` | Bad MAC or signature, wrong mechanism, sender mismatch or no certificate to verify with |
 

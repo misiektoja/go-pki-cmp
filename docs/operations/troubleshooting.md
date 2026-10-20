@@ -7,6 +7,7 @@ rule it broke in its status text. Find the text below.
 
 | Status text or failure | Cause | Fix |
 | --- | --- | --- |
+| "malformed message" with badDataFormat | The message after its header cannot be decoded. A request without a readable header gets HTTP 400 instead | Fix the client encoding |
 | "senderKID does not identify the protection certificate" | The senderKID names another key than the certificate that signed the request | Fix the client's senderKID or its protection certificate |
 | "MAC protection parameters not accepted" | The MAC iteration count is outside `WithMACIterationLimits`, 1 to 500000 by default | Widen the limits for that fleet |
 | "MAC protection not configured" | No `WithSecretLookup` | Configure the lookup |
