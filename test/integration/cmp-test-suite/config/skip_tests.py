@@ -33,13 +33,9 @@ KNOWN_FAILURES = {
 # their values to enforce, while these tests expect an answer or a rejection.
 for _name in (
     "CA MUST Accept CA Protocol Encryption Certificate Request",
-    "CA MUST Reject CA Protocol Encryption Certificate Request with Set InfoValue",
     "CA MUST Accept Signing Key Pair Types Request",
-    "CA MUST Reject Signing Key Pair Types Request with Set InfoValue",
     "CA MUST Accept Encryption KeyAgreement Key Pair Types Request",
-    "CA MUST Reject Encryption KeyAgreement Key Pair Types Request with Set InfoValue",
     "CA MUST Accept Preferred Symmetric Algorithm Request",
-    "CA MUST Reject Preferred Symmetric Algorithm Request with Set InfoValue",
     "CA MUST Accept Revocation Passphrase",
     "CA MUST Respond to Supported Language Tags Message",
     "CA MUST Reject Supported Language Tags without a value",
