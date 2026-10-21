@@ -1870,7 +1870,7 @@ the sender sets its messageTime.</p>
 <tbody>
 <tr>
 <td><code>ParseError</code></td>
-<td>Malformed message, missing field or a parameter outside the accepted range</td>
+<td>Malformed message, missing field or a parameter outside the accepted range. When the failure comes after a readable header, its <code>Header</code> field holds that header, so a server can answer with an error message</td>
 </tr>
 <tr>
 <td><code>ProtectionError</code></td>

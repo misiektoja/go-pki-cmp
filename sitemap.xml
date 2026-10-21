@@ -2,118 +2,118 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/architecture/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/getting-started/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/known-limitations/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/support-matrix/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/client/enrollment/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/client/indirect-pop/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/client/response-verification/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/client/revocation/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/client/support-messages/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/development/development/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/development/release-process/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/development/testing/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/interoperability/tested-implementations/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/operations/troubleshooting/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/pkicmp/messages-and-protection/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/reference/client-options/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/reference/compatibility/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/reference/server-options/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/security/security-model/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/authentication/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/ca/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/delayed-issuance/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/indirect-pop/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/policy/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/registration-authorities/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/revocation/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/support-messages/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
     <url>
          <loc>https://misiektoja.github.io/go-pki-cmp/server/transactions/</loc>
-         <lastmod>2026-10-19</lastmod>
+         <lastmod>2026-10-21</lastmod>
     </url>
 </urlset>

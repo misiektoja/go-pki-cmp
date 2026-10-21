@@ -1782,7 +1782,9 @@ as RFC 4210 and RFC 9810 require. <code>WithStrictProfileValidation</code> refus
 </tr>
 </tbody>
 </table>
-<p>A new request beyond a transaction limit is refused with systemUnavail.</p>
+<p>A new request beyond a transaction limit is refused with systemUnavail. A first message that reuses
+the transaction ID of a transaction the server still holds is refused with transactionIdInUse, also
+when the limits are full.</p>
 <h2 id="cleanup">Cleanup<a class="headerlink" href="#cleanup" title="Permanent link">&para;</a></h2>
 <p>Call <code>CleanupExpired</code> periodically. It removes completed and stale transactions, tells
 <code>CertificateConfirmer</code> about certificates that were never confirmed and tells <code>WaitingExpirer</code> about

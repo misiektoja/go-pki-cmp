@@ -1707,6 +1707,16 @@ rule it broke in its status text. Find the text below.</p>
 </thead>
 <tbody>
 <tr>
+<td>"malformed message" with badDataFormat</td>
+<td>The message after its header cannot be decoded. A request without a readable header gets HTTP 400 instead</td>
+<td>Fix the client encoding</td>
+</tr>
+<tr>
+<td>"senderKID does not identify the protection certificate"</td>
+<td>The senderKID names another key than the certificate that signed the request</td>
+<td>Fix the client's senderKID or its protection certificate</td>
+</tr>
+<tr>
 <td>"MAC protection parameters not accepted"</td>
 <td>The MAC iteration count is outside <code>WithMACIterationLimits</code>, 1 to 500000 by default</td>
 <td>Widen the limits for that fleet</td>
