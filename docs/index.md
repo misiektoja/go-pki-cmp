@@ -29,7 +29,7 @@ them can sign CMP messages. **ML-KEM** keys are certified through proof of posse
 go get github.com/misiektoja/go-pki-cmp
 ```
 
-The module needs Go 1.27.2 or newer. Releases up to v0.3.2 use the module path
+The module needs Go 1.27.3 or newer. Releases up to v0.3.2 use the module path
 `github.com/misiektoja/go-pkicmp-ng`.
 
 ## Start here

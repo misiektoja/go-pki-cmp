@@ -9,7 +9,7 @@ enrolls a key with a shared secret, updates it with a signed request and revokes
 
 ## What you need
 
-* Go 1.27.2 or newer, the minimum the module declares
+* Go 1.27.3 or newer, the minimum the module declares
 * A clone of the repository
 * Port 8080 free on localhost
 
