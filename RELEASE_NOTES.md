@@ -2,6 +2,18 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.7.2 - 22 Oct 2026
+
+This release lets a client keep the CA certificates in caPubs from becoming trust anchors and requires Go 1.27.3, which fixes GO-2026-6809 in `crypto/x509`.
+
+### `client`
+
+* **`WithoutCAPubsTrust`** keeps the CA certificates in caPubs of a MAC-protected response from extending `WithTrustedCAs`, so the issued certificate must chain to the configured trusted CAs. Use it when the anchors are known out of band. Without the option caPubs are still trusted, as RFC 9810 section 5.3.2 allows. `EnrollResult.CAPubs` still holds them.
+
+### Requirements
+
+* **Go 1.27.3 or newer** is required. Go 1.27.2 has GO-2026-6809 in `crypto/x509`, which the client and server reach when they verify certificate chains.
+
 ## v0.7.1 - 21 Oct 2026
 
 This release fixes how the server answers faulty requests. A senderKID that names another key is refused, a malformed request gets an error message with badDataFormat and a reused transaction ID gets transactionIdInUse. The first and last fixes matter most to hosts whose certificate lookup ignores senderKID or that restore stored transactions into a server with small limits.

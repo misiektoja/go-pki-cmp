@@ -166,7 +166,8 @@
 //   - Signature-protected response: verified against trusted CAs configured
 //     via [WithTrustedCAs]. The client rejects the response if no trusted CAs
 //     are configured. If the server includes caPubs in an IP response,
-//     those may be used directly as trusted CAs.
+//     those may be used directly as trusted CAs unless [WithoutCAPubsTrust]
+//     is set.
 //
 // A response signed with SHA-1 is refused unless [WithSHA1Signatures] is set.
 //

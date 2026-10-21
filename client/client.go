@@ -25,6 +25,7 @@ type Client struct {
 	maxCheckAfter       time.Duration
 	allowSHA1Signatures bool
 	allowKIDMismatch    bool
+	ignoreCAPubsTrust   bool
 	minMACIterations    int
 	maxMACIterations    int
 }
@@ -162,6 +163,21 @@ func WithSHA1Signatures() Option {
 // verify the signature. See [pkicmp.VerifyOptions.AllowSenderKIDMismatch].
 func WithSenderKIDMismatch() Option {
 	return func(c *Client) { c.allowKIDMismatch = true }
+}
+
+// WithoutCAPubsTrust keeps caPubs from extending [WithTrustedCAs], so an issued
+// certificate must chain to the configured trusted CAs.
+//
+// By default the CA certificates in caPubs of a MAC-protected response are
+// trusted as roots for the rest of the operation (RFC 9810 §5.3.2), which is
+// how a device gets its first anchor. RFC 9483 §4.1 leaves it to the end
+// entity whether the sender may install new anchors. Use this option when the
+// anchors are known out of band. caPubs are still returned in
+// [EnrollResult.CAPubs] and may serve as intermediates. Without a trusted CA
+// pool the issued certificate of a MAC-protected response is then accepted
+// unverified, as when the response carries no caPubs.
+func WithoutCAPubsTrust() Option {
+	return func(c *Client) { c.ignoreCAPubsTrust = true }
 }
 
 // WithMACIterationLimits sets the range of PasswordBasedMac and PBMAC1

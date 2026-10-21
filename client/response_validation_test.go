@@ -240,6 +240,91 @@ func TestCAPubsTrustBootstrap(t *testing.T) {
 	assert.Equal(t, targetCACert.Raw, result.CAPubs[0].Raw)
 }
 
+// caPubsServer answers an ir with a certificate from issuer and issuer's certificate in caPubs, both
+// MAC-protected with the secret "secret", and a certConf with pkiConf.
+func caPubsServer(issuer *certyaml.Certificate) *httptest.Server {
+	issuerCert, _ := issuer.X509Certificate()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		req, err := pkicmp.ParsePKIMessage(body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		respBody := pkicmp.NewPKIConfBody()
+		if req.Body.Type == pkicmp.BodyTypeIR {
+			eeCert := issueForRequest(issuer, pkix.Name{CommonName: "enrolled-ee"}, req)
+			respBody = pkicmp.NewIPBody(&pkicmp.CertRepMessage{
+				CAPubs: []pkicmp.CMPCertificate{{Raw: issuerCert.Raw}},
+				Response: []pkicmp.CertResponse{{
+					CertReqID: 0,
+					Status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
+					CertifiedKeyPair: &pkicmp.CertifiedKeyPair{
+						CertOrEncCert: pkicmp.CertOrEncCert{Certificate: &pkicmp.CMPCertificate{Raw: eeCert.Raw}},
+					},
+				}},
+			})
+		}
+		resp := &pkicmp.PKIMessage{
+			Header: pkicmp.PKIHeader{
+				PVNO:          req.Header.PVNO,
+				TransactionID: req.Header.TransactionID,
+				RecipNonce:    req.Header.SenderNonce,
+			},
+			Body: respBody,
+		}
+		mc, _ := pkicmp.NewMACCredentials([]byte("secret"))
+		_ = mc.Protect(resp)
+		der, _ := resp.MarshalBinary()
+		w.Header().Set("Content-Type", "application/pkixcmp")
+		_, _ = w.Write(der)
+	}))
+}
+
+// TestWithoutCAPubsTrust checks that the option keeps caPubs of a MAC-protected response from
+// trusting an issuer outside the configured trusted CAs.
+func TestWithoutCAPubsTrust(t *testing.T) {
+	pinned := &certyaml.Certificate{Subject: "cn=pinned-ca"}
+	pinnedCert, _ := pinned.X509Certificate()
+	other := &certyaml.Certificate{Subject: "cn=other-ca"}
+
+	tests := []struct {
+		name    string
+		issuer  *certyaml.Certificate
+		opts    []client.Option
+		wantErr bool
+	}{
+		{"default trusts caPubs", other, nil, false},
+		{"caPubs CA not trusted", other, []client.Option{client.WithoutCAPubsTrust()}, true},
+		{"issuer among the trusted CAs", pinned, []client.Option{client.WithoutCAPubsTrust()}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := caPubsServer(tt.issuer)
+			defer server.Close()
+
+			key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			creds, err := pkicmp.NewMACCredentials([]byte("secret"))
+			require.NoError(t, err)
+			trusted := x509.NewCertPool()
+			trusted.AddCert(&pinnedCert)
+			c := client.NewClient(server.URL, append([]client.Option{client.WithTrustedCAs(trusted)}, tt.opts...)...)
+
+			result, err := c.SendIR(context.Background(), key, creds, client.WithTemplateSubject(pkix.Name{CommonName: "test"}))
+			if tt.wantErr {
+				var ce *client.Error
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "verify certificate trust", ce.Op)
+				return
+			}
+			require.NoError(t, err)
+			issuerCert, _ := tt.issuer.X509Certificate()
+			require.Len(t, result.CAPubs, 1)
+			assert.Equal(t, issuerCert.Raw, result.CAPubs[0].Raw)
+		})
+	}
+}
+
 func TestResponseValidationRejectsMismatchedIssuer(t *testing.T) {
 	cfg := setupValidationCerts()
 	server := setupMockServer(cfg, func(req, resp *pkicmp.PKIMessage) {

@@ -1,6 +1,6 @@
 module github.com/misiektoja/go-pki-cmp
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/cloudflare/circl v1.6.5

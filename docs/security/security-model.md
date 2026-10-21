@@ -63,7 +63,7 @@ checks have fuzz targets that CI runs.
 * Every response is verified with the shared secret or against the trust anchors.
 * The transaction ID, nonces and `certReqId` must match the request.
 * The issued certificate must certify the requested key and chain to the anchors.
-* `caPubs` extend the anchors only for a MAC-protected response.
+* `caPubs` extend the anchors only for a MAC-protected response and never with `WithoutCAPubsTrust`.
 * Waits between polls are clamped and the response size is limited.
 * An unverified error status is reported as `UnverifiedStatusError` and never as a
   `PKIStatusError`, so code that acts on failure bits cannot be steered by a forged error.

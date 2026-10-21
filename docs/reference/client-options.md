@@ -13,6 +13,7 @@ in full.
 | [`WithResponseProtection`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithResponseProtection) | `pkicmp.ProtectionAny` | Requires MAC or signature protection on every response |
 | [`WithExtraCerts`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithExtraCerts) | None | Certificates added to `extraCerts` of every request |
 | [`WithServerCerts`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithServerCerts) | None | CA protection certificates known out of band, for responses that do not carry them |
+| [`WithoutCAPubsTrust`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithoutCAPubsTrust) | Off | Keeps the CA certificates in `caPubs` of a MAC-protected response from becoming anchors |
 | [`WithSenderKIDMismatch`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSenderKIDMismatch) | Off | Accepts a signed response whose senderKID names none of the candidate certificates |
 | [`WithSHA1Signatures`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSHA1Signatures) | Off | Accepts responses signed with SHA-1 |
 | [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMACIterationLimits) | 1 to 500000 | Accepted MAC iteration counts in responses |

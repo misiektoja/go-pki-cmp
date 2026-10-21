@@ -158,11 +158,12 @@ func parseCMPCertificates(certs []pkicmp.CMPCertificate) []*x509.Certificate {
 	return parsed
 }
 
-// enrollmentTrustPool returns the configured trusted CAs extended with caPubs when the response was MAC-verified.
+// enrollmentTrustPool returns the configured trusted CAs extended with caPubs when the response was
+// MAC-verified and [WithoutCAPubsTrust] is not set.
 func (c *Client) enrollmentTrustPool(vr *pkicmp.VerifyResult, caPubs []*x509.Certificate) *x509.CertPool {
 	// caPubs extend the configured trusted CAs only when the response was
 	// protected with the shared secret (RFC 9810 §5.3.2).
-	if vr == nil || !vr.MACVerified || len(caPubs) == 0 {
+	if c.ignoreCAPubsTrust || vr == nil || !vr.MACVerified || len(caPubs) == 0 {
 		return c.trustedCAs
 	}
 	var pool *x509.CertPool
