@@ -1711,6 +1711,11 @@ in full.</p>
 <td>CA protection certificates known out of band, for responses that do not carry them</td>
 </tr>
 <tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithoutCAPubsTrust"><code>WithoutCAPubsTrust</code></a></td>
+<td>Off</td>
+<td>Keeps the CA certificates in <code>caPubs</code> of a MAC-protected response from becoming anchors</td>
+</tr>
+<tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSenderKIDMismatch"><code>WithSenderKIDMismatch</code></a></td>
 <td>Off</td>
 <td>Accepts a signed response whose senderKID names none of the candidate certificates</td>

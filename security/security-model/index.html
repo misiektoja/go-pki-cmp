@@ -1809,7 +1809,7 @@ checks have fuzz targets that CI runs.</p>
 <li>Every response is verified with the shared secret or against the trust anchors.</li>
 <li>The transaction ID, nonces and <code>certReqId</code> must match the request.</li>
 <li>The issued certificate must certify the requested key and chain to the anchors.</li>
-<li><code>caPubs</code> extend the anchors only for a MAC-protected response.</li>
+<li><code>caPubs</code> extend the anchors only for a MAC-protected response and never with <code>WithoutCAPubsTrust</code>.</li>
 <li>Waits between polls are clamped and the response size is limited.</li>
 <li>An unverified error status is reported as <code>UnverifiedStatusError</code> and never as a
   <code>PKIStatusError</code>, so code that acts on failure bits cannot be steered by a forged error.</li>
