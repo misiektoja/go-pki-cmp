@@ -3,6 +3,7 @@ package pkicmp
 import (
 	"crypto/rand"
 	"encoding/asn1"
+	"errors"
 	"time"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -166,6 +167,9 @@ func ParsePKIMessage(der []byte) (*PKIMessage, error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
+//
+// A failure after the header was decoded returns a [ParseError] whose Header
+// field holds a copy of that header.
 func (m *PKIMessage) UnmarshalBinary(data []byte) error {
 	s := cryptobyte.String(data)
 	var seq cryptobyte.String
@@ -183,7 +187,24 @@ func (m *PKIMessage) UnmarshalBinary(data []byte) error {
 	if err := m.Header.unmarshal(&rawHeader); err != nil {
 		return err
 	}
+	if err := m.unmarshalAfterHeader(&s, &seq); err != nil {
+		return withHeader(err, m.Header)
+	}
+	return nil
+}
 
+// withHeader attaches a copy of header to err, a failure to decode the message after that header.
+func withHeader(err error, header PKIHeader) error {
+	if pe, ok := errors.AsType[*ParseError](err); ok {
+		pe.Header = &header
+		return err
+	}
+	return &ParseError{Detail: "invalid PKIMessage", Err: err, Header: &header}
+}
+
+// unmarshalAfterHeader decodes the body, protection and extraCerts that follow the header in seq
+// and checks that neither seq nor s, the input after the message, holds trailing data.
+func (m *PKIMessage) unmarshalAfterHeader(s, seq *cryptobyte.String) error {
 	// PKIBody
 	var rawBody cryptobyte.String
 	var bodyTag cbasn1.Tag

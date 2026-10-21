@@ -20,7 +20,9 @@ as RFC 4210 and RFC 9810 require. `WithStrictProfileValidation` refuses such req
 | `WithWaitingLifetime` | 24 hours | How long a waiting request stays after the client's last poll |
 | `server.MaxRequestBodySize` | 1 MiB | Largest accepted request body |
 
-A new request beyond a transaction limit is refused with systemUnavail.
+A new request beyond a transaction limit is refused with systemUnavail. A first message that reuses
+the transaction ID of a transaction the server still holds is refused with transactionIdInUse, also
+when the limits are full.
 
 ## Cleanup
 

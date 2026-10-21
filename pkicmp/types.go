@@ -206,8 +206,17 @@ func (itv *InfoTypeAndValue) unmarshal(s *cryptobyte.String) error {
 	if !seq.ReadASN1ObjectIdentifier(&itv.InfoType) {
 		return &ParseError{Detail: "invalid InfoTypeAndValue OID"}
 	}
+	// infoValue is ANY DEFINED BY infoType OPTIONAL, so it is one DER element or absent.
 	if !seq.Empty() {
-		itv.InfoValue = seq
+		var value cryptobyte.String
+		var tag cbasn1.Tag
+		if !seq.ReadAnyASN1Element(&value, &tag) {
+			return &ParseError{Detail: "invalid InfoTypeAndValue infoValue"}
+		}
+		if !seq.Empty() {
+			return &ParseError{Detail: "trailing data after InfoTypeAndValue infoValue"}
+		}
+		itv.InfoValue = value
 	}
 	return nil
 }

@@ -158,6 +158,13 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 	key := makeKey(credentialID, transactionID)
 	ck := makeCredentialKey(credentialID)
 
+	// An existing transaction already holds its capacity, so a reused
+	// transactionID is reported as in use rather than as a full server.
+	// LoadOrStore below still catches a transaction stored concurrently.
+	if _, ok := t.transactions.Load(key); ok {
+		return true, nil
+	}
+
 	// Reserve capacity before storing to prevent transient overshoot.
 	newCount := t.count.Add(1)
 	if int(newCount) > t.maxTransactions {

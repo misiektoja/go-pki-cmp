@@ -40,7 +40,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 		return nil, rejection(pkicmp.FailBadRequest, "")
 	}
 	if err != nil {
-		return nil, err
+		return nil, rejection(pkicmp.FailBadDataFormat, "malformed certificate request")
 	}
 	if len(*msgs) == 0 {
 		return nil, rejection(pkicmp.FailBadDataFormat, "empty CertReqMessages")
@@ -84,7 +84,7 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 		rest := reqMsg.CertReq.CertTemplate.Extensions
 		// Parse DER SEQUENCE OF Extension using encoding/asn1.
 		if _, err := asn1.Unmarshal(rest, &exts); err != nil {
-			return nil, err
+			return nil, rejection(pkicmp.FailBadDataFormat, "malformed certificate template extensions")
 		}
 		result.extensions = exts
 	}

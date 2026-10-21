@@ -2,6 +2,21 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.7.1 - 21 Oct 2026
+
+This release fixes how the server answers faulty requests. A senderKID that names another key is refused, a malformed request gets an error message with badDataFormat and a reused transaction ID gets transactionIdInUse. The first and last fixes matter most to hosts whose certificate lookup ignores senderKID or that restore stored transactions into a server with small limits.
+
+### `pkicmp`
+
+* **infoValue** in genm, genp and generalInfo items must be one DER element. A value that is not valid ASN.1 or carries trailing data now fails parsing with a `ParseError`. Before, it was kept as raw bytes.
+* **`ParseError.Header`** holds the message header when parsing failed after a readable header, so a receiver can still answer the sender.
+
+### `server`
+
+* **senderKID check.** A signed request whose senderKID does not match the subject key identifier of the certificate that verifies it is refused with badMessageCheck, as RFC 9483 section 3.5 requires. Before, a `CertificateLookup` that ignored senderKID let such a request through. A certificate without a subject key identifier is not compared.
+* **Malformed requests** whose header can be read get an error message with badDataFormat over HTTP 200. Before, a malformed infoValue in a genm got a genp. A malformed ir, cr or kur body or malformed template extensions got systemFailure. A malformed protection or extraCerts field or trailing data got HTTP 400. Input without a readable header still gets HTTP 400. That now includes a request whose generalInfo holds a malformed infoValue, which was processed before.
+* **transactionIdInUse** answers a first message that reuses the transaction ID of a transaction the server still holds, also when a transaction limit is full. Before, a full limit answered systemUnavail with "maximum transaction limit reached".
+
 ## v0.7.0 - 19 Oct 2026
 
 This release adds **SLH-DSA keys** (FIPS 205, RFC 9909) for all twelve parameter sets. Devices can enroll SLH-DSA keys with `ir`, `cr`, `kur` and `p10cr` and protect CMP messages with them. A CA can hold an SLH-DSA key, sign the CMP responses with it and have clients verify its certificates. It works with OpenSSL 3.5 and later in both directions and with EJBCA 9.6.3. The library now depends on `github.com/cloudflare/circl` for SLH-DSA.
