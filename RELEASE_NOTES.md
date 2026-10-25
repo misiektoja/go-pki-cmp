@@ -12,6 +12,10 @@ This release lets a client shape its requests the way vendor clients and test sc
 * **`WithGeneralInfo`** adds items to the generalInfo field of the request header after the certProfile, for example a vendor profile identifier a CA keys its policy on.
 * **`WithPOPHash`** selects SHA-1, SHA-256, SHA-384 or SHA-512 for the signature proof of possession of an RSA or ECDSA key. Other key types take no digest and refuse the option.
 
+### `server`
+
+* **`WithAnyCertReqID`** accepts an ir, cr or kur with a certReqId other than 0, which `LightweightPolicy` refuses by default as RFC 9483 asks, and repeats it in the response. Use it for RFC 4210 clients that number their requests or to test how a client checks the certReqId.
+
 ### `pkicmp`
 
 * **`SignatureCredentials.WithHash`** returns credentials that protect messages with the chosen digest instead of the one the key type selects, with the same choices and limits as `WithPOPHash`. **`CertReqMsg.GeneratePOPWithHash`** does the same for a proof of possession built by hand. A SHA-1 signature is still refused by a verifier unless it allows SHA-1.
