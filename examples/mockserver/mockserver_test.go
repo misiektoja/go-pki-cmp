@@ -8,10 +8,12 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"log/slog"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
@@ -166,4 +168,49 @@ func TestKeyLifecycle(t *testing.T) {
 			require.True(t, pkicmp.HasFailure(err, pkicmp.FailBadMessageCheck), "got %v", err)
 		})
 	}
+}
+
+// TestRevocationInvalidityDate revokes a certificate by issuer and serial number with an
+// invalidityDate, which the CRL entry then carries (RFC 5280 §5.3.2).
+func TestRevocationInvalidityDate(t *testing.T) {
+	ctx := context.Background()
+	ca, c := newServer(t)
+	subject := pkix.Name{CommonName: "device"}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	macCreds, err := pkicmp.NewMACCredentials(iak)
+	require.NoError(t, err)
+	ir, err := c.SendIR(ctx, key, macCreds,
+		client.WithSenderKID(reference),
+		client.WithSender(subject),
+		client.WithTemplateSubject(subject),
+	)
+	require.NoError(t, err)
+
+	// The holder names its own certificate by issuer and serial number, which needs no authorizer.
+	creds, err := pkicmp.NewSignatureCredentials(key, ir.Certificate, ca.Cert())
+	require.NoError(t, err)
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	err = c.SendRRBySerial(ctx, ca.Cert().Subject, ir.Certificate.SerialNumber, pkicmp.CRLReasonKeyCompromise, creds,
+		client.WithInvalidityDate(at))
+	require.NoError(t, err)
+
+	crl, err := ca.LatestCRL(ctx, pkicmp.CRLSource{}, nil)
+	require.NoError(t, err)
+	require.Len(t, crl.RevokedCertificateEntries, 1)
+	entry := crl.RevokedCertificateEntries[0]
+	require.Zero(t, entry.SerialNumber.Cmp(ir.Certificate.SerialNumber))
+	require.Equal(t, int(pkicmp.CRLReasonKeyCompromise), entry.ReasonCode)
+	var found bool
+	for _, ext := range entry.Extensions {
+		if !ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 24}) {
+			continue
+		}
+		found = true
+		var got time.Time
+		_, err := asn1.UnmarshalWithParams(ext.Value, &got, "generalized")
+		require.NoError(t, err)
+		require.True(t, got.Equal(at), "invalidityDate %v", got)
+	}
+	require.True(t, found, "the CRL entry lacks the invalidityDate extension")
 }
