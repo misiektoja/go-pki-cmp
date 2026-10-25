@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
@@ -22,6 +23,8 @@ type requestOptions struct {
 	certReqID       int64
 	popHash         crypto.Hash
 	implicitConfirm bool
+	// invalidityDate is the invalidityDate CRL entry extension of an rr. Zero sends none.
+	invalidityDate time.Time
 }
 
 // RequestOption configures a specific enrollment request.
@@ -106,4 +109,14 @@ func WithPOPHash(hash crypto.Hash) RequestOption {
 // option.
 func WithImplicitConfirm() RequestOption {
 	return func(o *requestOptions) { o.implicitConfirm = true }
+}
+
+// WithInvalidityDate adds the invalidityDate CRL entry extension (RFC 5280
+// §5.3.2) to a revocation request: the time at which the key is known or
+// suspected to have been compromised or the certificate otherwise became
+// invalid, which the CA may publish in the CRL entry. It is sent as a
+// GeneralizedTime in UTC with a resolution of one second. The zero time sends
+// none. Enrollment and general messages ignore the option.
+func WithInvalidityDate(t time.Time) RequestOption {
+	return func(o *requestOptions) { o.invalidityDate = t }
 }
