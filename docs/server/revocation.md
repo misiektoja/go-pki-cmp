@@ -27,6 +27,12 @@ The CA must find the certificate itself and report, as RFC 9483 section 5.1.3 as
 A nil error reports the revocation as accepted in the `rp`. `pkicmp.CRLReasonRemoveFromCRL` asks to
 release a certificate from hold.
 
+`RevocationRequest.InvalidityDate` is the invalidityDate the request asks for (RFC 5280 section
+5.3.2), the time at which the key was compromised or the certificate otherwise became invalid, for
+the CA to publish in the CRL entry. It is zero when the request carries none. A request whose
+invalidityDate is not a GeneralizedTime is refused with badDataFormat and one that carries two with
+badRequest. `Extensions` holds every requested CRL entry extension for the CA to read.
+
 ## Who may revoke
 
 The server authorizes the request before it calls `RevokeCertificate`. By default only the

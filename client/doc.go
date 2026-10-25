@@ -5,7 +5,8 @@
 // registration), [Client.SendCR] (certification), [Client.SendKUR] (key update),
 // and [Client.SendP10CR] (PKCS#10 request). All handle the full lifecycle
 // transparently: protection, response verification, polling, and certificate
-// confirmation. [Client.SendRR] asks the CA to revoke a certificate. The
+// confirmation. [Client.SendRR] asks the CA to revoke a certificate and
+// [Client.SendRRBySerial] one known by issuer and serial number only. The
 // support messages of RFC 9483 §4.3, such as [Client.GetRootCAUpdate], ask the
 // CA for information.
 //

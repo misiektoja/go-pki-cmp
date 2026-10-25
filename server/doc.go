@@ -217,6 +217,9 @@
 //	    return c.store.Revoke(cert, req.Reason)
 //	}
 //
+// [RevocationRequest.InvalidityDate] is the invalidityDate the request asks
+// for (RFC 5280 §5.3.2), zero when it carries none.
+//
 // The server authorizes the request before calling RevokeCertificate. By
 // default only the certificate being revoked may sign it, as RFC 9483 §4.2
 // requires. Requests signed by anyone else, such as a registration authority
