@@ -144,7 +144,9 @@
 //     indefinitely or drive polling as fast as the network allows.
 //  3. The final response may identify either the last PollReq or the original
 //     request whose processing was delayed, as RFC 9483 Section 4.4 requires.
-//  4. Once the certificate is issued the client automatically sends certConf.
+//  4. Once the certificate is issued the client automatically sends certConf,
+//     unless the CA granted the implicit confirmation [WithImplicitConfirm]
+//     asks for.
 //  5. The Send* method returns only after the full exchange completes.
 //
 // Control the blocking behavior with:
@@ -208,12 +210,19 @@
 // Its subject is not checked, because a CA may return grantedWithMods having
 // changed it. A certificate that fails these checks or arrives under another
 // certReqId is rejected in certConf before the error is returned, so the CA
-// learns of it at once (RFC 9483 §3.6.1).
+// learns of it at once (RFC 9483 §3.6.1). With implicit confirmation granted
+// the error is returned without a message, as the same section asks.
 //
 // A certificate the client accepts can still fail in the confirming certConf,
 // for example when the CA refuses it. The error is then a [ConfirmationError]
 // holding the certificate. The CA may keep it or revoke it as unconfirmed, so
 // check the CA before retrying, because a retry may issue a second one.
+//
+// [WithImplicitConfirm] asks the CA to skip the certConf round trip (RFC 9810
+// §5.1.1.1). When the CA grants it in the certificate response, the Send*
+// method returns with [EnrollResult.ImplicitConfirm] set and sends nothing
+// more. A grant the request did not ask for is honored as well, because the
+// CA has closed the transaction.
 //
 // # Limits
 //

@@ -29,7 +29,7 @@ was tested with.
 | `kur` / `kup` | `SendKUR`, `SendKURWithIndirectPOP` | Always |
 | `p10cr` / `cp` | `SendP10CR` | Always |
 | `rr` / `rp` | `SendRR` | A CA that implements `Revoker` |
-| `certConf` / `pkiConf` | Sent and checked automatically | Always. `WithImplicitConfirm` skips it |
+| `certConf` / `pkiConf` | Sent and checked automatically, unless the CA grants the implicit confirmation `WithImplicitConfirm` asks for | Always. `WithImplicitConfirm` skips it |
 | `pollReq` / `pollRep` | Sent automatically | A CA that implements `PendingChecker` |
 | `genm` / `genp` | `GetCACertificates`, `GetRootCAUpdate`, `GetCertReqTemplate`, `GetCRLUpdate`, `GetCurrentCRL`, `SendGenM` | The matching provider interfaces |
 | `popdecc` / `popdecr` | Answered automatically with `ChallengeResponse` | `WithChallengeResponsePOP` |

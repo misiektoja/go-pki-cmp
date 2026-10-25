@@ -38,6 +38,7 @@ To send a MAC iteration count outside the default range, set it on the credentia
 | [`WithGeneralInfo`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithGeneralInfo) | Adds items to `generalInfo` of the request header, after the certProfile |
 | [`WithCertReqID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertReqID) | The `certReqId` of an ir, cr or kur, which the CA must repeat. Default 0 |
 | [`WithPOPHash`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithPOPHash) | The digest of the signature proof of possession of an RSA or ECDSA key. Default by key type |
+| [`WithImplicitConfirm`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithImplicitConfirm) | Asks for implicit confirmation. When the CA grants it, no `certConf` is sent and `EnrollResult.ImplicitConfirm` is true |
 
 The digest of signature protection is chosen the same way on the credentials with
 `pkicmp.SignatureCredentials.WithHash`.

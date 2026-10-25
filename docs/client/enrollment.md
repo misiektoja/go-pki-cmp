@@ -79,6 +79,7 @@ Request options apply to one call:
 | `WithGeneralInfo` | Adds items to `generalInfo` of the header, such as a vendor profile identifier |
 | `WithCertReqID` | The `certReqId` of the request, which the CA repeats in its answer. Default 0 |
 | `WithPOPHash` | The digest of the signature proof of possession of an RSA or ECDSA key |
+| `WithImplicitConfirm` | Asks for implicit confirmation, so that a CA that grants it needs no `certConf` |
 
 Many CAs route requests on the recipient name and refuse a request without one. Set
 `client.WithRecipient` on the client whenever the CA name is known. [Client options](../reference/client-options.md)
@@ -93,6 +94,21 @@ clamped by `WithCheckAfterLimits` to between 1 second and 1 hour by default and 
 
 Give every call a context with a deadline. It is the only bound on the whole operation, because the
 CA chooses each wait.
+
+## Confirmation
+
+The method confirms an issued certificate with `certConf` and waits for `pkiConf` before it returns.
+`WithImplicitConfirm` adds `implicitConfirm` to the request header (RFC 9810 section 5.1.1.1), which
+asks the CA to skip that round trip. A CA that agrees repeats the item in its certificate response.
+The method then returns with `EnrollResult.ImplicitConfirm` set and sends nothing more, because the
+CA has closed the transaction. A CA that wants the confirmation leaves the item out and the method
+confirms as usual. RFC 9483 section 4.1.1 asks an end entity to request implicit confirmation unless
+it needs the confirmation.
+
+A grant the request did not ask for is honored as well, as OpenSSL does, since the CA would refuse
+a `certConf` for a closed transaction. A certificate the client refuses after a grant is not
+reported to the CA, as RFC 9483 section 3.6.1 asks. The option applies to `ir`, `cr`, `kur` and
+`p10cr` and is ignored by `SendRR` and the general messages.
 
 ## Results and errors
 
