@@ -32,7 +32,7 @@ func requestKey(req *pkicmp.PKIMessage) any {
 }
 
 // sendP10CR enrolls a fresh P-256 key through a p10cr with MAC credentials and the given trust anchors.
-func sendP10CR(t *testing.T, url string, trusted *x509.Certificate) (*client.EnrollResult, error) {
+func sendP10CR(t *testing.T, url string, trusted *x509.Certificate, opts ...client.RequestOption) (*client.EnrollResult, error) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func sendP10CR(t *testing.T, url string, trusted *x509.Certificate) (*client.Enr
 	pool := x509.NewCertPool()
 	pool.AddCert(trusted)
 	c := client.NewClient(url, client.WithTrustedCAs(pool))
-	return c.SendP10CR(context.Background(), csrDER, creds, client.WithSenderKID([]byte("test")))
+	return c.SendP10CR(context.Background(), csrDER, creds, append([]client.RequestOption{client.WithSenderKID([]byte("test"))}, opts...)...)
 }
 
 // RFC 9810 §5.3.4: a CertResponse names the request it answers by certReqId.
