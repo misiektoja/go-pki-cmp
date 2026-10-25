@@ -21,6 +21,7 @@ type requestOptions struct {
 	generalInfo     []pkicmp.InfoTypeAndValue
 	certReqID       int64
 	popHash         crypto.Hash
+	implicitConfirm bool
 }
 
 // RequestOption configures a specific enrollment request.
@@ -92,4 +93,17 @@ func WithCertReqID(id int64) RequestOption {
 // [Client.SendIRWithIndirectPOP] ignore the option.
 func WithPOPHash(hash crypto.Hash) RequestOption {
 	return func(o *requestOptions) { o.popHash = hash }
+}
+
+// WithImplicitConfirm asks the CA for implicit confirmation of an ir, cr, kur
+// or p10cr by adding id-it-implicitConfirm to the generalInfo field of the
+// request header (RFC 9810 §5.1.1.1), before the certProfile. A CA that
+// grants it repeats the item in its certificate response, and the client then
+// returns without sending certConf, with [EnrollResult.ImplicitConfirm] set.
+// A CA that wants an explicit confirmation leaves the item out and the client
+// confirms as usual. RFC 9483 §4.1.1 asks an end entity to request it unless
+// it needs the confirmation. Revocation and general messages ignore the
+// option.
+func WithImplicitConfirm() RequestOption {
+	return func(o *requestOptions) { o.implicitConfirm = true }
 }

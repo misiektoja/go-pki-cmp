@@ -239,4 +239,7 @@ type EnrollResult struct {
 	CAPubs []*x509.Certificate
 	// ExtraCertificates contains certificates from the PKIMessage extraCerts field (RFC 9810 §5.1).
 	ExtraCertificates []*x509.Certificate
+	// ImplicitConfirm is true when the CA granted implicit confirmation, so the
+	// transaction ended with the certificate response and no certConf was sent.
+	ImplicitConfirm bool
 }

@@ -109,7 +109,14 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 	extraCerts := parseCMPCertificates(resp.ExtraCerts)
 	trustPool := c.enrollmentTrustPool(vr, caPubs)
 
-	conf := &certConfirmation{req: msg, resp: resp, creds: creds, trustPool: trustPool, knownSigner: knownSigner}
+	// A grant of implicit confirmation ends the transaction with this response
+	// (RFC 9810 §5.1.1.1). It is honored even when the request did not ask for
+	// it, as OpenSSL does, because the CA has closed the transaction and would
+	// refuse a certConf.
+	implicit := hasImplicitConfirm(&resp.Header)
+	conf := &certConfirmation{
+		req: msg, resp: resp, creds: creds, trustPool: trustPool, knownSigner: knownSigner, implicit: implicit,
+	}
 
 	// The rejection repeats the CA's certReqId, since that is the value the CA
 	// uses to find the certificate.
@@ -131,20 +138,34 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 			"certificate does not certify the requested public key", cmpResp.wrapError(err))
 	}
 
-	// RFC 9810 requires an explicit hash when the signature does not identify one.
-	certStatus, err := pkicmp.NewCertStatus(cert, certResp.CertReqID)
-	if err != nil {
-		return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
-	}
-	if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
-		return nil, &ConfirmationError{Certificate: cert, Err: err}
+	if !implicit {
+		// RFC 9810 requires an explicit hash when the signature does not identify one.
+		certStatus, err := pkicmp.NewCertStatus(cert, certResp.CertReqID)
+		if err != nil {
+			return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
+		}
+		if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
+			return nil, &ConfirmationError{Certificate: cert, Err: err}
+		}
 	}
 
 	return &EnrollResult{
 		Certificate:       cert,
 		CAPubs:            caPubs,
 		ExtraCertificates: extraCerts,
+		ImplicitConfirm:   implicit,
 	}, nil
+}
+
+// hasImplicitConfirm reports whether h carries id-it-implicitConfirm in generalInfo.
+func hasImplicitConfirm(h *pkicmp.PKIHeader) bool {
+	oid := pkicmp.ImplicitConfirmInfoValue().InfoType
+	return slices.ContainsFunc(h.GeneralInfo, func(item pkicmp.InfoTypeAndValue) bool { return item.InfoType.Equal(oid) })
+}
+
+// isCertificateRequest reports whether t is a body type that implicit confirmation applies to.
+func isCertificateRequest(t pkicmp.BodyType) bool {
+	return t == pkicmp.BodyTypeIR || t == pkicmp.BodyTypeCR || t == pkicmp.BodyTypeKUR || t == pkicmp.BodyTypeP10CR
 }
 
 // parseCMPCertificates parses certs and skips the entries that do not parse.
@@ -196,6 +217,7 @@ type certConfirmation struct {
 	creds       pkicmp.Credentials
 	trustPool   *x509.CertPool
 	knownSigner *x509.Certificate
+	implicit    bool // the response granted implicit confirmation
 }
 
 // sendCertConf sends a certConf carrying status and checks that the CA answers with pkiConf.
@@ -255,7 +277,12 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 func (c *Client) rejectCertificate(ctx context.Context, conf *certConfirmation, cert *x509.Certificate, certReqID int64, text string, reason error) error {
 	// RFC 9483 §3.6.1: an end entity that refuses a newly issued certificate
 	// MUST say so in certConf and await pkiConf, so the CA can revoke or log it
-	// instead of waiting for the confirmation to expire.
+	// instead of waiting for the confirmation to expire. With implicit
+	// confirmation granted the same section ends the operation without a
+	// message, because the CA has closed the transaction.
+	if conf.implicit {
+		return reason
+	}
 	status, err := pkicmp.NewCertStatus(cert, certReqID)
 	if err == nil {
 		status.StatusInfo = &pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, StatusString: pkicmp.PKIFreeText{text}}
@@ -313,6 +340,9 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	// RFC 9810 §5.1.1: senderKID identifies the key used for protection.
 	// For MAC-protected requests it carries the reference number of the shared secret.
 	msg.Header.SenderKID = opts.senderKID
+	if opts.implicitConfirm && isCertificateRequest(reqBody.Type) {
+		msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, pkicmp.ImplicitConfirmInfoValue())
+	}
 	if opts.certProfile != "" {
 		msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, pkicmp.NewCertProfileInfo(opts.certProfile))
 	}
