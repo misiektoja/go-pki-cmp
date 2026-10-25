@@ -473,7 +473,7 @@ func TestProtectWithPBMAC1Errors(t *testing.T) {
 func TestProtectWithSignatureErrors(t *testing.T) {
 	t.Run("MissingBody", func(t *testing.T) {
 		msg := &PKIMessage{}
-		err := msg.protectWithSignature(nil, nil)
+		err := msg.protectWithSignature(nil, 0, nil)
 		var pe *ParseError
 		require.ErrorAs(t, err, &pe)
 		assert.Contains(t, pe.Detail, "missing message body")
