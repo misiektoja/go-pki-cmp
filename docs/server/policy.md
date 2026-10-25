@@ -87,6 +87,7 @@ authenticates the request.
 | `WithPoposkInputVariants` | A signature proof that carries poposkInput although the template holds subject and key | Insta Certifier 10 cmpclient |
 | `WithSignatureProtectionPOP` | A CRMF request without proof whose protection was signed with the requested key | Insta Certifier 7 ssh-cmpclient `UPDATE` that keeps the key |
 | `WithOptionalSubject` | A template without the subject field that names the entity in subjectAltName | Clients that leave the field out |
+| `WithAnyCertReqID` | An ir, cr or kur with a certReqId other than 0, repeated in the response | RFC 4210 clients that number their requests, tests of the certReqId check of a client |
 | `WithOptionalRevocationReason` | A revocation request without reasonCode | Insta Certifier 10 cmpclient `rr` |
 | `WithOptionalRevocationIssuer` | A revocation request without an issuer | Clients that name only the serial number |
 | `WithMACRevocation` | A MAC-protected revocation request, decided by `RevocationAuthorizer` | Clients that revoke with a shared secret |

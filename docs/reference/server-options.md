@@ -45,6 +45,7 @@ full.
 | [`WithOptionalCertConfRecipNonce`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalCertConfRecipNonce) | Off | Accepts `certConf` without recipNonce |
 | [`WithOptionalPollReqRecipNonce`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalPollReqRecipNonce) | Off | Accepts `pollReq` without recipNonce |
 | [`WithOptionalSubject`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalSubject) | Off | Accepts a template without the subject field when it requests a subjectAltName |
+| [`WithAnyCertReqID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithAnyCertReqID) | Off | Accepts an ir, cr or kur with a certReqId other than 0 and repeats it in the response |
 | [`WithRawSubject`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRawSubject) | Off | Passes the requested subject unchanged in `template.RawSubject` |
 | [`WithOptionalRevocationReason`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalRevocationReason) | Off | Accepts a revocation request without reasonCode |
 | [`WithOptionalRevocationIssuer`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalRevocationIssuer) | Off | Accepts a revocation request without an issuer |
