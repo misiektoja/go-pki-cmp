@@ -4,10 +4,11 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.8.0 - TBD
 
-This release lets a client shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
+This release lets a client ask for implicit confirmation and shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
 
 ### `client`
 
+* **`WithImplicitConfirm`** asks the CA for implicit confirmation of an ir, cr, kur or p10cr, as RFC 9483 section 4.1.1 recommends. When the CA grants it, the client returns with **`EnrollResult.ImplicitConfirm`** set and sends no certConf, which saves a round trip. A CA that does not grant it gets the certConf as before. A grant the request did not ask for is honored as well, because the CA has closed the transaction. Before this release the client sent a certConf after such a grant, which a CA refuses as an unknown transaction.
 * **`WithCertReqID`** sets the certReqId of an ir, cr or kur. The CA must repeat it in its certificate response, which the client checks as before. A negative value is refused.
 * **`WithGeneralInfo`** adds items to the generalInfo field of the request header after the certProfile, for example a vendor profile identifier a CA keys its policy on.
 * **`WithPOPHash`** selects SHA-1, SHA-256, SHA-384 or SHA-512 for the signature proof of possession of an RSA or ECDSA key. Other key types take no digest and refuse the option.
