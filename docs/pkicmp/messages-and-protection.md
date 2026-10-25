@@ -42,7 +42,7 @@ if err := creds.Protect(msg); err != nil {
 | Credentials | Protection |
 | --- | --- |
 | `NewMACCredentials` | PBMAC1 by default, the algorithm RFC 9481 section 7 recommends. `WithPBM` selects PasswordBasedMac and `WithPBMAlgorithms` its hash functions |
-| `NewSignatureCredentials` | A signature with an X.509 certificate and key. The chain is sent in `extraCerts` |
+| `NewSignatureCredentials` | A signature with an X.509 certificate and key. The chain is sent in `extraCerts`. The digest follows the key type unless `WithHash` chooses one |
 
 To answer a MAC-protected message with the same algorithm suite, as RFC 9483 section 3.2 requires,
 pass `VerifyResult.ProtectionParams` from the verified request to `NewMACCredentials`. It reuses the

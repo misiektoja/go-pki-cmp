@@ -35,3 +35,9 @@ To send a MAC iteration count outside the default range, set it on the credentia
 | [`WithTemplateExtension`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTemplateExtension) | Adds an extension to the certificate template |
 | [`WithCertProfile`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertProfile) | Names a certificate profile in the header |
 | [`WithOldCertificate`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithOldCertificate) | The certificate a key update replaces, for custom credential types |
+| [`WithGeneralInfo`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithGeneralInfo) | Adds items to `generalInfo` of the request header, after the certProfile |
+| [`WithCertReqID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertReqID) | The `certReqId` of an ir, cr or kur, which the CA must repeat. Default 0 |
+| [`WithPOPHash`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithPOPHash) | The digest of the signature proof of possession of an RSA or ECDSA key. Default by key type |
+
+The digest of signature protection is chosen the same way on the credentials with
+`pkicmp.SignatureCredentials.WithHash`.

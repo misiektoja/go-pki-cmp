@@ -20,7 +20,9 @@ Every request is protected with a `pkicmp.Credentials`:
   `pkicmp.WithPBM()` selects PasswordBasedMac and `pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)`
   selects the SHA-1 suite that RFC 4210 peers expect.
 * **`pkicmp.NewSignatureCredentials(key, cert, chain...)`** signs with an existing certificate. The
-  chain is sent in `extraCerts` so the CA can verify the certificate.
+  chain is sent in `extraCerts` so the CA can verify the certificate. The digest follows the key
+  type. `WithHash` on the credentials chooses SHA-1, SHA-256, SHA-384 or SHA-512 for an RSA or ECDSA
+  key, for example for a CA that expects one algorithm.
 
 A MAC-protected request names its secret through the sender name or the reference in `senderKID`.
 A new device usually has no name yet, so set `client.WithSenderKID` to the reference the CA gave
@@ -74,6 +76,9 @@ Request options apply to one call:
 | `WithTemplateExtension` | Adds an extension to the template, such as subjectAltName |
 | `WithCertProfile` | Names a certificate profile in the header (RFC 9483 section 3.1) |
 | `WithOldCertificate` | The certificate a key update replaces |
+| `WithGeneralInfo` | Adds items to `generalInfo` of the header, such as a vendor profile identifier |
+| `WithCertReqID` | The `certReqId` of the request, which the CA repeats in its answer. Default 0 |
+| `WithPOPHash` | The digest of the signature proof of possession of an RSA or ECDSA key |
 
 Many CAs route requests on the recipient name and refuse a request without one. Set
 `client.WithRecipient` on the client whenever the CA name is known. [Client options](../reference/client-options.md)

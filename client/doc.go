@@ -129,7 +129,7 @@
 // CA that refuses general messages altogether answers with an error message,
 // returned as [*pkicmp.PKIStatusError]. [WithCertProfile] names a
 // certificate profile in the request header, for example to ask for the
-// template of that profile.
+// template of that profile. [WithGeneralInfo] adds other generalInfo items.
 //
 // # Asynchronous enrollment and polling
 //
