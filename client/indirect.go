@@ -106,7 +106,7 @@ func (c *Client) sendIndirectCRMF(ctx context.Context, key any, method IndirectP
 	if err != nil {
 		return nil, &Error{Op: "indirect proof of possession", Err: err}
 	}
-	pop := func(m *pkicmp.CertReqMsg) error {
+	pop := func(m *pkicmp.CertReqMsg, _ *requestOptions) error {
 		if agreement {
 			m.Popo = pkicmp.NewKeyAgreementPOP(&subsequent)
 		} else {

@@ -1,8 +1,11 @@
 package client
 
 import (
+	"crypto"
 	"crypto/x509"
 	"crypto/x509/pkix"
+
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 type requestOptions struct {
@@ -15,6 +18,9 @@ type requestOptions struct {
 	templateExts    []pkix.Extension
 	oldCertificate  *x509.Certificate
 	certProfile     string
+	generalInfo     []pkicmp.InfoTypeAndValue
+	certReqID       int64
+	popHash         crypto.Hash
 }
 
 // RequestOption configures a specific enrollment request.
@@ -59,4 +65,31 @@ func WithCertProfile(name string) RequestOption {
 // WithOldCertificate overrides the certificate identified by the oldCertID control in a KUR.
 func WithOldCertificate(certificate *x509.Certificate) RequestOption {
 	return func(o *requestOptions) { o.oldCertificate = certificate }
+}
+
+// WithGeneralInfo adds items to the generalInfo field of the request header
+// (RFC 9810 §5.1.1), after the certProfile of [WithCertProfile]. Use it for
+// items a CA defines itself, such as a vendor profile identifier. Later
+// messages of the transaction do not repeat them.
+func WithGeneralInfo(items ...pkicmp.InfoTypeAndValue) RequestOption {
+	return func(o *requestOptions) { o.generalInfo = append(o.generalInfo, items...) }
+}
+
+// WithCertReqID sets the certReqId of an ir, cr or kur (RFC 4211 §5). The
+// default is 0. The CA must repeat the value in its certificate response,
+// which the client checks before it confirms the certificate. A negative
+// value is refused, because RFC 9810 §5.3.4 reserves -1 for the answer to a
+// p10cr. A p10cr ignores the option.
+func WithCertReqID(id int64) RequestOption {
+	return func(o *requestOptions) { o.certReqID = id }
+}
+
+// WithPOPHash selects the digest of the signature proof of possession of an
+// ir, cr or kur for an RSA or ECDSA key: SHA-1, SHA-256, SHA-384 or SHA-512.
+// Without it the digest follows the key type, as it does for the message
+// protection of [pkicmp.NewSignatureCredentials]. Other key types take no
+// digest and the request fails. A p10cr and the indirect proofs of
+// [Client.SendIRWithIndirectPOP] ignore the option.
+func WithPOPHash(hash crypto.Hash) RequestOption {
+	return func(o *requestOptions) { o.popHash = hash }
 }

@@ -33,8 +33,8 @@ func (c *Client) SendKUR(ctx context.Context, newKey crypto.Signer, creds pkicmp
 
 // sendCRMF requests a certificate for a signing key, which proves possession by signature.
 func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
-	pop := func(m *pkicmp.CertReqMsg) error {
-		if err := m.GeneratePOP(key); err != nil {
+	pop := func(m *pkicmp.CertReqMsg, ropts *requestOptions) error {
+		if err := m.GeneratePOPWithHash(key, ropts.popHash); err != nil {
 			return &Error{Op: "generate POP", Err: err}
 		}
 		return nil
@@ -43,12 +43,15 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 }
 
 // sendCertRequest requests a certificate for pub in an ir, cr or kur. pop adds
-// the proof of possession to the finished request, and proof is the key that
-// answers an indirect one.
-func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
+// the proof of possession to the finished request under the request options,
+// and proof is the key that answers an indirect one.
+func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg, *requestOptions) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
 	ropts := &requestOptions{}
 	for _, opt := range opts {
 		opt(ropts)
+	}
+	if ropts.certReqID < 0 {
+		return nil, &Error{Op: "build request", Err: fmt.Errorf("certReqId %d is negative", ropts.certReqID)}
 	}
 
 	pubDER, err := pkicmp.MarshalPublicKey(pub)
@@ -102,7 +105,7 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 	}
 
 	certReq := pkicmp.CertRequest{
-		CertReqID:    0,
+		CertReqID:    ropts.certReqID,
 		CertTemplate: tmpl,
 	}
 	if oldCertificate != nil {
@@ -117,7 +120,7 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 		CertReq: certReq,
 	}
 
-	if err := pop(&certReqMsg); err != nil {
+	if err := pop(&certReqMsg, ropts); err != nil {
 		return nil, err
 	}
 

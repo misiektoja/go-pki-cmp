@@ -316,6 +316,7 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	if opts.certProfile != "" {
 		msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, pkicmp.NewCertProfileInfo(opts.certProfile))
 	}
+	msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, opts.generalInfo...)
 
 	if err := creds.Protect(msg); err != nil {
 		return nil, &Error{Op: "protect request", Err: err}
