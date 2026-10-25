@@ -2,6 +2,20 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.8.0 - TBD
+
+This release lets a client shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
+
+### `client`
+
+* **`WithCertReqID`** sets the certReqId of an ir, cr or kur. The CA must repeat it in its certificate response, which the client checks as before. A negative value is refused.
+* **`WithGeneralInfo`** adds items to the generalInfo field of the request header after the certProfile, for example a vendor profile identifier a CA keys its policy on.
+* **`WithPOPHash`** selects SHA-1, SHA-256, SHA-384 or SHA-512 for the signature proof of possession of an RSA or ECDSA key. Other key types take no digest and refuse the option.
+
+### `pkicmp`
+
+* **`SignatureCredentials.WithHash`** returns credentials that protect messages with the chosen digest instead of the one the key type selects, with the same choices and limits as `WithPOPHash`. **`CertReqMsg.GeneratePOPWithHash`** does the same for a proof of possession built by hand. A SHA-1 signature is still refused by a verifier unless it allows SHA-1.
+
 ## v0.7.2 - 22 Oct 2026
 
 This release lets a client keep the CA certificates in caPubs from becoming trust anchors and requires Go 1.27.3, which fixes GO-2026-6809 in `crypto/x509`.
