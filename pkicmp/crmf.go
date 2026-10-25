@@ -67,8 +67,17 @@ func (m *CertReqMsg) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
 }
 
 // GeneratePOP generates a Signature proofOfPossession using the provided private key
-// over the DER-encoded CertRequest and assigns it to m.Popo.
+// over the DER-encoded CertRequest and assigns it to m.Popo. The signature
+// algorithm follows the key type.
 func (m *CertReqMsg) GeneratePOP(key crypto.Signer) error {
+	return m.GeneratePOPWithHash(key, 0)
+}
+
+// GeneratePOPWithHash is [CertReqMsg.GeneratePOP] with the digest of the
+// signature chosen for an RSA or ECDSA key: SHA-1, SHA-256, SHA-384 or
+// SHA-512. The zero hash selects the default of the key type. Other key types
+// take no digest and fail with a [*ParseError].
+func (m *CertReqMsg) GeneratePOPWithHash(key crypto.Signer, hash crypto.Hash) error {
 	mctx := &marshalContext{MinRequiredPVNO: PVNO2}
 
 	var b cryptobyte.Builder
@@ -78,7 +87,7 @@ func (m *CertReqMsg) GeneratePOP(key crypto.Signer) error {
 		return &ParseError{Detail: "marshal CertRequest for POP", Err: err}
 	}
 
-	sigAlgOID, hashFunc, err := signatureAlgorithmFromKey(key)
+	sigAlgOID, hashFunc, err := signatureAlgorithmForHash(key, hash)
 	if err != nil {
 		return err
 	}

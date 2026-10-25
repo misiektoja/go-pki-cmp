@@ -334,16 +334,17 @@ func parsePBKDF2Params(der []byte) (*pbkdf2ParamsASN1, error) {
 }
 
 // protectWithSignature signs the message using the given key.
-// The signature algorithm is inferred from the key type.
+// The signature algorithm is inferred from the key type, with the digest of an
+// RSA or ECDSA signature replaced by hash when it is not zero.
 // cert is added to ExtraCerts and its SubjectKeyId is set as Header.SenderKID.
 // chain provides optional intermediate certificates to include in ExtraCerts.
 // RFC 9810 §5.1.3.3.
-func (m *PKIMessage) protectWithSignature(key crypto.Signer, cert *x509.Certificate, chain ...*x509.Certificate) error {
+func (m *PKIMessage) protectWithSignature(key crypto.Signer, hash crypto.Hash, cert *x509.Certificate, chain ...*x509.Certificate) error {
 	if m.Body == nil {
 		return &ParseError{Detail: detailMissingMessageBody}
 	}
 
-	sigAlgOID, hash, err := signatureAlgorithmFromKey(key)
+	sigAlgOID, hash, err := signatureAlgorithmForHash(key, hash)
 	if err != nil {
 		return &ProtectionError{Reason: ReasonUnsupportedAlgorithm, Err: err}
 	}
