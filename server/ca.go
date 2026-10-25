@@ -140,6 +140,7 @@ type policyConfigKey struct{}
 type policyConfig struct {
 	allowSHA1Signatures      bool
 	allowPoposkInputVariants bool
+	anyCertReqID             bool
 	minMACIterationCount     int
 	maxMACIterationCount     int
 	optionalSubject          bool

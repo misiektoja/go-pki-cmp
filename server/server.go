@@ -297,6 +297,7 @@ func (s *Server) policyConfig() policyConfig {
 	return policyConfig{
 		allowSHA1Signatures:       s.cfg.allowSHA1Signatures,
 		allowPoposkInputVariants:  s.cfg.allowPoposkInputVariants && relaxed,
+		anyCertReqID:              s.cfg.anyCertReqID && relaxed,
 		minMACIterationCount:      s.cfg.minMACIterationCount,
 		maxMACIterationCount:      s.cfg.maxMACIterationCount,
 		optionalSubject:           s.cfg.optionalSubject && relaxed,

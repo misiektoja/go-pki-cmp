@@ -75,6 +75,7 @@ type serverConfig struct {
 	optionalPollReqRecipNonce    bool
 	allowSHA1Signatures          bool
 	allowPoposkInputVariants     bool
+	anyCertReqID                 bool
 	rawSubject                   bool
 	optionalSubject              bool
 	optionalRevocationReason     bool
@@ -312,6 +313,19 @@ func WithPoposkInputVariants() Option {
 func WithRawSubject() Option {
 	return func(c *serverConfig) {
 		c.rawSubject = true
+	}
+}
+
+// WithAnyCertReqID accepts an ir, cr or kur whose certReqId is not 0. RFC 9483
+// §4.1.3 requires 0, so [LightweightPolicy] refuses any other value with
+// badRequest by default. The response, the pollRep and the certConf check
+// repeat the value of the request either way, as RFC 4211 §5 asks. Use the
+// option for RFC 4210 clients that number their requests, or to test how a
+// client checks the certReqId of a response. [WithStrictProfileValidation]
+// refuses such a request whether or not this option is set.
+func WithAnyCertReqID() Option {
+	return func(c *serverConfig) {
+		c.anyCertReqID = true
 	}
 }
 
