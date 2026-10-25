@@ -351,3 +351,110 @@ func TestOpenSSLGeneratedRevocationRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, der, marshaled)
 }
+
+// A requester without the certificate names it by issuer and serial number.
+func TestNewRevDetailsBySerial(t *testing.T) {
+	issuer := pkix.Name{CommonName: "Serial CA", Organization: []string{"Example"}}
+	serial := big.NewInt(4242)
+
+	details, err := NewRevDetailsBySerial(issuer, serial, CRLReasonSuperseded)
+	require.NoError(t, err)
+	assert.Equal(t, 0, details.CertDetails.SerialNumber.Cmp(serial))
+	var rdns pkix.RDNSequence
+	rest, err := asn1.Unmarshal(details.CertDetails.Issuer, &rdns)
+	require.NoError(t, err)
+	assert.Empty(t, rest)
+	var name pkix.Name
+	name.FillFromRDNSequence(&rdns)
+	assert.Equal(t, "Serial CA", name.CommonName)
+	assert.Equal(t, []string{"Example"}, name.Organization)
+	assert.Empty(t, details.CertDetails.Subject.DirectoryName)
+	assert.Empty(t, details.CertDetails.PublicKey)
+
+	exts, err := details.CRLEntryExtensions()
+	require.NoError(t, err)
+	require.Len(t, exts, 1)
+	assert.True(t, exts[0].Id.Equal(oidCRLReason))
+	var code asn1.Enumerated
+	_, err = asn1.Unmarshal(exts[0].Value, &code)
+	require.NoError(t, err)
+	assert.Equal(t, asn1.Enumerated(CRLReasonSuperseded), code)
+
+	// The serial number is copied, so later changes do not leak in.
+	serial.SetInt64(1)
+	assert.Equal(t, int64(4242), details.CertDetails.SerialNumber.Int64())
+
+	t.Run("Errors", func(t *testing.T) {
+		_, err := NewRevDetailsBySerial(issuer, nil, CRLReasonUnspecified)
+		assert.ErrorContains(t, err, "serial number is nil")
+		_, err = NewRevDetailsBySerial(pkix.Name{}, big.NewInt(1), CRLReasonUnspecified)
+		assert.ErrorContains(t, err, "issuer is empty")
+		_, err = NewRevDetailsBySerial(issuer, big.NewInt(1), CRLReason(7))
+		assert.ErrorContains(t, err, "invalid CRL reason")
+	})
+}
+
+// RFC 5280 §5.3.2: invalidityDate is a GeneralizedTime in UTC.
+func TestNewInvalidityDateExtension(t *testing.T) {
+	warsaw := time.FixedZone("CET", 3600)
+	at := time.Date(2026, 10, 1, 13, 30, 15, 123456789, warsaw)
+
+	ext, err := NewInvalidityDateExtension(at)
+	require.NoError(t, err)
+	assert.True(t, ext.Id.Equal(oidInvalidityDate))
+	assert.False(t, ext.Critical)
+	// GeneralizedTime 20261001123015Z
+	assert.Equal(t, []byte("\x18\x0f20261001123015Z"), ext.Value)
+
+	var parsed time.Time
+	rest, err := asn1.UnmarshalWithParams(ext.Value, &parsed, "generalized")
+	require.NoError(t, err)
+	assert.Empty(t, rest)
+	assert.True(t, parsed.Equal(at.Truncate(time.Second)), "fractions of a second are dropped")
+
+	_, err = NewInvalidityDateExtension(time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC))
+	assert.Error(t, err, "GeneralizedTime has four year digits")
+}
+
+// Entry extensions are added after the reasonCode and travel through the encoding.
+func TestRevDetailsAddCRLEntryExtension(t *testing.T) {
+	cert := revocationTestCertificate(t, big.NewInt(5))
+	details, err := NewRevDetails(cert, CRLReasonKeyCompromise)
+	require.NoError(t, err)
+	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	invalidity, err := NewInvalidityDateExtension(at)
+	require.NoError(t, err)
+	require.NoError(t, details.AddCRLEntryExtension(invalidity))
+
+	content := RevReqContent{details}
+	var b cryptobyte.Builder
+	content.marshal(&marshalContext{MinRequiredPVNO: PVNO2}, &b)
+	der, err := b.Bytes()
+	require.NoError(t, err)
+	var parsed RevReqContent
+	in := cryptobyte.String(der)
+	require.NoError(t, parsed.unmarshal(&in))
+	require.Len(t, parsed, 1)
+	exts, err := parsed[0].CRLEntryExtensions()
+	require.NoError(t, err)
+	require.Len(t, exts, 2)
+	assert.True(t, exts[0].Id.Equal(oidCRLReason), "the reasonCode comes first")
+	assert.Equal(t, invalidity, exts[1])
+
+	t.Run("Duplicate", func(t *testing.T) {
+		assert.ErrorContains(t, details.AddCRLEntryExtension(invalidity), "already carry extension 2.5.29.24")
+	})
+
+	t.Run("WithoutExtensions", func(t *testing.T) {
+		bare := RevDetails{}
+		require.NoError(t, bare.AddCRLEntryExtension(invalidity))
+		exts, err := bare.CRLEntryExtensions()
+		require.NoError(t, err)
+		assert.Equal(t, []pkix.Extension{invalidity}, exts)
+	})
+
+	t.Run("MalformedExtensions", func(t *testing.T) {
+		broken := RevDetails{CRLEntryDetails: []byte{0x30, 0x03, 0x02, 0x01, 0x01}}
+		assert.Error(t, broken.AddCRLEntryExtension(invalidity))
+	})
+}
