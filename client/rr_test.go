@@ -7,11 +7,13 @@ import (
 	"encoding/asn1"
 	"errors"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,6 +29,8 @@ type revokingCA struct {
 	mu      sync.Mutex
 	issued  []*x509.Certificate
 	revoked map[string]pkicmp.CRLReason
+	// last is the request of the latest revocation.
+	last *server.RevocationRequest
 }
 
 // IssueCertificate refuses every request, since these tests exercise revocation only.
@@ -51,6 +55,7 @@ func (c *revokingCA) RevokeCertificate(_ context.Context, req *server.Revocation
 		return &server.Error{Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailCertRevoked, StatusText: "certificate already revoked"}
 	}
 	c.revoked[cert.SerialNumber.String()] = req.Reason
+	c.last = req
 	return nil
 }
 
@@ -97,6 +102,43 @@ func TestSendRRAgainstServer(t *testing.T) {
 	require.ErrorAs(t, err, &statusErr)
 	assert.Equal(t, pkicmp.StatusRejection, statusErr.Status)
 	assert.True(t, pkicmp.HasFailure(err, pkicmp.FailCertRevoked))
+}
+
+// A requester that holds only the issuer and serial number revokes with SendRRBySerial, and
+// WithInvalidityDate reaches the CA as RevocationRequest.InvalidityDate.
+func TestSendRRBySerialAgainstServer(t *testing.T) {
+	ca := &certyaml.Certificate{Subject: "cn=rr-ca", KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
+	caCert, err := ca.X509Certificate()
+	require.NoError(t, err)
+	caKey, err := ca.PrivateKey()
+	require.NoError(t, err)
+	ee := &certyaml.Certificate{Subject: "cn=rr-ee", Issuer: ca}
+	eeCert, err := ee.X509Certificate()
+	require.NoError(t, err)
+	eeKey, err := ee.PrivateKey()
+	require.NoError(t, err)
+
+	backend := &revokingCA{issued: []*x509.Certificate{&eeCert}, revoked: map[string]pkicmp.CRLReason{}}
+	srv := server.NewCAServer(backend, server.LightweightPolicy(), server.WithSigner(caKey, &caCert), server.WithCertificateLookup(backend))
+	require.NoError(t, srv.Err())
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	trusted := x509.NewCertPool()
+	trusted.AddCert(&caCert)
+	c := client.NewClient(ts.URL, client.WithTrustedCAs(trusted))
+	creds, err := pkicmp.NewSignatureCredentials(eeKey, &eeCert, &caCert)
+	require.NoError(t, err)
+
+	// The end entity names its own certificate, so no RevocationAuthorizer is needed.
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	err = c.SendRRBySerial(context.Background(), pkix.Name{CommonName: "rr-ca"}, eeCert.SerialNumber,
+		pkicmp.CRLReasonKeyCompromise, creds, client.WithInvalidityDate(at))
+	require.NoError(t, err)
+	assert.Equal(t, pkicmp.CRLReasonKeyCompromise, backend.revoked[eeCert.SerialNumber.String()])
+	require.NotNil(t, backend.last)
+	assert.True(t, backend.last.InvalidityDate.Equal(at), "got %v", backend.last.InvalidityDate)
+	assert.Equal(t, "rr-ca", backend.last.Issuer.CommonName)
 }
 
 // rrMockServer answers each request with the body respond returns, MAC-protected with "secret".
@@ -162,6 +204,56 @@ func TestSendRRRequestContent(t *testing.T) {
 	_, err = asn1.Unmarshal(exts[0].Value, &code)
 	require.NoError(t, err)
 	assert.Equal(t, asn1.Enumerated(pkicmp.CRLReasonCertificateHold), code)
+}
+
+// SendRRBySerial names the certificate by the given issuer and serial number, and WithInvalidityDate
+// adds the invalidityDate extension after the reasonCode.
+func TestSendRRBySerialRequestContent(t *testing.T) {
+	var got *pkicmp.RevReqContent
+	ts, _ := rrMockServer(t, func(_ int32, req *pkicmp.PKIMessage) *pkicmp.PKIBody {
+		got, _ = req.Body.RR()
+		return pkicmp.NewRPBody(&pkicmp.RevRepContent{Status: []pkicmp.PKIStatusInfo{{Status: pkicmp.StatusAccepted}}})
+	})
+	creds, err := pkicmp.NewMACCredentials([]byte("secret"))
+	require.NoError(t, err)
+	issuer := pkix.Name{CommonName: "Serial CA", Country: []string{"PL"}}
+	serial := big.NewInt(0x1a)
+	at := time.Date(2026, 10, 1, 8, 30, 0, 0, time.FixedZone("CEST", 2*3600))
+
+	require.NoError(t, client.NewClient(ts.URL).SendRRBySerial(context.Background(), issuer, serial,
+		pkicmp.CRLReasonCessationOfOperation, creds, client.WithInvalidityDate(at)))
+
+	require.NotNil(t, got)
+	require.Len(t, *got, 1)
+	details := (*got)[0]
+	assert.Equal(t, 0, details.CertDetails.SerialNumber.Cmp(serial))
+	var rdns pkix.RDNSequence
+	_, err = asn1.Unmarshal(details.CertDetails.Issuer, &rdns)
+	require.NoError(t, err)
+	var name pkix.Name
+	name.FillFromRDNSequence(&rdns)
+	assert.Equal(t, "Serial CA", name.CommonName)
+	assert.Equal(t, []string{"PL"}, name.Country)
+	exts, err := details.CRLEntryExtensions()
+	require.NoError(t, err)
+	require.Len(t, exts, 2)
+	var code asn1.Enumerated
+	_, err = asn1.Unmarshal(exts[0].Value, &code)
+	require.NoError(t, err)
+	assert.Equal(t, asn1.Enumerated(pkicmp.CRLReasonCessationOfOperation), code)
+	assert.Equal(t, asn1.ObjectIdentifier{2, 5, 29, 24}, exts[1].Id)
+	var parsed time.Time
+	_, err = asn1.UnmarshalWithParams(exts[1].Value, &parsed, "generalized")
+	require.NoError(t, err)
+	assert.True(t, parsed.Equal(at), "got %v", parsed)
+
+	t.Run("WithoutInvalidityDate", func(t *testing.T) {
+		require.NoError(t, client.NewClient(ts.URL).SendRR(context.Background(), newTestPKI().eeCert,
+			pkicmp.CRLReasonUnspecified, creds, client.WithInvalidityDate(time.Time{})))
+		exts, err := (*got)[0].CRLEntryExtensions()
+		require.NoError(t, err)
+		assert.Len(t, exts, 1, "the zero time sends no invalidityDate")
+	})
 }
 
 // RFC 9483 §4.4: a delayed rp arrives after an error message with status waiting and polling with certReqId -1.
@@ -246,5 +338,11 @@ func TestSendRRInvalidInput(t *testing.T) {
 	assert.Error(t, c.SendRR(context.Background(), nil, pkicmp.CRLReasonUnspecified, creds))
 	assert.Error(t, c.SendRR(context.Background(), pki.eeCert, pkicmp.CRLReason(7), creds))
 	assert.Error(t, c.SendRR(context.Background(), pki.eeCert, pkicmp.CRLReasonUnspecified, nil))
+	issuer := pkix.Name{CommonName: "test-ca"}
+	assert.Error(t, c.SendRRBySerial(context.Background(), issuer, nil, pkicmp.CRLReasonUnspecified, creds))
+	assert.Error(t, c.SendRRBySerial(context.Background(), pkix.Name{}, big.NewInt(1), pkicmp.CRLReasonUnspecified, creds))
+	assert.Error(t, c.SendRRBySerial(context.Background(), issuer, big.NewInt(1), pkicmp.CRLReason(7), creds))
+	tooLate := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	assert.Error(t, c.SendRR(context.Background(), pki.eeCert, pkicmp.CRLReasonUnspecified, creds, client.WithInvalidityDate(tooLate)))
 	assert.Zero(t, atomic.LoadInt32(calls))
 }
