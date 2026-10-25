@@ -262,14 +262,23 @@ func (c *MockCA) RevokeCertificate(_ context.Context, req *server.RevocationRequ
 			StatusText:  "certificate already revoked",
 		}
 	}
-	c.revoked[serial] = revocation{serial: cert.SerialNumber, reason: req.Reason, at: time.Now()}
+	c.revoked[serial] = revocation{
+		serial:         cert.SerialNumber,
+		reason:         req.Reason,
+		at:             time.Now(),
+		invalidityDate: req.InvalidityDate,
+	}
 	c.crlChanged()
 
-	c.Log.Info("certificate revoked",
+	attrs := []any{
 		"subject", cert.Subject.String(),
 		"serial", serial,
 		"reason", req.Reason.String(),
-	)
+	}
+	if !req.InvalidityDate.IsZero() {
+		attrs = append(attrs, "invalidityDate", req.InvalidityDate.UTC().Format(time.RFC3339))
+	}
+	c.Log.Info("certificate revoked", attrs...)
 	return nil
 }
 
