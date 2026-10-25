@@ -6,6 +6,7 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"math/big"
+	"time"
 
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -13,6 +14,9 @@ import (
 
 // oidCRLReason identifies the RFC 5280 §5.3.1 reasonCode CRL entry extension.
 var oidCRLReason = asn1.ObjectIdentifier{2, 5, 29, 21}
+
+// oidInvalidityDate identifies the RFC 5280 §5.3.2 invalidityDate CRL entry extension.
+var oidInvalidityDate = asn1.ObjectIdentifier{2, 5, 29, 24}
 
 // CRLReason is the RFC 5280 §5.3.1 reason code requested for a revocation.
 type CRLReason int
@@ -116,9 +120,6 @@ func NewRevDetails(cert *x509.Certificate, reason CRLReason) (RevDetails, error)
 	if cert.SerialNumber == nil {
 		return RevDetails{}, fmt.Errorf("pkicmp: revocation certificate serial number is nil")
 	}
-	if !reason.Valid() {
-		return RevDetails{}, fmt.Errorf("pkicmp: invalid CRL reason %d", int(reason))
-	}
 
 	// The issuer is sent as the certificate encoded it, since a CA may locate
 	// the certificate by comparing the name bytes.
@@ -129,7 +130,36 @@ func NewRevDetails(cert *x509.Certificate, reason CRLReason) (RevDetails, error)
 			return RevDetails{}, fmt.Errorf("pkicmp: encode revocation issuer: %w", err)
 		}
 	}
+	return newRevDetails(issuer, cert.SerialNumber, reason)
+}
 
+// NewRevDetailsBySerial identifies a certificate by its issuer name and serial
+// number alone, for a requester that does not hold the certificate, and
+// requests the given reason code. The issuer is encoded from name, so a CA
+// that locates certificates by comparing the name bytes needs the attributes
+// in the order and with the string types it issued them with. [NewRevDetails]
+// keeps the encoding of the certificate itself.
+func NewRevDetailsBySerial(issuer pkix.Name, serial *big.Int, reason CRLReason) (RevDetails, error) {
+	if serial == nil {
+		return RevDetails{}, fmt.Errorf("pkicmp: revocation serial number is nil")
+	}
+	rdns := toFullRDNSequence(issuer)
+	// An empty name identifies no issuer and a CA refuses it.
+	if len(rdns) == 0 {
+		return RevDetails{}, fmt.Errorf("pkicmp: revocation issuer is empty")
+	}
+	der, err := asn1.Marshal(rdns)
+	if err != nil {
+		return RevDetails{}, fmt.Errorf("pkicmp: encode revocation issuer: %w", err)
+	}
+	return newRevDetails(der, serial, reason)
+}
+
+// newRevDetails builds the RevDetails for a DER issuer name, a serial number and a reason code.
+func newRevDetails(issuer []byte, serial *big.Int, reason CRLReason) (RevDetails, error) {
+	if !reason.Valid() {
+		return RevDetails{}, fmt.Errorf("pkicmp: invalid CRL reason %d", int(reason))
+	}
 	reasonValue, err := asn1.Marshal(asn1.Enumerated(reason))
 	if err != nil {
 		return RevDetails{}, fmt.Errorf("pkicmp: encode CRL reason: %w", err)
@@ -141,11 +171,45 @@ func NewRevDetails(cert *x509.Certificate, reason CRLReason) (RevDetails, error)
 
 	return RevDetails{
 		CertDetails: CertTemplate{
-			SerialNumber: new(big.Int).Set(cert.SerialNumber),
+			SerialNumber: new(big.Int).Set(serial),
 			Issuer:       issuer,
 		},
 		CRLEntryDetails: crlEntryDetails,
 	}, nil
+}
+
+// NewInvalidityDateExtension returns the invalidityDate CRL entry extension
+// (RFC 5280 §5.3.2) for t, the time at which the key is known or suspected
+// to have been compromised or the certificate otherwise became invalid. The
+// time is encoded as a GeneralizedTime in UTC with a resolution of one
+// second, as DER requires, so fractions of a second are dropped.
+func NewInvalidityDateExtension(t time.Time) (pkix.Extension, error) {
+	value, err := asn1.MarshalWithParams(t.UTC(), "generalized")
+	if err != nil {
+		return pkix.Extension{}, fmt.Errorf("pkicmp: encode invalidityDate: %w", err)
+	}
+	return pkix.Extension{Id: oidInvalidityDate, Value: value}, nil
+}
+
+// AddCRLEntryExtension appends ext to the extensions requested for the CRL
+// entry, after the reasonCode of [NewRevDetails]. The extension must not be
+// present already, since RFC 5280 §5.3 allows each one once in a CRL entry.
+func (d *RevDetails) AddCRLEntryExtension(ext pkix.Extension) error {
+	exts, err := d.CRLEntryExtensions()
+	if err != nil {
+		return err
+	}
+	for _, existing := range exts {
+		if existing.Id.Equal(ext.Id) {
+			return fmt.Errorf("pkicmp: crlEntryDetails already carry extension %s", ext.Id)
+		}
+	}
+	der, err := asn1.Marshal(append(exts, ext))
+	if err != nil {
+		return fmt.Errorf("pkicmp: encode crlEntryDetails: %w", err)
+	}
+	d.CRLEntryDetails = der
+	return nil
 }
 
 // CRLEntryExtensions parses the extensions requested for the CRL entry.
