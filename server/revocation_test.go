@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,6 +30,8 @@ type revokingCA struct {
 	issued  []*x509.Certificate
 	revoked map[string]pkicmp.CRLReason
 	calls   int
+	// last is the request of the latest revocation.
+	last *server.RevocationRequest
 }
 
 // IssueCertificate refuses every request, since these tests exercise revocation only.
@@ -54,6 +57,7 @@ func (c *revokingCA) RevokeCertificate(_ context.Context, req *server.Revocation
 		return &server.Error{Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailCertRevoked, StatusText: "certificate already revoked"}
 	}
 	c.revoked[cert.SerialNumber.String()] = req.Reason
+	c.last = req
 	return nil
 }
 
@@ -288,6 +292,11 @@ func TestRevocationRequestValidation(t *testing.T) {
 		require.NoError(t, err)
 		return der
 	}
+	invalidityDate := func(value []byte) pkix.Extension {
+		return pkix.Extension{Id: asn1.ObjectIdentifier{2, 5, 29, 24}, Value: value}
+	}
+	utcTime, err := asn1.Marshal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -365,6 +374,43 @@ func TestRevocationRequestValidation(t *testing.T) {
 			wantText: "reasonCode required",
 		},
 		{
+			name: "TwoInvalidityDates",
+			content: func(t *testing.T) pkicmp.RevReqContent {
+				d := revDetails(t, f.ee.cert, pkicmp.CRLReasonUnspecified)
+				ext, err := pkicmp.NewInvalidityDateExtension(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+				require.NoError(t, err)
+				require.NoError(t, d.AddCRLEntryExtension(ext))
+				// AddCRLEntryExtension refuses a duplicate, so the second one is encoded by hand.
+				exts, err := d.CRLEntryExtensions()
+				require.NoError(t, err)
+				d.CRLEntryDetails, err = asn1.Marshal(append(exts, ext))
+				require.NoError(t, err)
+				return pkicmp.RevReqContent{d}
+			},
+			wantFail: pkicmp.FailBadRequest,
+			wantText: "more than one invalidityDate",
+		},
+		{
+			name: "InvalidityDateNotGeneralizedTime",
+			content: func(t *testing.T) pkicmp.RevReqContent {
+				d := revDetails(t, f.ee.cert, pkicmp.CRLReasonUnspecified)
+				require.NoError(t, d.AddCRLEntryExtension(invalidityDate(utcTime)))
+				return pkicmp.RevReqContent{d}
+			},
+			wantFail: pkicmp.FailBadDataFormat,
+			wantText: "invalid invalidityDate",
+		},
+		{
+			name: "InvalidityDateTrailingData",
+			content: func(t *testing.T) pkicmp.RevReqContent {
+				d := revDetails(t, f.ee.cert, pkicmp.CRLReasonUnspecified)
+				require.NoError(t, d.AddCRLEntryExtension(invalidityDate([]byte("\x18\x0f20261001000000Z\x05\x00"))))
+				return pkicmp.RevReqContent{d}
+			},
+			wantFail: pkicmp.FailBadDataFormat,
+			wantText: "invalid invalidityDate",
+		},
+		{
 			name: "SubjectMismatch",
 			content: func(t *testing.T) pkicmp.RevReqContent {
 				d := revDetails(t, f.ee.cert, pkicmp.CRLReasonUnspecified)
@@ -396,6 +442,34 @@ func TestRevocationRequestValidation(t *testing.T) {
 		})
 	}
 	assert.Empty(t, f.backend.revoked)
+}
+
+// RFC 5280 §5.3.2: the requested invalidityDate reaches the CA, and a request without one leaves it zero.
+func TestRevocationInvalidityDate(t *testing.T) {
+	f := newRevocationFixture(t)
+	ts := f.serve(t, f.backend, server.LightweightPolicy())
+	at := time.Date(2026, 10, 1, 13, 30, 15, 0, time.UTC)
+
+	d := revDetails(t, f.ee.cert, pkicmp.CRLReasonKeyCompromise)
+	ext, err := pkicmp.NewInvalidityDateExtension(at)
+	require.NoError(t, err)
+	require.NoError(t, d.AddCRLEntryExtension(ext))
+	si := rpStatus(t, postCMP(t, ts, signedRR(t, f.ee, pkicmp.RevReqContent{d}, pkicmp.MessageOptions{})))
+	assert.Equal(t, pkicmp.StatusAccepted, si.Status)
+	require.NotNil(t, f.backend.last)
+	assert.True(t, f.backend.last.InvalidityDate.Equal(at), "got %v", f.backend.last.InvalidityDate)
+	assert.Equal(t, pkicmp.CRLReasonKeyCompromise, f.backend.last.Reason)
+	assert.Len(t, f.backend.last.Extensions, 2, "every requested extension stays available")
+
+	t.Run("Absent", func(t *testing.T) {
+		other := newRevocationFixture(t)
+		ts := other.serve(t, other.backend, server.LightweightPolicy())
+		content := pkicmp.RevReqContent{revDetails(t, other.ee.cert, pkicmp.CRLReasonUnspecified)}
+		si := rpStatus(t, postCMP(t, ts, signedRR(t, other.ee, content, pkicmp.MessageOptions{})))
+		assert.Equal(t, pkicmp.StatusAccepted, si.Status)
+		require.NotNil(t, other.backend.last)
+		assert.True(t, other.backend.last.InvalidityDate.IsZero())
+	})
 }
 
 // The template may repeat the subject and public key of the certificate being revoked.
