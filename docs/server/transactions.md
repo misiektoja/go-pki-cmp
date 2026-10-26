@@ -39,7 +39,9 @@ go func() {
 ```
 
 Entries expire by last activity: `WithConfirmWaitTime` for most, `WithWaitingLifetime` for waiting
-requests.
+requests. A `certConf` that arrives after the confirmWaitTime is refused with badRequest even before
+`CleanupExpired` runs. `CertificateConfirmer` then hears `ConfirmExpired`, as RFC 9483 section 4.1.1
+asks.
 
 ## Durable recovery
 

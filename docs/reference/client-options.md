@@ -46,3 +46,36 @@ To send a MAC iteration count outside the default range, set it on the credentia
 
 The digest of signature protection is chosen the same way on the credentials with
 `pkicmp.SignatureCredentials.WithHash`.
+
+## Test aids
+
+These request options send deliberately wrong messages, to test how a CA handles them. They change
+nothing unless given. Do not use them in production.
+
+| Option | Effect |
+| --- | --- |
+| [`WithCertConfStatus`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertConfStatus) | Sends a statusInfo in the `certConf`, such as a rejection. A CA must answer a rejection with `pkiConf` (RFC 9483 section 3.6.1). The call then returns the certificate |
+| [`WithMessageMutator`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMessageMutator) | Changes every message of the call before it is protected: the first request and any `popdecr`, `pollReq` and `certConf`. The function gets the message and the response it answers |
+| [`WithProtectedMessageMutator`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithProtectedMessageMutator) | Changes every message after it is protected and before the nested message of `WithRegistrationAuthority` wraps it, for example to remove the protection |
+
+The client verifies each response against the message as changed. A mutator that returns an error
+stops the call before the message is sent. A changed `certConf` that the CA refuses ends in a
+`ConfirmationError` that holds the certificate. `ResumeEnrollment` ignores the options.
+
+```go
+// Send a certConf whose certHash does not match the certificate.
+wrongHash := client.WithMessageMutator(func(msg, _ *pkicmp.PKIMessage) error {
+	if msg.Body.Type != pkicmp.BodyTypeCertConf {
+		return nil
+	}
+	conf, err := msg.Body.CertConf()
+	if err != nil {
+		return err
+	}
+	(*conf)[0].CertHash[0] ^= 0xff
+	msg.Body = pkicmp.NewCertConfBody(conf)
+	return nil
+})
+_, err := c.SendIR(ctx, key, creds, wrongHash)
+// A CA that follows RFC 9483 refuses it with badCertId.
+```
