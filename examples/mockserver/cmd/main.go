@@ -38,6 +38,8 @@ func main() {
 	//   - WithSecretLookup: enables MAC (shared-secret) protection for IR/CR.
 	//   - WithCertificateLookup: enables signature protection for KUR/certConf/RR.
 	//   - CentralKeyGeneration: lets a client ask the CA to generate its key pair.
+	//   - WithRAAuthorizer: accepts requests that a registration authority with
+	//     an id-kp-cmcRA certificate from this CA forwards in nested messages.
 	srv := server.NewCAServer(ca,
 		server.LightweightPolicy(),
 		server.WithSigner(ca.Key(), ca.Cert()),
@@ -45,6 +47,7 @@ func main() {
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
 		ca.CentralKeyGeneration(),
+		server.WithRAAuthorizer(ca),
 	)
 	if err := srv.Err(); err != nil {
 		log.Error("server misconfigured", "err", err)
