@@ -381,3 +381,49 @@ func TestDelayedRevocation(t *testing.T) {
 		})
 	}
 }
+
+// A signed cr stopped at its waiting answer and resumed in a new client keeps the
+// sender and senderKID of the signing certificate and the server certificate that
+// verifies the signed final response.
+func TestDelayedSignedEnrollmentResumed(t *testing.T) {
+	ca := newApprovalCA(func(int) string { return "approve" })
+	caCert, err := ca.ca.X509Certificate()
+	require.NoError(t, err)
+	caKey, err := ca.ca.PrivateKey()
+	require.NoError(t, err)
+	device := &certyaml.Certificate{Subject: "CN=device,O=Example", Issuer: ca.ca}
+	deviceCert, err := device.X509Certificate()
+	require.NoError(t, err)
+	deviceKey, err := device.PrivateKey()
+	require.NoError(t, err)
+	srv := server.NewCAServer(ca, server.LightweightPolicy(),
+		server.WithSigner(caKey, &caCert),
+		server.WithCertificateLookup(&staticCertLookup{cert: &deviceCert}),
+	)
+	require.NoError(t, srv.Err())
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	creds, err := pkicmp.NewSignatureCredentials(deviceKey, &deviceCert)
+	require.NoError(t, err)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	result, err := client.NewClient(ts.URL, client.WithTrustedCAs(x509pool(&caCert))).SendCR(context.Background(), key, creds,
+		client.WithTemplateSubject(pkix.Name{CommonName: "signed-delayed"}),
+		client.WithDeferredPolling(),
+	)
+	require.NoError(t, err)
+	pending := result.Pending
+	require.NotNil(t, pending)
+	assert.Equal(t, pkicmp.BodyTypeCR, pending.RequestType)
+	assert.Equal(t, pkicmp.NewDirectoryNameFromRawDER(deviceCert.RawSubject).Raw, pending.Sender, "the sender keeps the encoding of the certificate")
+	assert.Equal(t, deviceCert.SubjectKeyId, pending.SenderKID)
+	assert.Equal(t, caCert.Raw, pending.ServerCertificate)
+	assert.Zero(t, ca.checkCount())
+
+	resumed, err := client.NewClient(ts.URL, client.WithTrustedCAs(x509pool(&caCert))).ResumeEnrollment(context.Background(), pending, creds)
+	require.NoError(t, err)
+	assert.Equal(t, "signed-delayed", resumed.Certificate.Subject.CommonName)
+	assert.Equal(t, 1, ca.checkCount())
+	assert.Equal(t, []server.ConfirmStatus{server.ConfirmAccepted}, ca.statuses)
+}
