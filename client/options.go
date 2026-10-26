@@ -17,12 +17,14 @@ type requestOptions struct {
 	senderKID       []byte
 	templateSubject *pkix.Name
 	templateExts    []pkix.Extension
-	oldCertificate  *x509.Certificate
-	certProfile     string
-	generalInfo     []pkicmp.InfoTypeAndValue
-	certReqID       int64
-	popHash         crypto.Hash
-	implicitConfirm bool
+	// templateValidity is the validity period an ir, cr or kur asks for. Nil asks for none.
+	templateValidity *pkicmp.OptionalValidity
+	oldCertificate   *x509.Certificate
+	certProfile      string
+	generalInfo      []pkicmp.InfoTypeAndValue
+	certReqID        int64
+	popHash          crypto.Hash
+	implicitConfirm  bool
 	// invalidityDate is the invalidityDate CRL entry extension of an rr. Zero sends none.
 	invalidityDate time.Time
 	// deferredPolling returns the pending state of a waiting enrollment instead of polling.
@@ -63,6 +65,19 @@ func WithTemplateSubject(subject pkix.Name) RequestOption {
 // certificate with an empty subject adds that certificate's subjectAltName unless one is set.
 func WithTemplateExtension(ext pkix.Extension) RequestOption {
 	return func(o *requestOptions) { o.templateExts = append(o.templateExts, ext) }
+}
+
+// WithTemplateValidity asks for a validity period in the CRMF CertTemplate of
+// an ir, cr or kur (RFC 4211 §5). A zero notBefore or notAfter leaves that
+// bound to the CA, and two zero times ask for none. The request fails when
+// notAfter is before notBefore. The CA decides the validity it grants and may
+// shorten or ignore the request. RFC 9483 does not profile the field, so a
+// lightweight CMP server need not honor it. A p10cr ignores the option,
+// because PKCS #10 cannot carry it.
+func WithTemplateValidity(notBefore, notAfter time.Time) RequestOption {
+	return func(o *requestOptions) {
+		o.templateValidity = &pkicmp.OptionalValidity{NotBefore: notBefore, NotAfter: notAfter}
+	}
 }
 
 // WithCertProfile names the certificate profile in the id-it-certProfile

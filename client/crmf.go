@@ -109,6 +109,12 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 		tmpl.Extensions = extDER
 	}
 
+	validity, err := templateValidity(ropts.templateValidity)
+	if err != nil {
+		return nil, &Error{Op: "build request", Err: err}
+	}
+	tmpl.Validity = validity
+
 	certReq := pkicmp.CertRequest{
 		CertReqID:    ropts.certReqID,
 		CertTemplate: tmpl,
@@ -143,6 +149,17 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 	}
 
 	return c.enroll(ctx, body, expectedRepType, creds, ropts, pub, proof)
+}
+
+// templateValidity returns the validity a template asks for, or nil when v has no bound.
+func templateValidity(v *pkicmp.OptionalValidity) (*pkicmp.OptionalValidity, error) {
+	if v == nil || (v.NotBefore.IsZero() && v.NotAfter.IsZero()) {
+		return nil, nil
+	}
+	if !v.NotBefore.IsZero() && !v.NotAfter.IsZero() && v.NotAfter.Before(v.NotBefore) {
+		return nil, fmt.Errorf("template validity ends before it starts")
+	}
+	return v, nil
 }
 
 // oidSubjectAltName identifies the RFC 5280 §4.2.1.6 subjectAltName extension.
