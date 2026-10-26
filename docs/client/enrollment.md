@@ -76,6 +76,7 @@ Request options apply to one call:
 | `WithSenderKID` | `senderKID` in every message of the call, the reference of a shared secret |
 | `WithTemplateSubject` | Subject in the certificate template |
 | `WithTemplateExtension` | Adds an extension to the template, such as subjectAltName |
+| `WithTemplateValidity` | Asks for a validity period in the template. The CA decides the validity it grants |
 | `WithCertProfile` | Names a certificate profile in the header (RFC 9483 section 3.1) |
 | `WithOldCertificate` | The certificate a key update replaces |
 | `WithGeneralInfo` | Adds items to `generalInfo` of the header, such as a vendor profile identifier |

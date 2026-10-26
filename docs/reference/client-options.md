@@ -34,6 +34,7 @@ To send a MAC iteration count outside the default range, set it on the credentia
 | [`WithSenderKID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSenderKID) | `senderKID` in every message, the reference of a shared secret |
 | [`WithTemplateSubject`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTemplateSubject) | Subject in the certificate template |
 | [`WithTemplateExtension`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTemplateExtension) | Adds an extension to the certificate template |
+| [`WithTemplateValidity`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTemplateValidity) | Asks for a notBefore, a notAfter or both in the certificate template of an ir, cr or kur. The CA decides the validity it grants |
 | [`WithCertProfile`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertProfile) | Names a certificate profile in the header |
 | [`WithOldCertificate`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithOldCertificate) | The certificate a key update replaces, for custom credential types |
 | [`WithGeneralInfo`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithGeneralInfo) | Adds items to `generalInfo` of the request header, after the certProfile |
