@@ -20,3 +20,10 @@ the choice to the CA gets an ECDSA P-256 key. A key generation authority certifi
 the CA issues with the id-kp-cmKGA extended key usage signs them.
 `MockCA.CentralKeyGeneration` returns the server option, which the example
 command enables.
+
+[ra.go](ra.go) implements `server.RAAuthorizer`. It accepts requests that a
+registration authority forwards in a nested message signed with a certificate
+the CA issued with the id-kp-cmcRA extended key usage and has not revoked. A
+MAC on the nested message is refused with wrongIntegrity. The CA copies a
+requested extendedKeyUsage into the certificate, so any client it enrolls can
+become an RA. The example command enables it with `server.WithRAAuthorizer`.
