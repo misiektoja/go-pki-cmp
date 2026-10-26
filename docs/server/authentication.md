@@ -45,7 +45,7 @@ second quota by naming a different sender. Clients that share one secret share o
 that send only a name, as RFC 4210 allows, keep separate transactions as long as their secrets differ.
 
 The client chooses the MAC iteration count and the server runs every iteration before it can check
-the MAC. `WithMACIterationLimits` bounds that work, 100 to 500000 by default. For PBMAC1 the maximum
+the MAC. `WithMACIterationLimits` bounds that work, 100 to 1000000 by default. For PBMAC1 the maximum
 bounds the whole PBKDF2 derivation, the iterations multiplied by the number of PRF output blocks the
 requested key length needs, so a long key from a short PRF cannot multiply the work. A request
 outside the range is refused with badMessageCheck and the text "MAC protection parameters not

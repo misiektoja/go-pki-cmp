@@ -50,7 +50,7 @@ Some CAs need extra options:
 | Signs a response, such as the answer to a revocation request, without attaching its certificate | `pkicmp.ReasonNoCandidateSigner` | `WithServerCerts` with the certificate the CA signs with, often the issuing CA |
 | Copies the request's `senderKID` into the response | `pkicmp.ReasonSenderKIDMismatch` | `WithSenderKIDMismatch` |
 | Signs with SHA-1 | `pkicmp.ReasonUnsupportedAlgorithm` | `WithSHA1Signatures` |
-| Uses a MAC iteration count outside 100 to 500000, or a PBMAC1 key length that multiplies it past the maximum | The MAC parameters are refused | `WithMACIterationLimits` |
+| Uses a MAC iteration count outside 100 to 1000000, or a PBMAC1 key length that multiplies it past the maximum | The MAC parameters are refused | `WithMACIterationLimits` |
 
 `WithServerCerts` does not trust a certificate directly. Like every candidate, it must chain to the
 anchors, match the sender name and verify the signature. `WithSHA1Signatures` covers only the message

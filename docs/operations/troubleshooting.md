@@ -9,7 +9,7 @@ rule it broke in its status text. Find the text below.
 | --- | --- | --- |
 | "malformed message" with badDataFormat | The message after its header cannot be decoded. A request without a readable header gets HTTP 400 instead | Fix the client encoding |
 | "senderKID does not identify the protection certificate" | The senderKID names another key than the certificate that signed the request | Fix the client's senderKID or its protection certificate |
-| "MAC protection parameters not accepted" | The MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length, is outside `WithMACIterationLimits`, 100 to 500000 by default | Widen the limits for that fleet |
+| "MAC protection parameters not accepted" | The MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length, is outside `WithMACIterationLimits`, 100 to 1000000 by default | Widen the limits for that fleet |
 | "pkicmp: RSA modulus larger than 16384 bits" | The request, its proof of possession or its protection certificate carries an RSA key above `pkicmp.MaxRSAModulusBits` | Use a key of at most 16384 bits |
 | "MAC protection not configured" | No `WithSecretLookup` | Configure the lookup |
 | "signature protection not configured" | No `WithCertificateLookup` | Configure the lookup |

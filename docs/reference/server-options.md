@@ -15,7 +15,7 @@ full.
 | [`WithSecretLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSecretLookup) | None | Finds shared secrets. Without it MAC-protected messages are refused |
 | [`WithCertificateLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCertificateLookup) | None | Finds sender certificates. Without it signed messages are refused |
 | [`WithRAAuthorizer`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRAAuthorizer) | None | Accepts nested messages from registration authorities |
-| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 100 to 500000 | Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length |
+| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 100 to 1000000 | Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length |
 | [`WithSHA1Signatures`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSHA1Signatures) | Off | Accepts SHA-1 signatures in protection and proof of possession |
 
 ## Confirmation and waiting
