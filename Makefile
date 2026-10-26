@@ -152,7 +152,11 @@ PYTHON ?= python3
 
 .PHONY: docs-deps
 docs-deps: ## Install the pinned documentation site build dependencies.
-	$(PYTHON) -m pip install -r docs/requirements.txt
+	$(PYTHON) -m pip install --require-hashes -r docs/requirements.txt
+
+.PHONY: docs-requirements
+docs-requirements: ## Compile docs/requirements.txt with hashes from docs/requirements.in. Needs pip-tools.
+	$(PYTHON) -m piptools compile --generate-hashes --strip-extras --output-file docs/requirements.txt docs/requirements.in
 
 .PHONY: docs-build
 docs-build: ## Build the documentation site into site/ and fail on any warning.
