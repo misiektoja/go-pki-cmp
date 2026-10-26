@@ -242,4 +242,7 @@ type EnrollResult struct {
 	// ImplicitConfirm is true when the CA granted implicit confirmation, so the
 	// transaction ended with the certificate response and no certConf was sent.
 	ImplicitConfirm bool
+	// Pending holds the transaction state when [WithDeferredPolling] stopped the
+	// call at an answer with status waiting. The other fields are then empty.
+	Pending *PendingEnrollment
 }

@@ -78,29 +78,88 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, cmpResp.wrapError(err)
 	}
 
+	txn := &enrollment{
+		header:          msg.Header,
+		requestType:     reqBody.Type,
+		expectedRepType: expectedRepType,
+		certReqIDs:      certReqIDs,
+		requestedKey:    requestedKey,
+		proof:           proof,
+		creds:           creds,
+	}
 	if certResp.Status.Status == pkicmp.StatusWaiting {
 		if err := checkCertReqID(certResp, certReqIDs); err != nil {
 			return nil, cmpResp.wrapError(err)
 		}
-		cmpResp, vr, err = c.poll(ctx, delayed, resp, creds, certResp.CertReqID, knownSigner)
+		state := &pollState{
+			delayed:     delayed,
+			recipNonce:  resp.Header.SenderNonce,
+			certReqID:   certResp.CertReqID,
+			knownSigner: knownSigner,
+		}
+		if opts.deferredPolling {
+			pending, err := txn.pending(state)
+			if err != nil {
+				return nil, err
+			}
+			return &EnrollResult{Pending: pending}, nil
+		}
+		return c.pollEnrollment(ctx, txn, state, false)
+	}
+	return c.finishEnrollment(ctx, txn, cmpResp, vr, knownSigner, certResp, rep)
+}
+
+// enrollment holds what the end of an enrollment transaction needs from its first request.
+type enrollment struct {
+	// header is the header of the first request, whose names, transaction ID,
+	// version and senderKID every later message repeats.
+	header          pkicmp.PKIHeader
+	requestType     pkicmp.BodyType
+	expectedRepType pkicmp.BodyType
+	certReqIDs      []int64
+	requestedKey    crypto.PublicKey
+	proof           *decryptionProof
+	creds           pkicmp.Credentials
+}
+
+// pollEnrollment polls for the final response to a waiting enrollment and
+// finishes it. With once set it sends one pollReq and returns the pending state
+// while the CA still waits. A poll that stops while the request still waits
+// returns a [PendingError].
+func (c *Client) pollEnrollment(ctx context.Context, txn *enrollment, state *pollState, once bool) (*EnrollResult, error) {
+	cmpResp, vr, err := c.poll(ctx, state, txn.creds, once)
+	if err != nil {
+		if state.waiting {
+			if pending, pendingErr := txn.pending(state); pendingErr == nil {
+				return nil, &PendingError{Pending: pending, Err: err}
+			}
+		}
+		return nil, err
+	}
+	if cmpResp == nil {
+		pending, err := txn.pending(state)
 		if err != nil {
 			return nil, err
 		}
-		resp = cmpResp.message
-		if vr != nil && vr.ProtectionCertificate != nil {
-			knownSigner = vr.ProtectionCertificate
-		}
-		certResp, rep, err = extractCertRespAndRep(resp, expectedRepType)
-		if err != nil {
-			return nil, cmpResp.wrapError(err)
-		}
+		return &EnrollResult{Pending: pending}, nil
 	}
+	certResp, rep, err := extractCertRespAndRep(cmpResp.message, txn.expectedRepType)
+	if err != nil {
+		return nil, cmpResp.wrapError(err)
+	}
+	return c.finishEnrollment(ctx, txn, cmpResp, vr, state.knownSigner, certResp, rep)
+}
 
+// finishEnrollment checks the final certificate response of an enrollment,
+// verifies the certificate and confirms it unless the CA granted implicit
+// confirmation.
+func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp *cmpHTTPResponse, vr *pkicmp.VerifyResult, knownSigner *x509.Certificate, certResp *pkicmp.CertResponse, rep *pkicmp.CertRepMessage) (*EnrollResult, error) {
+	resp := cmpResp.message
 	if certResp.Status.Status != pkicmp.StatusAccepted && certResp.Status.Status != pkicmp.StatusGrantedWithMods {
 		return nil, cmpResp.wrapError(certResp.Status.AsError())
 	}
 
-	cert, err := extractCertificate(certResp, proof)
+	cert, err := extractCertificate(certResp, txn.proof)
 	if err != nil {
 		return nil, cmpResp.wrapError(err)
 	}
@@ -115,12 +174,12 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 	// refuse a certConf.
 	implicit := hasImplicitConfirm(&resp.Header)
 	conf := &certConfirmation{
-		req: msg, resp: resp, creds: creds, trustPool: trustPool, knownSigner: knownSigner, implicit: implicit,
+		header: txn.header, resp: resp, creds: txn.creds, trustPool: trustPool, knownSigner: knownSigner, implicit: implicit,
 	}
 
 	// The rejection repeats the CA's certReqId, since that is the value the CA
 	// uses to find the certificate.
-	if err := checkCertReqID(certResp, certReqIDs); err != nil {
+	if err := checkCertReqID(certResp, txn.certReqIDs); err != nil {
 		return nil, c.rejectCertificate(ctx, conf, cert, certResp.CertReqID,
 			"certReqId does not match the request", cmpResp.wrapError(err))
 	}
@@ -133,7 +192,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		}
 	}
 
-	if err := checkIssuedKey(cert, requestedKey); err != nil {
+	if err := checkIssuedKey(cert, txn.requestedKey); err != nil {
 		return nil, c.rejectCertificate(ctx, conf, cert, certResp.CertReqID,
 			"certificate does not certify the requested public key", cmpResp.wrapError(err))
 	}
@@ -212,7 +271,7 @@ func verifyIssuedCertificate(cert *x509.Certificate, roots *x509.CertPool, candi
 
 // certConfirmation holds what a certConf needs from the enrollment exchange it confirms.
 type certConfirmation struct {
-	req         *pkicmp.PKIMessage // first request of the operation
+	header      pkicmp.PKIHeader   // header of the first request of the operation
 	resp        *pkicmp.PKIMessage // response that carried the certificate
 	creds       pkicmp.Credentials
 	trustPool   *x509.CertPool
@@ -225,18 +284,18 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 	confMsg := pkicmp.NewPKIMessage(
 		pkicmp.NewCertConfBody(&pkicmp.CertConfirmContent{status}),
 		pkicmp.MessageOptions{
-			Sender:     conf.req.Header.Sender,
-			Recipient:  conf.req.Header.Recipient,
+			Sender:     conf.header.Sender,
+			Recipient:  conf.header.Recipient,
 			RecipNonce: conf.resp.Header.SenderNonce,
 		},
 	)
-	confMsg.Header.TransactionID = conf.req.Header.TransactionID
+	confMsg.Header.TransactionID = conf.header.TransactionID
 	// The messages of one transaction keep the version of its first request.
-	confMsg.Header.PVNO = conf.req.Header.PVNO
+	confMsg.Header.PVNO = conf.header.PVNO
 	// Preserve senderKID across all messages in this transaction (RFC 9810 §5.1.1).
 	// For signature-based creds, ProtectWithSignature will overwrite this with the
 	// cert SubjectKeyId; for MAC-based creds it must be set explicitly.
-	confMsg.Header.SenderKID = conf.req.Header.SenderKID
+	confMsg.Header.SenderKID = conf.header.SenderKID
 
 	if err := conf.creds.Protect(confMsg); err != nil {
 		return &Error{Op: "protect certConf", Err: err}
@@ -633,37 +692,62 @@ func (c *Client) clampCheckAfter(seconds int64) time.Duration {
 	return wait
 }
 
+// pollState is the state of polling for the final response to a delayed request (RFC 9810 §5.3.22).
+type pollState struct {
+	// delayed is the header of the delayed request. Every pollReq repeats its
+	// names, transaction ID, version and senderKID, and the final response may
+	// repeat its senderNonce.
+	delayed pkicmp.PKIHeader
+	// recipNonce is the senderNonce of the last response, which the next pollReq repeats.
+	recipNonce []byte
+	certReqID  int64
+	// knownSigner is the protection certificate authenticated last in the operation.
+	knownSigner *x509.Certificate
+	// nextPoll is when the CA asked for the next pollReq. It is zero to poll at once.
+	nextPoll time.Time
+	// waiting is set when polling stops without a final response while the request still waits.
+	waiting bool
+}
+
 // poll implements the client-side polling state machine (RFC 9810 §5.3.22).
 // It sends pollReq messages and respects the server's checkAfter interval
-// until a final response (ip/cp/kup) or error is received.
-func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp *pkicmp.PKIMessage, creds pkicmp.Credentials, certReqID int64, knownSigner *x509.Certificate) (*cmpHTTPResponse, *pkicmp.VerifyResult, error) {
+// until a final response (ip/cp/kup) or error is received, recording each
+// pollRep in state. With once set it returns a nil response after the first
+// pollRep.
+func (c *Client) poll(ctx context.Context, state *pollState, creds pkicmp.Credentials, once bool) (*cmpHTTPResponse, *pkicmp.VerifyResult, error) {
 	var waitTime time.Duration
 
 	for i := 0; i < c.maxPolls; i++ {
-		if i > 0 {
+		wait := waitTime
+		if i == 0 {
+			wait = c.untilNextPoll(state.nextPoll)
+		}
+		if wait > 0 {
 			select {
 			case <-ctx.Done():
 				// Naming the wait keeps a deadline that expires between polls
 				// distinguishable from one that expires during a request, while
 				// the wrapped context error stays available to errors.Is.
-				return nil, nil, &Error{Op: fmt.Sprintf("waiting %s before poll %d", waitTime, i+1), Err: ctx.Err()}
-			case <-time.After(waitTime):
+				state.waiting = true
+				op := fmt.Sprintf("waiting %s before poll %d", wait.Round(time.Millisecond), i+1)
+				return nil, nil, &Error{Op: op, Err: ctx.Err()}
+			case <-time.After(wait):
 			}
 		}
 
-		pollReq := pkicmp.PollReqContent{certReqID}
+		pollReq := pkicmp.PollReqContent{state.certReqID}
 
 		pollMsg := pkicmp.NewPKIMessage(
 			pkicmp.NewPollReqBody(&pollReq),
 			pkicmp.MessageOptions{
-				Sender:     origHeader.Sender,
-				Recipient:  origHeader.Recipient,
-				RecipNonce: lastResp.Header.SenderNonce,
+				Sender:     state.delayed.Sender,
+				Recipient:  state.delayed.Recipient,
+				RecipNonce: state.recipNonce,
 			},
 		)
-		pollMsg.Header.TransactionID = origHeader.TransactionID
-		pollMsg.Header.PVNO = origHeader.PVNO
-		pollMsg.Header.SenderKID = origHeader.SenderKID
+		pollMsg.Header.TransactionID = state.delayed.TransactionID
+		pollMsg.Header.PVNO = state.delayed.PVNO
+		pollMsg.Header.SenderKID = state.delayed.SenderKID
 
 		if err := creds.Protect(pollMsg); err != nil {
 			return nil, nil, &Error{Op: "protect poll request", Err: err}
@@ -676,6 +760,9 @@ func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp
 
 		httpResp, err := c.sendHTTP(ctx, pollDER)
 		if err != nil {
+			// No response was accepted, so the request is still waiting as far
+			// as the client knows.
+			state.waiting = true
 			return nil, nil, err
 		}
 
@@ -689,14 +776,14 @@ func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp
 		if resp.Body.Type != pkicmp.BodyTypePollRep {
 			// RFC 9483 Section 4.4: the final response may refer back to the request
 			// whose processing was delayed rather than to the last pollReq.
-			delayedRequestNonce = origHeader.SenderNonce
+			delayedRequestNonce = state.delayed.SenderNonce
 		}
-		vr, err := c.verifyResponse(pollMsg, resp, creds, c.trustedCAs, knownSigner, delayedRequestNonce)
+		vr, err := c.verifyResponse(pollMsg, resp, creds, c.trustedCAs, state.knownSigner, delayedRequestNonce)
 		if err != nil {
 			return nil, nil, cmpResp.wrapError(withUnverifiedStatus(resp, &Error{Op: "verify polled response", Err: err}))
 		}
 		if vr != nil && vr.ProtectionCertificate != nil {
-			knownSigner = vr.ProtectionCertificate
+			state.knownSigner = vr.ProtectionCertificate
 		}
 
 		if resp.Header.PVNO < pkicmp.PVNO2 || resp.Header.PVNO > pkicmp.PVNO3 {
@@ -719,13 +806,28 @@ func (c *Client) poll(ctx context.Context, origHeader pkicmp.PKIHeader, lastResp
 				checkAfter = (*pollRep)[0].CheckAfter
 			}
 			waitTime = c.clampCheckAfter(checkAfter)
-			lastResp = resp
+			state.recipNonce = resp.Header.SenderNonce
+			state.nextPoll = time.Now().Add(waitTime)
+			if once {
+				state.waiting = true
+				return nil, nil, nil
+			}
 			continue
 		}
 		return cmpResp, vr, nil
 	}
 
+	state.waiting = true
 	return nil, nil, &Error{Op: fmt.Sprintf("polling exceeded max retries (%d)", c.maxPolls)}
+}
+
+// untilNextPoll returns how long to wait for a pollReq the CA asked for at
+// next, at most the maximum of [WithCheckAfterLimits].
+func (c *Client) untilNextPoll(next time.Time) time.Duration {
+	if next.IsZero() {
+		return 0
+	}
+	return min(max(time.Until(next), 0), c.maxCheckAfter)
 }
 
 // verifyResponse checks that a response belongs to the request and that its protection verifies.

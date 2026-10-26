@@ -87,7 +87,8 @@ func (c *Client) sendRR(ctx context.Context, details pkicmp.RevDetails, creds pk
 		if vr != nil {
 			knownSigner = vr.ProtectionCertificate
 		}
-		cmpResp, _, err = c.poll(ctx, msg.Header, resp, creds, -1, knownSigner)
+		state := &pollState{delayed: msg.Header, recipNonce: resp.Header.SenderNonce, certReqID: -1, knownSigner: knownSigner}
+		cmpResp, _, err = c.poll(ctx, state, creds, false)
 		if err != nil {
 			return err
 		}

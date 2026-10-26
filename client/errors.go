@@ -46,6 +46,30 @@ func (e *ConfirmationError) Unwrap() error {
 	return e.Err
 }
 
+// PendingError reports that an enrollment stopped polling while the CA still
+// had the request waiting: the context ended, a pollReq got no usable answer
+// or [WithMaxPolls] was reached. Pending holds the state that continues the
+// transaction with [Client.ResumeEnrollment]. Err is the cause, so
+// [errors.Is] still finds a context error.
+//
+// When a pollReq reached the CA but its answer was lost, the CA expects the
+// senderNonce of that lost answer and refuses the resumed poll with
+// badRecipientNonce.
+type PendingError struct {
+	// Pending is the state of the waiting transaction.
+	Pending *PendingEnrollment
+	// Err is why polling stopped.
+	Err error
+}
+
+func (e *PendingError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *PendingError) Unwrap() error {
+	return e.Err
+}
+
 // UnverifiedStatusError reports the status from an error message the client
 // could not verify, which happens when only a shared secret is configured and
 // the CA signed the error as RFC 9810 §5.3.21 requires. The exchange still

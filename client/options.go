@@ -25,6 +25,8 @@ type requestOptions struct {
 	implicitConfirm bool
 	// invalidityDate is the invalidityDate CRL entry extension of an rr. Zero sends none.
 	invalidityDate time.Time
+	// deferredPolling returns the pending state of a waiting enrollment instead of polling.
+	deferredPolling bool
 }
 
 // RequestOption configures a specific enrollment request.
@@ -119,4 +121,15 @@ func WithImplicitConfirm() RequestOption {
 // none. Enrollment and general messages ignore the option.
 func WithInvalidityDate(t time.Time) RequestOption {
 	return func(o *requestOptions) { o.invalidityDate = t }
+}
+
+// WithDeferredPolling stops an ir, cr, kur or p10cr at the first answer that
+// says the request waits (RFC 9810 §5.3.22) instead of polling until the CA
+// decides. The call then returns an [EnrollResult] whose Pending field holds
+// the transaction state and whose other fields are empty. Save the state and
+// continue later with [Client.ResumeEnrollment], which under this option sends
+// one pollReq and returns the state again while the CA still waits. Revocation
+// and general messages ignore the option.
+func WithDeferredPolling() RequestOption {
+	return func(o *requestOptions) { o.deferredPolling = true }
 }
