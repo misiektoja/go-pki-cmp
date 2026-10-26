@@ -551,6 +551,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -793,6 +849,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1604,6 +1688,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#central-key-generation-needs-a-key-that-can-decrypt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central key generation needs a key that can decrypt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ml-kem-512-and-older-dilithium-encodings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1735,17 +1830,6 @@
   
     <nav class="md-nav" aria-label="Client">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#no-sender-for-nested-messages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        No sender for nested messages
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#polling-time-is-chosen-by-the-ca" class="md-nav__link">
@@ -1843,6 +1927,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#central-key-generation-needs-a-key-that-can-decrypt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central key generation needs a key that can decrypt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ml-kem-512-and-older-dilithium-encodings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1976,17 +2071,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#no-sender-for-nested-messages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        No sender for nested messages
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#polling-time-is-chosen-by-the-ca" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2038,11 +2122,17 @@
 for your application.</p>
 <h2 id="protocol-scope">Protocol scope<a class="headerlink" href="#protocol-scope" title="Permanent link">&para;</a></h2>
 <h3 id="some-cmp-operations-are-not-implemented">Some CMP operations are not implemented<a class="headerlink" href="#some-cmp-operations-are-not-implemented" title="Permanent link">&para;</a></h3>
-<p>Key recovery, central key generation, cross-certification and announcements are not implemented.
+<p>Key recovery, cross-certification and announcements are not implemented.
 Requests for them are refused with badRequest and the text "message type not supported".</p>
 <h3 id="one-request-per-nested-message">One request per nested message<a class="headerlink" href="#one-request-per-nested-message" title="Permanent link">&para;</a></h3>
 <p>A registration authority may forward one request per nested message. Batches (RFC 9483 section
-5.2.2.2) are refused with badRequest. The client does not send nested messages.</p>
+5.2.2.2) are refused with badRequest. A client with <code>WithRegistrationAuthority</code> sends one request per
+nested message and does not batch.</p>
+<h3 id="central-key-generation-needs-a-key-that-can-decrypt">Central key generation needs a key that can decrypt<a class="headerlink" href="#central-key-generation-needs-a-key-that-can-decrypt" title="Permanent link">&para;</a></h3>
+<p>A centrally generated private key is encrypted for the requester. A signature-protected request
+needs an RSA or ECDSA P-256, P-384 or P-521 protection key. Other keys, such as Ed25519 or ML-DSA, can
+receive a generated key only through a MAC-protected request. The CMP version 2 EncryptedValue form
+of the private key is not supported.</p>
 <h3 id="ml-kem-512-and-older-dilithium-encodings">ML-KEM-512 and older Dilithium encodings<a class="headerlink" href="#ml-kem-512-and-older-dilithium-encodings" title="Permanent link">&para;</a></h3>
 <p>ML-KEM-512 keys are refused because the Go standard library does not implement them. Only the final
 ML-DSA encodings are supported, not the older Dilithium ones.</p>
@@ -2055,7 +2145,9 @@ path may carry name constraints.</p>
 <p>An SLH-DSA CA key signs every issued certificate and, as the <code>WithSigner</code> key, every protected
 response. The small parameter sets, whose names end in <code>s</code>, can take hundreds of milliseconds or more
 per signature. An enrollment with explicit confirmation needs at least two signatures. A separate
-classical or ML-DSA signer certificate in <code>WithSigner</code> keeps the responses fast.</p>
+classical or ML-DSA signer certificate in <code>WithSigner</code> keeps the responses fast. Errors the server
+returns before authentication are signed too, so every unauthenticated request costs a signature
+unless <code>WithUnprotectedErrorsBeforeAuthentication</code> leaves those errors unprotected.</p>
 <h3 id="proof-by-decryption-needs-a-capable-ca">Proof by decryption needs a capable CA<a class="headerlink" href="#proof-by-decryption-needs-a-capable-ca" title="Permanent link">&para;</a></h3>
 <p>The client can enroll a key that cannot sign only at a CA that supports the encrypted certificate or
 challenge-response method. RFC 9483 lets a CA refuse both for keys that can sign. X25519 keys are
@@ -2077,11 +2169,10 @@ a signer outside crypto/x509, and so does a CA whose own key is SLH-DSA.</p>
 <h3 id="no-built-in-rate-limits">No built-in rate limits<a class="headerlink" href="#no-built-in-rate-limits" title="Permanent link">&para;</a></h3>
 <p>The server caps transactions in total and per credential. Other limits belong in your middleware.</p>
 <h2 id="client">Client<a class="headerlink" href="#client" title="Permanent link">&para;</a></h2>
-<h3 id="no-sender-for-nested-messages">No sender for nested messages<a class="headerlink" href="#no-sender-for-nested-messages" title="Permanent link">&para;</a></h3>
-<p>A client cannot act as a registration authority and wrap requests in nested messages.</p>
 <h3 id="polling-time-is-chosen-by-the-ca">Polling time is chosen by the CA<a class="headerlink" href="#polling-time-is-chosen-by-the-ca" title="Permanent link">&para;</a></h3>
 <p>The client waits as long as the CA asks, within <code>WithCheckAfterLimits</code>, up to <code>WithMaxPolls</code> times.
-Only a context deadline bounds the whole operation.</p>
+Only a context deadline bounds the whole operation. <code>WithDeferredPolling</code> returns at the first
+waiting answer, so that <code>ResumeEnrollment</code> can collect the certificate later.</p>
 <h2 id="operational-limits">Operational limits<a class="headerlink" href="#operational-limits" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2101,6 +2192,11 @@ Only a context deadline bounds the whole operation.</p>
 <td>Response body at the client</td>
 <td>10 MiB</td>
 <td><code>client.WithMaxResponseBytes</code></td>
+</tr>
+<tr>
+<td>HTTP exchange at the client</td>
+<td>120 seconds</td>
+<td><code>client.WithHTTPClient</code></td>
 </tr>
 <tr>
 <td>Concurrent transactions</td>
@@ -2123,9 +2219,14 @@ Only a context deadline bounds the whole operation.</p>
 <td><code>server.WithWaitingLifetime</code></td>
 </tr>
 <tr>
-<td>MAC iteration count</td>
-<td>1 to 500000</td>
+<td>MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length</td>
+<td>100 to 1000000</td>
 <td><code>WithMACIterationLimits</code> in either package</td>
+</tr>
+<tr>
+<td>RSA modulus in a key or certificate from a peer</td>
+<td>16384 bits</td>
+<td>Fixed, <code>pkicmp.MaxRSAModulusBits</code></td>
 </tr>
 <tr>
 <td>Poll attempts</td>

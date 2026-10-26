@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -795,6 +851,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1718,8 +1802,13 @@ rule it broke in its status text. Find the text below.</p>
 </tr>
 <tr>
 <td>"MAC protection parameters not accepted"</td>
-<td>The MAC iteration count is outside <code>WithMACIterationLimits</code>, 1 to 500000 by default</td>
+<td>The MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length, is outside <code>WithMACIterationLimits</code>, 100 to 1000000 by default</td>
 <td>Widen the limits for that fleet</td>
+</tr>
+<tr>
+<td>"pkicmp: RSA modulus larger than 16384 bits"</td>
+<td>The request, its proof of possession or its protection certificate carries an RSA key above <code>pkicmp.MaxRSAModulusBits</code></td>
+<td>Use a key of at most 16384 bits</td>
 </tr>
 <tr>
 <td>"MAC protection not configured"</td>

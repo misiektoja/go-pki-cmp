@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://misiektoja.github.io/go-pki-cmp/server/ca/">
       
       
-        <link rel="prev" href="../../client/indirect-pop/">
+        <link rel="prev" href="../../client/registration-authority/">
       
       
         <link rel="next" href="../authentication/">
@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -944,6 +1000,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1840,7 +1924,8 @@ authenticated requester.</p>
 <h2 id="the-template">The template<a class="headerlink" href="#the-template" title="Permanent link">&para;</a></h2>
 <p>The template arrives with the subject, public key, extensions and subject key identifier from the
 request. <code>SerialNumber</code> is nil. The CA must set the serial number and validity and may enforce
-policy, change the subject, add or remove extensions or refuse the request.</p>
+policy, change the subject, add or remove extensions or refuse the request. A validity the CRMF
+template asks for is not passed on.</p>
 <div class="highlight"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">myCA</span><span class="p">)</span><span class="w"> </span><span class="nx">IssueCertificate</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">reqType</span><span class="w"> </span><span class="nx">server</span><span class="p">.</span><span class="nx">RequestType</span><span class="p">,</span>
 <span class="w">    </span><span class="nx">tmpl</span><span class="w"> </span><span class="o">*</span><span class="nx">x509</span><span class="p">.</span><span class="nx">Certificate</span><span class="p">,</span><span class="w"> </span><span class="nx">sender</span><span class="w"> </span><span class="o">*</span><span class="nx">server</span><span class="p">.</span><span class="nx">SenderIdentity</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">server</span><span class="p">.</span><span class="nx">Response</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 
@@ -1905,8 +1990,8 @@ should clear the flag.</p>
   is slow, see <a href="../../known-limitations/#slh-dsa-cas-sign-slowly">Known limitations</a>.</li>
 </ul>
 <p>The <a href="https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver">example CA</a> uses
-<code>compositex509.CreateCertificate</code> for every key, so it certifies composite keys as well as the key
-types crypto/x509 supports.</p>
+<code>compositex509.CreateCertificate</code>, so it certifies composite keys as well as the key types
+crypto/x509 supports. It certifies ML-KEM keys with keyEncipherment as their only key usage.</p>
 <h2 id="the-response">The response<a class="headerlink" href="#the-response" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

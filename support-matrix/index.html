@@ -677,6 +677,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -919,6 +975,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1799,7 +1883,7 @@ was tested with.</p>
 </tr>
 <tr>
 <td>RFC 9483</td>
-<td>Lightweight CMP Profile: enrollment, revocation, support messages, delayed delivery and requests a registration authority forwards in nested messages</td>
+<td>Lightweight CMP Profile: enrollment, central key generation, revocation, support messages, delayed delivery and requests a registration authority forwards in nested messages</td>
 </tr>
 <tr>
 <td>RFC 4211</td>
@@ -1815,7 +1899,11 @@ was tested with.</p>
 </tr>
 <tr>
 <td>RFC 5652, RFC 4211</td>
-<td>CMS EnvelopedData and CMP version 2 EncryptedValue for encrypted certificates</td>
+<td>CMS EnvelopedData and CMP version 2 EncryptedValue for encrypted certificates. EnvelopedData and SignedData for centrally generated keys</td>
+</tr>
+<tr>
+<td>RFC 5958</td>
+<td>OneAsymmetricKey and AsymmetricKeyPackage for centrally generated keys</td>
 </tr>
 <tr>
 <td>RFC 9629, RFC 9936</td>
@@ -1847,17 +1935,17 @@ was tested with.</p>
 <tbody>
 <tr>
 <td><code>ir</code> / <code>ip</code></td>
-<td><code>SendIR</code>, <code>SendIRWithIndirectPOP</code></td>
+<td><code>SendIR</code>, <code>SendIRWithIndirectPOP</code>, <code>SendIRWithCentralKeyGeneration</code></td>
 <td>Always</td>
 </tr>
 <tr>
 <td><code>cr</code> / <code>cp</code></td>
-<td><code>SendCR</code>, <code>SendCRWithIndirectPOP</code></td>
+<td><code>SendCR</code>, <code>SendCRWithIndirectPOP</code>, <code>SendCRWithCentralKeyGeneration</code></td>
 <td>Always</td>
 </tr>
 <tr>
 <td><code>kur</code> / <code>kup</code></td>
-<td><code>SendKUR</code>, <code>SendKURWithIndirectPOP</code></td>
+<td><code>SendKUR</code>, <code>SendKURWithIndirectPOP</code>, <code>SendKURWithCentralKeyGeneration</code></td>
 <td>Always</td>
 </tr>
 <tr>
@@ -1867,17 +1955,17 @@ was tested with.</p>
 </tr>
 <tr>
 <td><code>rr</code> / <code>rp</code></td>
-<td><code>SendRR</code></td>
+<td><code>SendRR</code>, <code>SendRRBySerial</code></td>
 <td>A CA that implements <code>Revoker</code></td>
 </tr>
 <tr>
 <td><code>certConf</code> / <code>pkiConf</code></td>
-<td>Sent and checked automatically</td>
+<td>Sent and checked automatically, unless the CA grants the implicit confirmation <code>WithImplicitConfirm</code> asks for</td>
 <td>Always. <code>WithImplicitConfirm</code> skips it</td>
 </tr>
 <tr>
 <td><code>pollReq</code> / <code>pollRep</code></td>
-<td>Sent automatically</td>
+<td>Sent automatically, or later by <code>ResumeEnrollment</code></td>
 <td>A CA that implements <code>PendingChecker</code></td>
 </tr>
 <tr>
@@ -1892,7 +1980,7 @@ was tested with.</p>
 </tr>
 <tr>
 <td><code>nested</code></td>
-<td>Not sent</td>
+<td><code>WithRegistrationAuthority</code>, one message per nested message</td>
 <td><code>WithRAAuthorizer</code>, one message per nested message</td>
 </tr>
 <tr>
@@ -1913,7 +2001,7 @@ was tested with.</p>
 <tbody>
 <tr>
 <td>MAC</td>
-<td>PBMAC1 (default) and PasswordBasedMac with HMAC-SHA1 to HMAC-SHA512. Iteration counts from 1 to 500000 are accepted by default</td>
+<td>PBMAC1 (default) and PasswordBasedMac with HMAC-SHA1 to HMAC-SHA512. Iteration counts from 100 to 1000000 are accepted by default</td>
 </tr>
 <tr>
 <td>Signature</td>
@@ -1958,6 +2046,10 @@ was tested with.</p>
 <td><code>raVerified</code></td>
 <td>Refused with notAuthorized</td>
 </tr>
+<tr>
+<td>None, the server generates the key pair</td>
+<td><code>WithCentralKeyGeneration</code></td>
+</tr>
 </tbody>
 </table>
 <p>The client sends a signature proof for every key that can sign and either decryption method
@@ -1982,6 +2074,10 @@ through the <code>*WithIndirectPOP</code> methods.</p>
 <tr>
 <td>EncryptedValue for CMP version 2</td>
 <td>RSA only</td>
+</tr>
+<tr>
+<td>Receiving a centrally generated key</td>
+<td>MAC credentials, RSA protection keys and ECDSA protection keys on P-256, P-384 and P-521</td>
 </tr>
 </tbody>
 </table>
@@ -2045,6 +2141,11 @@ through the <code>*WithIndirectPOP</code> methods.</p>
 <td>For nested messages</td>
 <td>Approves the registration authority</td>
 </tr>
+<tr>
+<td><code>KeyGenerator</code></td>
+<td>For central key generation</td>
+<td>Generates the key pair</td>
+</tr>
 </tbody>
 </table>
 <h2 id="not-supported">Not supported<a class="headerlink" href="#not-supported" title="Permanent link">&para;</a></h2>
@@ -2057,16 +2158,16 @@ through the <code>*WithIndirectPOP</code> methods.</p>
 </thead>
 <tbody>
 <tr>
-<td>Key recovery, central key generation, cross-certification and announcements</td>
+<td>Key recovery, cross-certification and announcements</td>
 <td>Not implemented</td>
+</tr>
+<tr>
+<td>A centrally generated private key in EncryptedValue</td>
+<td>Refused by the client and never sent by the server</td>
 </tr>
 <tr>
 <td>Several requests in one nested message (RFC 9483 section 5.2.2.2)</td>
-<td>Refused with badRequest</td>
-</tr>
-<tr>
-<td>Sending nested messages from the client</td>
-<td>Not implemented</td>
+<td>Refused with badRequest and never sent by the client</td>
 </tr>
 <tr>
 <td>ML-KEM-512</td>

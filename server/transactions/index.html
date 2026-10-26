@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -797,6 +853,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1742,9 +1826,11 @@
 polling flows. This page covers the limits, the cleanup and moving the state to durable storage.</p>
 <h2 id="transaction-identity">Transaction identity<a class="headerlink" href="#transaction-identity" title="Permanent link">&para;</a></h2>
 <p>Transactions are keyed by the sender's verified credential and the transaction ID, so one client
-cannot continue another client's transaction (RFC 9810 section 5.1.1). A client may leave the
-transaction ID out of its first request. The server then assigns a random 128-bit one and returns it,
-as RFC 4210 and RFC 9810 require. <code>WithStrictProfileValidation</code> refuses such requests instead.</p>
+cannot continue another client's transaction (RFC 9810 section 5.1.1). For a MAC-protected client
+the credential is the shared secret itself, whichever header field selected it, and for a signed
+client it is the protection certificate. A client may leave the transaction ID out of its first
+request. The server then assigns a random 128-bit one and returns it, as RFC 4210 and RFC 9810
+require. <code>WithStrictProfileValidation</code> refuses such requests instead.</p>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1796,7 +1882,9 @@ requests whose client stopped polling:</p>
 <span class="p">}()</span>
 </code></pre></div>
 <p>Entries expire by last activity: <code>WithConfirmWaitTime</code> for most, <code>WithWaitingLifetime</code> for waiting
-requests.</p>
+requests. A <code>certConf</code> that arrives after the confirmWaitTime is refused with badRequest even before
+<code>CleanupExpired</code> runs. <code>CertificateConfirmer</code> then hears <code>ConfirmExpired</code>, as RFC 9483 section 4.1.1
+asks.</p>
 <h2 id="durable-recovery">Durable recovery<a class="headerlink" href="#durable-recovery" title="Permanent link">&para;</a></h2>
 <p><code>SnapshotTransactions</code> saves the active, waiting, issued and completed protocol state.
 <code>RestoreTransactions</code> loads it into a fresh server with the same response-signing certificate before
@@ -1811,7 +1899,9 @@ survive.</p>
   completed transaction ID. The library provides neither database transactions nor a response cache.</li>
 </ul>
 <p>Treat snapshots as trusted private server data, never as client input. They have a versioned format
-and contain no secrets or signing keys, unless your <code>IssueRef</code> holds them. <code>IssueRef</code> must be JSON
+and contain no secrets or signing keys, unless your <code>IssueRef</code> holds them. A waiting request for
+<a href="../central-key-generation/">central key generation</a> keeps its private key encrypted for the client.
+<code>IssueRef</code> must be JSON
 serializable. Pass a decoder to <code>RestoreTransactions</code> when its original Go type matters. A nil
 decoder uses the standard encoding/json value types.</p>
 <p>Restore refuses a different signer, invalid state and capacity overruns without replacing existing

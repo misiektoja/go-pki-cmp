@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -795,6 +851,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1777,7 +1861,7 @@ them.</p>
 </tr>
 <tr>
 <td><code>internal/</code></td>
-<td>Path verification for composite ML-DSA chains and test certificates for ML-KEM keys, not part of the public API</td>
+<td>Path verification for composite ML-DSA chains and certificates for ML-KEM keys for the tests and the example CA, not part of the public API</td>
 </tr>
 <tr>
 <td><code>examples/</code></td>
@@ -1816,6 +1900,9 @@ make<span class="w"> </span>docs-serve<span class="w"> </span><span class="nv">P
 <p><code>make docs-build</code> runs with <code>--strict</code>, so a broken link, a missing anchor or a page absent from the
 navigation fails the build. CI runs the same build on every change to the documentation and
 publishes the site from the default branch.</p>
+<p>The toolchain is pinned with hashes in <code>docs/requirements.txt</code>, which <code>make docs-deps</code> installs in
+hash-checking mode. The direct dependencies live in <code>docs/requirements.in</code>. To change a version, edit
+that file and run <code>make docs-requirements</code>, which needs pip-tools in the <code>PYTHON</code> environment.</p>
 <p>Package documentation on <a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp">pkg.go.dev</a> comes from
 the Go doc comments and <code>make docs</code> serves it locally with pkgsite. User-facing behavior changes
 belong in both places: the doc comment for the API and the relevant page here for the walkthrough.

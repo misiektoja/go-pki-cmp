@@ -538,6 +538,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#revocation-by-serial-number" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revocation by serial number
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#invalidity-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalidity date
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#holds" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -622,6 +644,62 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
   
 
     
@@ -877,6 +955,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1641,6 +1747,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#revocation-by-serial-number" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revocation by serial number
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#invalidity-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalidity date
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#holds" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1713,6 +1841,24 @@ request to be signed with the certificate being revoked:</p>
 <p>A nil error means the CA revoked the certificate. A refusal arrives as a <code>*pkicmp.PKIStatusError</code>.</p>
 <p>A registration authority or another management entity that revokes for an end entity signs with its
 own credentials (RFC 9483 section 5.3.2). The CA decides whether it may.</p>
+<h2 id="revocation-by-serial-number">Revocation by serial number<a class="headerlink" href="#revocation-by-serial-number" title="Permanent link">&para;</a></h2>
+<p>A requester that has no copy of the certificate, such as an operator who knows only its serial number
+and the CA, names it with <code>Client.SendRRBySerial</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nx">serial</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">new</span><span class="p">(</span><span class="nx">big</span><span class="p">.</span><span class="nx">Int</span><span class="p">).</span><span class="nx">SetString</span><span class="p">(</span><span class="s">"1A2B"</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">)</span>
+<span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">SendRRBySerial</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">(),</span><span class="w"> </span><span class="nx">pkix</span><span class="p">.</span><span class="nx">Name</span><span class="p">{</span><span class="nx">CommonName</span><span class="p">:</span><span class="w"> </span><span class="s">"Example CA"</span><span class="p">},</span><span class="w"> </span><span class="nx">serial</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">pkicmp</span><span class="p">.</span><span class="nx">CRLReasonKeyCompromise</span><span class="p">,</span><span class="w"> </span><span class="nx">raCreds</span><span class="p">)</span>
+</code></pre></div>
+<p>The issuer name is encoded from the <code>pkix.Name</code>. A CA that compares the name bytes needs the
+attributes in the order and with the string types of the certificate. The <code>server</code> package compares
+the decoded attributes, so the string types may differ there.</p>
+<h2 id="invalidity-date">Invalidity date<a class="headerlink" href="#invalidity-date" title="Permanent link">&para;</a></h2>
+<p><code>WithInvalidityDate</code> adds the invalidityDate CRL entry extension (RFC 5280 section 5.3.2) to the
+request: the time at which the key is known or suspected to have been compromised or the certificate
+otherwise became invalid. A CA may publish it in the CRL entry. It is sent as a GeneralizedTime in
+UTC with a resolution of one second.</p>
+<div class="highlight"><pre><span></span><code><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">SendRR</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">Background</span><span class="p">(),</span><span class="w"> </span><span class="nx">cert</span><span class="p">,</span><span class="w"> </span><span class="nx">pkicmp</span><span class="p">.</span><span class="nx">CRLReasonKeyCompromise</span><span class="p">,</span><span class="w"> </span><span class="nx">creds</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">client</span><span class="p">.</span><span class="nx">WithInvalidityDate</span><span class="p">(</span><span class="nx">time</span><span class="p">.</span><span class="nx">Date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">UTC</span><span class="p">)))</span>
+</code></pre></div>
 <h2 id="holds">Holds<a class="headerlink" href="#holds" title="Permanent link">&para;</a></h2>
 <p><code>pkicmp.CRLReasonCertificateHold</code> suspends a certificate and <code>pkicmp.CRLReasonRemoveFromCRL</code> releases
 it, if the CA supports holds.</p>

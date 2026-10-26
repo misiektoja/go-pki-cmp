@@ -537,6 +537,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#confirmation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confirmation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#results-and-errors" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -655,6 +666,62 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
   
 
     
@@ -910,6 +977,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1729,6 +1824,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#confirmation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confirmation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#results-and-errors" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1793,7 +1899,9 @@ whole exchange: protection, response verification, polling and certificate confi
 </tr>
 </tbody>
 </table>
-<p>Keys that cannot sign, such as ML-KEM, use the methods in <a href="../indirect-pop/">Keys that cannot sign</a>.</p>
+<p>Keys that cannot sign, such as ML-KEM, use the methods in <a href="../indirect-pop/">Keys that cannot sign</a>.
+A device that lets the CA generate its key pair uses the methods in
+<a href="../central-key-generation/">Keys the CA generates</a>.</p>
 <h2 id="credentials">Credentials<a class="headerlink" href="#credentials" title="Permanent link">&para;</a></h2>
 <p>Every request is protected with a <code>pkicmp.Credentials</code>:</p>
 <ul>
@@ -1801,7 +1909,9 @@ whole exchange: protection, response verification, polling and certificate confi
   <code>pkicmp.WithPBM()</code> selects PasswordBasedMac and <code>pkicmp.WithPBMAlgorithms(crypto.SHA1, crypto.SHA1)</code>
   selects the SHA-1 suite that RFC 4210 peers expect.</li>
 <li><strong><code>pkicmp.NewSignatureCredentials(key, cert, chain...)</code></strong> signs with an existing certificate. The
-  chain is sent in <code>extraCerts</code> so the CA can verify the certificate.</li>
+  chain is sent in <code>extraCerts</code> so the CA can verify the certificate. The digest follows the key
+  type. <code>WithHash</code> on the credentials chooses SHA-1, SHA-256, SHA-384 or SHA-512 for an RSA or ECDSA
+  key, for example for a CA that expects one algorithm.</li>
 </ul>
 <p>A MAC-protected request names its secret through the sender name or the reference in <code>senderKID</code>.
 A new device usually has no name yet, so set <code>client.WithSenderKID</code> to the reference the CA gave
@@ -1861,12 +1971,32 @@ custom credential types and <code>WithSender</code> and <code>WithTemplateSubjec
 <td>Adds an extension to the template, such as subjectAltName</td>
 </tr>
 <tr>
+<td><code>WithTemplateValidity</code></td>
+<td>Asks for a validity period in the template. The CA decides the validity it grants</td>
+</tr>
+<tr>
 <td><code>WithCertProfile</code></td>
 <td>Names a certificate profile in the header (RFC 9483 section 3.1)</td>
 </tr>
 <tr>
 <td><code>WithOldCertificate</code></td>
 <td>The certificate a key update replaces</td>
+</tr>
+<tr>
+<td><code>WithGeneralInfo</code></td>
+<td>Adds items to <code>generalInfo</code> of the header, such as a vendor profile identifier</td>
+</tr>
+<tr>
+<td><code>WithCertReqID</code></td>
+<td>The <code>certReqId</code> of the request, which the CA repeats in its answer. Default 0</td>
+</tr>
+<tr>
+<td><code>WithPOPHash</code></td>
+<td>The digest of the signature proof of possession of an RSA or ECDSA key</td>
+</tr>
+<tr>
+<td><code>WithImplicitConfirm</code></td>
+<td>Asks for implicit confirmation, so that a CA that grants it needs no <code>certConf</code></td>
 </tr>
 </tbody>
 </table>
@@ -1880,6 +2010,45 @@ clamped by <code>WithCheckAfterLimits</code> to between 1 second and 1 hour by d
 <code>WithMaxPolls</code> attempts, 60 by default.</p>
 <p>Give every call a context with a deadline. It is the only bound on the whole operation, because the
 CA chooses each wait.</p>
+<p><code>WithDeferredPolling</code> collects the certificate later instead, for example from a job that runs
+again the next day. The method returns at the first waiting answer with <code>EnrollResult.Pending</code> set.
+<code>PendingEnrollment</code> encodes to JSON and holds no key or secret, but anyone with it and the
+credentials can collect the certificate, so store it like the credentials.</p>
+<div class="highlight"><pre><span></span><code><span class="nx">result</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">SendIR</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">creds</span><span class="p">,</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">WithDeferredPolling</span><span class="p">())</span>
+<span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">result</span><span class="p">.</span><span class="nx">Pending</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">state</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">json</span><span class="p">.</span><span class="nx">Marshal</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">Pending</span><span class="p">)</span>
+<span class="w">    </span><span class="c1">// Store state and run again later.</span>
+<span class="p">}</span>
+
+<span class="c1">// Later, possibly in another process, with the same credentials and trust settings:</span>
+<span class="kd">var</span><span class="w"> </span><span class="nx">pending</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">PendingEnrollment</span>
+<span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">json</span><span class="p">.</span><span class="nx">Unmarshal</span><span class="p">(</span><span class="nx">state</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">pending</span><span class="p">)</span>
+<span class="nx">result</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">ResumeEnrollment</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">pending</span><span class="p">,</span><span class="w"> </span><span class="nx">creds</span><span class="p">)</span>
+<span class="k">if</span><span class="w"> </span><span class="nx">pendingErr</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">errors</span><span class="p">.</span><span class="nx">AsType</span><span class="p">[</span><span class="o">*</span><span class="nx">client</span><span class="p">.</span><span class="nx">PendingError</span><span class="p">](</span><span class="nx">err</span><span class="p">);</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// The CA still waits. Store pendingErr.Pending and try again later.</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>ResumeEnrollment</code> waits until <code>PendingEnrollment.NextPoll</code>, polls until the CA decides, checks the
+certificate and confirms it as the Send* methods do. Under <code>WithDeferredPolling</code> it sends one
+<code>pollReq</code> and returns the next state while the CA still waits. A Send* method without the option
+returns a <code>PendingError</code> when polling stops at the deadline, at <code>WithMaxPolls</code> or when a <code>pollReq</code>
+gets no answer, and its state resumes the same way. A request that proves possession with <code>EncryptedCertificate</code>
+is resumed with <code>ResumeEnrollmentWithIndirectPOP</code> and its private key.</p>
+<p>Always store the state from the latest call. The CA checks that each <code>pollReq</code> answers its last
+<code>pollRep</code>, so an older state is refused with badRecipientNonce. The same happens when a <code>pollReq</code>
+reached the CA but its answer was lost.</p>
+<h2 id="confirmation">Confirmation<a class="headerlink" href="#confirmation" title="Permanent link">&para;</a></h2>
+<p>The method confirms an issued certificate with <code>certConf</code> and waits for <code>pkiConf</code> before it returns.
+<code>WithImplicitConfirm</code> adds <code>implicitConfirm</code> to the request header (RFC 9810 section 5.1.1.1), which
+asks the CA to skip that round trip. A CA that agrees repeats the item in its certificate response.
+The method then returns with <code>EnrollResult.ImplicitConfirm</code> set and sends nothing more, because the
+CA has closed the transaction. A CA that wants the confirmation leaves the item out and the method
+confirms as usual. RFC 9483 section 4.1.1 asks an end entity to request implicit confirmation unless
+it needs the confirmation.</p>
+<p>A grant the request did not ask for is honored as well, as OpenSSL does, since the CA would refuse
+a <code>certConf</code> for a closed transaction. A certificate the client refuses after a grant is not
+reported to the CA, as RFC 9483 section 3.6.1 asks. The option applies to <code>ir</code>, <code>cr</code>, <code>kur</code> and
+<code>p10cr</code> and is ignored by <code>SendRR</code> and the general messages.</p>
 <h2 id="results-and-errors">Results and errors<a class="headerlink" href="#results-and-errors" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1899,7 +2068,11 @@ CA chooses each wait.</p>
 </tr>
 <tr>
 <td><code>*client.ConfirmationError</code></td>
-<td>The CA issued a certificate but the <code>certConf</code> exchange failed. The error holds the certificate</td>
+<td>The CA issued a certificate but the <code>certConf</code> exchange failed. The error holds the certificate and the key the CA generated for a request for central key generation</td>
+</tr>
+<tr>
+<td><code>*client.PendingError</code></td>
+<td>Polling stopped while the CA still had the request waiting. <code>Pending</code> resumes it with <code>ResumeEnrollment</code></td>
 </tr>
 <tr>
 <td><code>*client.Error</code></td>

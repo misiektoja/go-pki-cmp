@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -910,6 +966,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1811,7 +1895,9 @@ Deployed clients break them, so they are off by default. <code>WithStrictProfile
 <li>A signed request must carry <code>extraCerts</code> that lead with the protection certificate and form a
   chain.</li>
 <li>A request must carry a transaction ID and every message a senderNonce of at least 128 bits.</li>
-<li>A <code>certConf</code> must hold one CertStatus and must not reuse a senderNonce.</li>
+<li>A <code>certConf</code> must hold one CertStatus.</li>
+<li>A <code>certConf</code>, <code>pollReq</code> or <code>popdecr</code> must not repeat the senderNonce of the last request or
+  response in the transaction.</li>
 <li>A signature proof of possession must not carry poposkInput.</li>
 <li>Proof by decryption is allowed only for keys that cannot sign.</li>
 </ul>
@@ -1857,6 +1943,11 @@ authenticates the request.</p>
 <td><code>WithOptionalSubject</code></td>
 <td>A template without the subject field that names the entity in subjectAltName</td>
 <td>Clients that leave the field out</td>
+</tr>
+<tr>
+<td><code>WithAnyCertReqID</code></td>
+<td>An ir, cr or kur with a certReqId other than 0, repeated in the response</td>
+<td>RFC 4210 clients that number their requests, tests of the certReqId check of a client</td>
 </tr>
 <tr>
 <td><code>WithOptionalRevocationReason</code></td>

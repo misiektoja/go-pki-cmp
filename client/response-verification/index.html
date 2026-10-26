@@ -657,6 +657,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -899,6 +955,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1796,7 +1880,7 @@ for later messages under the same checks.</p>
 <td><code>WithSHA1Signatures</code></td>
 </tr>
 <tr>
-<td>Uses a MAC iteration count outside 1 to 500000</td>
+<td>Uses a MAC iteration count outside 100 to 1000000, or a PBMAC1 key length that multiplies it past the maximum</td>
 <td>The MAC parameters are refused</td>
 <td><code>WithMACIterationLimits</code></td>
 </tr>
@@ -1816,7 +1900,10 @@ returned, so the CA learns about it at once.</p>
 <p>The client posts to the endpoint with <code>Content-Type: application/pkixcmp</code>. A CMP message in an HTTP
 4xx or 5xx response is parsed and verified before its status is returned and the error keeps the
 HTTP status. Response bodies are limited to 10 MiB by default, set with <code>WithMaxResponseBytes</code>.</p>
-<p><code>WithHTTPClient</code> supplies the HTTP client, for example with a TLS configuration or a timeout.</p>
+<p>The default HTTP client gives up on an exchange after 120 seconds, <code>client.DefaultHTTPTimeout</code>, so a
+CA that accepts the connection and never answers does not hold the call until the context expires.
+<code>WithHTTPClient</code> supplies another HTTP client, for example with a TLS configuration or another
+timeout.</p>
 
 
 

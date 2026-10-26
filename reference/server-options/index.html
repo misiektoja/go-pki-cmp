@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -795,6 +851,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1133,6 +1217,17 @@
     <span class="md-ellipsis">
       
         Proof of possession
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#central-key-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central key generation
       
     </span>
   </a>
@@ -1696,6 +1791,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#central-key-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central key generation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#request-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1757,6 +1863,11 @@ full.</p>
 <td>Key, certificate and chain that sign responses. <code>Err</code> reports a key that does not match</td>
 </tr>
 <tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithUnprotectedErrorsBeforeAuthentication"><code>WithUnprotectedErrorsBeforeAuthentication</code></a></td>
+<td>Off</td>
+<td>Leaves errors raised before authentication unprotected, so a slow signer does not sign them</td>
+</tr>
+<tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithExtraCerts"><code>WithExtraCerts</code></a></td>
 <td>None</td>
 <td>Certificates added to <code>extraCerts</code> of every response</td>
@@ -1783,8 +1894,8 @@ full.</p>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits"><code>WithMACIterationLimits</code></a></td>
-<td>1 to 500000</td>
-<td>Accepted MAC iteration counts</td>
+<td>100 to 1000000</td>
+<td>Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length</td>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSHA1Signatures"><code>WithSHA1Signatures</code></a></td>
@@ -1862,6 +1973,33 @@ full.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="central-key-generation">Central key generation<a class="headerlink" href="#central-key-generation" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGeneration"><code>WithCentralKeyGeneration</code></a></td>
+<td>Off</td>
+<td>Generates the key pair for requests without a public key and signs the private key with a key generation authority</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAESKeyWrap"><code>WithCentralKeyGenerationAESKeyWrap</code></a></td>
+<td>Off</td>
+<td>Encrypts the key for a MAC-protected request with the AES key wrap instead of the RFC 3211 key wrap that OpenSSL reads</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAsymmetricKeyPackage"><code>WithCentralKeyGenerationAsymmetricKeyPackage</code></a></td>
+<td>Off</td>
+<td>Signs the key as an RFC 9810 AsymmetricKeyPackage instead of the id-data that OpenSSL reads</td>
+</tr>
+</tbody>
+</table>
 <h2 id="request-rules">Request rules<a class="headerlink" href="#request-rules" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1896,6 +2034,11 @@ full.</p>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalSubject"><code>WithOptionalSubject</code></a></td>
 <td>Off</td>
 <td>Accepts a template without the subject field when it requests a subjectAltName</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithAnyCertReqID"><code>WithAnyCertReqID</code></a></td>
+<td>Off</td>
+<td>Accepts an ir, cr or kur with a certReqId other than 0 and repeats it in the response</td>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRawSubject"><code>WithRawSubject</code></a></td>

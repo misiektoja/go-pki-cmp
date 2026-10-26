@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -795,6 +851,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1802,7 +1886,7 @@ bytes and back.</p>
 </tr>
 <tr>
 <td><code>NewSignatureCredentials</code></td>
-<td>A signature with an X.509 certificate and key. The chain is sent in <code>extraCerts</code></td>
+<td>A signature with an X.509 certificate and key. The chain is sent in <code>extraCerts</code>. The digest follows the key type unless <code>WithHash</code> chooses one</td>
 </tr>
 </tbody>
 </table>
@@ -1848,7 +1932,7 @@ accepted on the trust chain alone.</p>
 </tr>
 <tr>
 <td><code>MinMACIterationCount</code>, <code>MaxMACIterationCount</code></td>
-<td>Bound the MAC iteration count, 1 to 500000 by default</td>
+<td>Bound the MAC iteration count, 100 to 1000000 by default. For PBMAC1 the maximum covers the iterations multiplied by the PRF blocks of the key length</td>
 </tr>
 <tr>
 <td><code>RequireDigitalSignatureKeyUsage</code></td>

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://misiektoja.github.io/go-pki-cmp/server/registration-authorities/">
       
       
-        <link rel="prev" href="../indirect-pop/">
+        <link rel="prev" href="../central-key-generation/">
       
       
         <link rel="next" href="../transactions/">
@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -797,6 +853,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1733,6 +1817,8 @@ The example above refuses a MAC, because <code>ra.Certificate</code> is nil for 
 <li>One nested message carries one request. Batches of several messages (RFC 9483 section 5.2.2.2) are
   refused with badRequest.</li>
 </ul>
+<p>A go-pki-cmp client acts as the RA with <code>client.WithRegistrationAuthority</code>, see
+<a href="../../client/registration-authority/">Acting as a registration authority</a>.</p>
 <p>An RA that revokes on behalf of end entities signs the <code>rr</code> with its own certificate. That is handled
 by <code>RevocationAuthorizer</code>, see <a href="../revocation/#who-may-revoke">Revocation</a>.</p>
 

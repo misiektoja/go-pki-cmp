@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -795,6 +851,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1094,6 +1178,17 @@
     <span class="md-ellipsis">
       
         Request options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-aids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test aids
       
     </span>
   </a>
@@ -1651,6 +1746,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#test-aids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test aids
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1727,8 +1833,8 @@ in full.</p>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMACIterationLimits"><code>WithMACIterationLimits</code></a></td>
-<td>1 to 500000</td>
-<td>Accepted MAC iteration counts in responses</td>
+<td>100 to 1000000</td>
+<td>Accepted MAC iteration counts in responses, for PBMAC1 multiplied by the PRF blocks of the key length</td>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMaxPolls"><code>WithMaxPolls</code></a></td>
@@ -1747,8 +1853,13 @@ in full.</p>
 </tr>
 <tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithHTTPClient"><code>WithHTTPClient</code></a></td>
-<td><code>http.DefaultClient</code></td>
-<td>The HTTP client, for TLS settings or timeouts</td>
+<td>The default transport with a 120 second timeout</td>
+<td>The HTTP client, for TLS settings, a proxy or another timeout</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithRegistrationAuthority"><code>WithRegistrationAuthority</code></a></td>
+<td>Off</td>
+<td>Wraps every request in a nested message signed by a registration authority</td>
 </tr>
 </tbody>
 </table>
@@ -1780,6 +1891,10 @@ in full.</p>
 <td>Adds an extension to the certificate template</td>
 </tr>
 <tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithTemplateValidity"><code>WithTemplateValidity</code></a></td>
+<td>Asks for a notBefore, a notAfter or both in the certificate template of an ir, cr or kur. The CA decides the validity it grants</td>
+</tr>
+<tr>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertProfile"><code>WithCertProfile</code></a></td>
 <td>Names a certificate profile in the header</td>
 </tr>
@@ -1787,8 +1902,80 @@ in full.</p>
 <td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithOldCertificate"><code>WithOldCertificate</code></a></td>
 <td>The certificate a key update replaces, for custom credential types</td>
 </tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithGeneralInfo"><code>WithGeneralInfo</code></a></td>
+<td>Adds items to <code>generalInfo</code> of the request header, after the certProfile</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertReqID"><code>WithCertReqID</code></a></td>
+<td>The <code>certReqId</code> of an ir, cr or kur, which the CA must repeat. Default 0</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithPOPHash"><code>WithPOPHash</code></a></td>
+<td>The digest of the signature proof of possession of an RSA or ECDSA key. Default by key type</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithDeferredPolling"><code>WithDeferredPolling</code></a></td>
+<td>Returns an ir, cr, kur or p10cr at the first waiting answer with the state for <code>ResumeEnrollment</code></td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithImplicitConfirm"><code>WithImplicitConfirm</code></a></td>
+<td>Asks for implicit confirmation. When the CA grants it, no <code>certConf</code> is sent and <code>EnrollResult.ImplicitConfirm</code> is true</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithInvalidityDate"><code>WithInvalidityDate</code></a></td>
+<td>Adds the invalidityDate CRL entry extension to a revocation request, the time the certificate became invalid</td>
+</tr>
 </tbody>
 </table>
+<p>The digest of signature protection is chosen the same way on the credentials with
+<code>pkicmp.SignatureCredentials.WithHash</code>.</p>
+<h2 id="test-aids">Test aids<a class="headerlink" href="#test-aids" title="Permanent link">&para;</a></h2>
+<p>These request options send deliberately wrong messages, to test how a CA handles them. They change
+nothing unless given. Do not use them in production.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertConfStatus"><code>WithCertConfStatus</code></a></td>
+<td>Sends a statusInfo in the <code>certConf</code>, such as a rejection. A CA must answer a rejection with <code>pkiConf</code> (RFC 9483 section 3.6.1). The call then returns the certificate</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMessageMutator"><code>WithMessageMutator</code></a></td>
+<td>Changes every message of the call before it is protected: the first request and any <code>popdecr</code>, <code>pollReq</code> and <code>certConf</code>. The function gets the message and the response it answers</td>
+</tr>
+<tr>
+<td><a href="https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithProtectedMessageMutator"><code>WithProtectedMessageMutator</code></a></td>
+<td>Changes every message after it is protected and before the nested message of <code>WithRegistrationAuthority</code> wraps it, for example to remove the protection</td>
+</tr>
+</tbody>
+</table>
+<p>The client verifies each response against the message as changed. A mutator that returns an error
+stops the call before the message is sent. A changed <code>certConf</code> that the CA refuses ends in a
+<code>ConfirmationError</code> that holds the certificate. <code>ResumeEnrollment</code> applies them to its <code>pollReq</code>
+and <code>certConf</code> messages. Its first <code>pollReq</code> answers a response the client did not keep, so the
+mutators get nil for it.</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Send a certConf whose certHash does not match the certificate.</span>
+<span class="nx">wrongHash</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">client</span><span class="p">.</span><span class="nx">WithMessageMutator</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">msg</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">*</span><span class="nx">pkicmp</span><span class="p">.</span><span class="nx">PKIMessage</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">msg</span><span class="p">.</span><span class="nx">Body</span><span class="p">.</span><span class="nx">Type</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">pkicmp</span><span class="p">.</span><span class="nx">BodyTypeCertConf</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nx">conf</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">msg</span><span class="p">.</span><span class="nx">Body</span><span class="p">.</span><span class="nx">CertConf</span><span class="p">()</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">err</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="p">(</span><span class="o">*</span><span class="nx">conf</span><span class="p">)[</span><span class="mi">0</span><span class="p">].</span><span class="nx">CertHash</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">^=</span><span class="w"> </span><span class="mh">0xff</span>
+<span class="w">    </span><span class="nx">msg</span><span class="p">.</span><span class="nx">Body</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">pkicmp</span><span class="p">.</span><span class="nx">NewCertConfBody</span><span class="p">(</span><span class="nx">conf</span><span class="p">)</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<span class="p">})</span>
+<span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">SendIR</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">creds</span><span class="p">,</span><span class="w"> </span><span class="nx">wrongHash</span><span class="p">)</span>
+<span class="c1">// A CA that follows RFC 9483 refuses it with badCertId.</span>
+</code></pre></div>
 
 
 

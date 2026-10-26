@@ -666,6 +666,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -908,6 +964,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1819,12 +1903,17 @@ CMP on <code>http://localhost:8080/cmp</code>:</p>
 <span class="w">    </span><span class="c1">//   - WithExtraCerts: appends the CA cert to outgoing response extraCerts.</span>
 <span class="w">    </span><span class="c1">//   - WithSecretLookup: enables MAC (shared-secret) protection for IR/CR.</span>
 <span class="w">    </span><span class="c1">//   - WithCertificateLookup: enables signature protection for KUR/certConf/RR.</span>
+<span class="w">    </span><span class="c1">//   - CentralKeyGeneration: lets a client ask the CA to generate its key pair.</span>
+<span class="w">    </span><span class="c1">//   - WithRAAuthorizer: accepts requests that a registration authority with</span>
+<span class="w">    </span><span class="c1">//     an id-kp-cmcRA certificate from this CA forwards in nested messages.</span>
 <span class="w">    </span><span class="nx">srv</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">server</span><span class="p">.</span><span class="nx">NewCAServer</span><span class="p">(</span><span class="nx">ca</span><span class="p">,</span>
 <span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">LightweightPolicy</span><span class="p">(),</span>
 <span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">WithSigner</span><span class="p">(</span><span class="nx">ca</span><span class="p">.</span><span class="nx">Key</span><span class="p">(),</span><span class="w"> </span><span class="nx">ca</span><span class="p">.</span><span class="nx">Cert</span><span class="p">()),</span>
 <span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">WithExtraCerts</span><span class="p">([]</span><span class="o">*</span><span class="nx">x509</span><span class="p">.</span><span class="nx">Certificate</span><span class="p">{</span><span class="nx">ca</span><span class="p">.</span><span class="nx">Cert</span><span class="p">()}),</span>
 <span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">WithSecretLookup</span><span class="p">(</span><span class="nx">ca</span><span class="p">),</span>
 <span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">WithCertificateLookup</span><span class="p">(</span><span class="nx">ca</span><span class="p">),</span>
+<span class="w">        </span><span class="nx">ca</span><span class="p">.</span><span class="nx">CentralKeyGeneration</span><span class="p">(),</span>
+<span class="w">        </span><span class="nx">server</span><span class="p">.</span><span class="nx">WithRAAuthorizer</span><span class="p">(</span><span class="nx">ca</span><span class="p">),</span>
 <span class="w">    </span><span class="p">)</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">srv</span><span class="p">.</span><span class="nx">Err</span><span class="p">();</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nx">log</span><span class="p">.</span><span class="nx">Error</span><span class="p">(</span><span class="s">"server misconfigured"</span><span class="p">,</span><span class="w"> </span><span class="s">"err"</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span>

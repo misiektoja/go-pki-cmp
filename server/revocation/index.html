@@ -553,6 +553,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the CA generates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client/registration-authority/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acting as a registration authority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -877,6 +933,34 @@
     
   
     Keys that cannot sign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../central-key-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys the server generates
   
 
     
@@ -1717,6 +1801,11 @@ server refuses every <code>rr</code> with badRequest.</p>
 </ul>
 <p>A nil error reports the revocation as accepted in the <code>rp</code>. <code>pkicmp.CRLReasonRemoveFromCRL</code> asks to
 release a certificate from hold.</p>
+<p><code>RevocationRequest.InvalidityDate</code> is the invalidityDate the request asks for (RFC 5280 section
+5.3.2), the time at which the key was compromised or the certificate otherwise became invalid, for
+the CA to publish in the CRL entry. It is zero when the request carries none. A request whose
+invalidityDate is not a GeneralizedTime is refused with badDataFormat and one that carries two with
+badRequest. <code>Extensions</code> holds every requested CRL entry extension for the CA to read.</p>
 <h2 id="who-may-revoke">Who may revoke<a class="headerlink" href="#who-may-revoke" title="Permanent link">&para;</a></h2>
 <p>The server authorizes the request before it calls <code>RevokeCertificate</code>. By default only the
 certificate being revoked may sign the request, as RFC 9483 section 4.2 requires. A request signed by
