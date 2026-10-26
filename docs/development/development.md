@@ -22,7 +22,7 @@ them.
 | `client/` | The CMP client |
 | `server/` | The CMP server |
 | `cms/` | EnvelopedData and EncryptedValue for proof of possession by decryption |
-| `internal/` | Path verification for composite ML-DSA chains and test certificates for ML-KEM keys, not part of the public API |
+| `internal/` | Path verification for composite ML-DSA chains and certificates for ML-KEM keys for the tests and the example CA, not part of the public API |
 | `examples/` | The mock CA and client used in [Getting started](../getting-started.md) |
 | `test/integration/` | Tests against EJBCA, OpenSSL, Nokia NCM, the Siemens CMP test suite and the Insta Certifier clients |
 | `docs/` | This site. `docs/specs/` holds the RFC texts the code cites and is not published |

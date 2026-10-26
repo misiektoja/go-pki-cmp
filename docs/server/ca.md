@@ -87,8 +87,8 @@ should clear the flag.
   is slow, see [Known limitations](../known-limitations.md#slh-dsa-cas-sign-slowly).
 
 The [example CA](https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver) uses
-`compositex509.CreateCertificate` for every key, so it certifies composite keys as well as the key
-types crypto/x509 supports.
+`compositex509.CreateCertificate`, so it certifies composite keys as well as the key types
+crypto/x509 supports. It certifies ML-KEM keys with keyEncipherment as their only key usage.
 
 ## The response
 
