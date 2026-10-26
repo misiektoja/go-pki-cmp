@@ -160,6 +160,14 @@
 //     normal-operation bound, because RFC 9810 Section 5.3.22 asks the client to
 //     wait at least the interval the CA sent.
 //
+// To collect the certificate later, possibly in another process, pass
+// [WithDeferredPolling]. The Send* method then returns at the first waiting
+// answer with [EnrollResult.Pending] set. Save that [PendingEnrollment], for
+// example as JSON, and continue with [Client.ResumeEnrollment] and the same
+// credentials and trust settings. Polling that stops while the CA still waits,
+// for example at the context deadline, returns a [PendingError] whose state
+// resumes the same way.
+//
 // # Response verification
 //
 // Every response is verified before being accepted:

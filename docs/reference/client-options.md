@@ -38,6 +38,7 @@ To send a MAC iteration count outside the default range, set it on the credentia
 | [`WithGeneralInfo`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithGeneralInfo) | Adds items to `generalInfo` of the request header, after the certProfile |
 | [`WithCertReqID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCertReqID) | The `certReqId` of an ir, cr or kur, which the CA must repeat. Default 0 |
 | [`WithPOPHash`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithPOPHash) | The digest of the signature proof of possession of an RSA or ECDSA key. Default by key type |
+| [`WithDeferredPolling`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithDeferredPolling) | Returns an ir, cr, kur or p10cr at the first waiting answer with the state for `ResumeEnrollment` |
 | [`WithImplicitConfirm`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithImplicitConfirm) | Asks for implicit confirmation. When the CA grants it, no `certConf` is sent and `EnrollResult.ImplicitConfirm` is true |
 | [`WithInvalidityDate`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithInvalidityDate) | Adds the invalidityDate CRL entry extension to a revocation request, the time the certificate became invalid |
 

@@ -95,6 +95,38 @@ clamped by `WithCheckAfterLimits` to between 1 second and 1 hour by default and 
 Give every call a context with a deadline. It is the only bound on the whole operation, because the
 CA chooses each wait.
 
+`WithDeferredPolling` collects the certificate later instead, for example from a job that runs
+again the next day. The method returns at the first waiting answer with `EnrollResult.Pending` set.
+`PendingEnrollment` encodes to JSON and holds no key or secret, but anyone with it and the
+credentials can collect the certificate, so store it like the credentials.
+
+```go
+result, err := c.SendIR(ctx, key, creds, client.WithDeferredPolling())
+if err == nil && result.Pending != nil {
+	state, _ := json.Marshal(result.Pending)
+	// Store state and run again later.
+}
+
+// Later, possibly in another process, with the same credentials and trust settings:
+var pending client.PendingEnrollment
+_ = json.Unmarshal(state, &pending)
+result, err = c.ResumeEnrollment(ctx, &pending, creds)
+if pendingErr, ok := errors.AsType[*client.PendingError](err); ok {
+	// The CA still waits. Store pendingErr.Pending and try again later.
+}
+```
+
+`ResumeEnrollment` waits until `PendingEnrollment.NextPoll`, polls until the CA decides, checks the
+certificate and confirms it as the Send* methods do. Under `WithDeferredPolling` it sends one
+`pollReq` and returns the next state while the CA still waits. A Send* method without the option
+returns a `PendingError` when polling stops at the deadline, at `WithMaxPolls` or when a `pollReq`
+gets no answer, and its state resumes the same way. A request that proves possession with `EncryptedCertificate`
+is resumed with `ResumeEnrollmentWithIndirectPOP` and its private key.
+
+Always store the state from the latest call. The CA checks that each `pollReq` answers its last
+`pollRep`, so an older state is refused with badRecipientNonce. The same happens when a `pollReq`
+reached the CA but its answer was lost.
+
 ## Confirmation
 
 The method confirms an issued certificate with `certConf` and waits for `pkiConf` before it returns.
@@ -117,6 +149,7 @@ reported to the CA, as RFC 9483 section 3.6.1 asks. The option applies to `ir`, 
 | `*pkicmp.PKIStatusError` | The CA refused the request in a verified response. `pkicmp.HasFailure(err, pkicmp.FailBadPOP)` tests a failure bit |
 | `*client.UnverifiedStatusError` | The CA refused in a signed error the client could not verify, usually because no trust anchor is set. Log it, do not act on it |
 | `*client.ConfirmationError` | The CA issued a certificate but the `certConf` exchange failed. The error holds the certificate |
+| `*client.PendingError` | Polling stopped while the CA still had the request waiting. `Pending` resumes it with `ResumeEnrollment` |
 | `*client.Error` | A transport or verification failure, with the failed step in `Op` |
 
 `pkicmp.HasFailure` never reports bits from an unverified message.

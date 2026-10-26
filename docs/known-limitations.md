@@ -76,7 +76,8 @@ A client cannot act as a registration authority and wrap requests in nested mess
 ### Polling time is chosen by the CA
 
 The client waits as long as the CA asks, within `WithCheckAfterLimits`, up to `WithMaxPolls` times.
-Only a context deadline bounds the whole operation.
+Only a context deadline bounds the whole operation. `WithDeferredPolling` returns at the first
+waiting answer, so that `ResumeEnrollment` can collect the certificate later.
 
 ## Operational limits
 

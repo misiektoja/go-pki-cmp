@@ -37,7 +37,7 @@ Requires Go 1.27.3 or newer. Releases up to v0.3.2 use the module path
 | Package | Content |
 | --- | --- |
 | [`pkicmp`](./pkicmp/) | CMP and CRMF types with parsing, serialization and MAC or signature protection |
-| [`client`](./client/) | Enrollment, key update, revocation and support messages with polling, response verification and certificate confirmation |
+| [`client`](./client/) | Enrollment, key update, revocation and support messages with response verification, certificate confirmation and polling that can resume in a later process |
 | [`server`](./server/) | An `http.Handler` that authenticates clients, tracks transactions and applies policy in front of your CA |
 | [`cms`](./cms/) | EnvelopedData and EncryptedValue for proof of possession by decryption |
 
