@@ -48,5 +48,8 @@ The example above refuses a MAC, because `ra.Certificate` is nil for one.
 * One nested message carries one request. Batches of several messages (RFC 9483 section 5.2.2.2) are
   refused with badRequest.
 
+A go-pki-cmp client acts as the RA with `client.WithRegistrationAuthority`, see
+[Acting as a registration authority](../client/registration-authority.md).
+
 An RA that revokes on behalf of end entities signs the `rr` with its own certificate. That is handled
 by `RevocationAuthorizer`, see [Revocation](revocation.md#who-may-revoke).

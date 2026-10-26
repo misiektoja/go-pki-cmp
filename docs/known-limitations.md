@@ -13,7 +13,8 @@ Requests for them are refused with badRequest and the text "message type not sup
 ### One request per nested message
 
 A registration authority may forward one request per nested message. Batches (RFC 9483 section
-5.2.2.2) are refused with badRequest. The client does not send nested messages.
+5.2.2.2) are refused with badRequest. A client with `WithRegistrationAuthority` sends one request per
+nested message and does not batch.
 
 ### Central key generation needs a key that can decrypt
 
@@ -75,10 +76,6 @@ a signer outside crypto/x509, and so does a CA whose own key is SLH-DSA.
 The server caps transactions in total and per credential. Other limits belong in your middleware.
 
 ## Client
-
-### No sender for nested messages
-
-A client cannot act as a registration authority and wrap requests in nested messages.
 
 ### Polling time is chosen by the CA
 

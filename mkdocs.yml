@@ -62,6 +62,7 @@ nav:
       - Support messages: client/support-messages.md
       - Keys that cannot sign: client/indirect-pop.md
       - Keys the CA generates: client/central-key-generation.md
+      - Acting as a registration authority: client/registration-authority.md
   - Server guide:
       - Implementing a CA: server/ca.md
       - Authentication: server/authentication.md

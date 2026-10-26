@@ -34,7 +34,7 @@ was tested with.
 | `pollReq` / `pollRep` | Sent automatically, or later by `ResumeEnrollment` | A CA that implements `PendingChecker` |
 | `genm` / `genp` | `GetCACertificates`, `GetRootCAUpdate`, `GetCertReqTemplate`, `GetCRLUpdate`, `GetCurrentCRL`, `SendGenM` | The matching provider interfaces |
 | `popdecc` / `popdecr` | Answered automatically with `ChallengeResponse` | `WithChallengeResponsePOP` |
-| `nested` | Not sent | `WithRAAuthorizer`, one message per nested message |
+| `nested` | `WithRegistrationAuthority`, one message per nested message | `WithRAAuthorizer`, one message per nested message |
 | `error` | Parsed and verified | Sent for every refusal |
 
 ## Message protection
@@ -91,8 +91,7 @@ through the `*WithIndirectPOP` methods.
 | --- | --- |
 | Key recovery, cross-certification and announcements | Not implemented |
 | A centrally generated private key in EncryptedValue | Refused by the client and never sent by the server |
-| Several requests in one nested message (RFC 9483 section 5.2.2.2) | Refused with badRequest |
-| Sending nested messages from the client | Not implemented |
+| Several requests in one nested message (RFC 9483 section 5.2.2.2) | Refused with badRequest and never sent by the client |
 | ML-KEM-512 | Refused, the Go standard library does not implement it |
 | Older Dilithium encodings | Not supported |
 | HashSLH-DSA, the pre-hash variant of SLH-DSA | Refused |

@@ -21,6 +21,7 @@ in full.
 | [`WithCheckAfterLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCheckAfterLimits) | 1 second to 1 hour | Clamps each wait the CA asks for |
 | [`WithMaxResponseBytes`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMaxResponseBytes) | 10 MiB | Largest accepted response body. Zero or less disables the limit |
 | [`WithHTTPClient`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithHTTPClient) | `http.DefaultClient` | The HTTP client, for TLS settings or timeouts |
+| [`WithRegistrationAuthority`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithRegistrationAuthority) | Off | Wraps every request in a nested message signed by a registration authority |
 
 To send a MAC iteration count outside the default range, set it on the credentials with
 `pkicmp.WithMACIterationCount` and widen `pkicmp.WithMACIterationLimits` to match.
