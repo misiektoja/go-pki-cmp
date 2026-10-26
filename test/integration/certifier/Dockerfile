@@ -10,7 +10,7 @@
 # lib/ must exist even when it is empty. Both clients are linux/amd64
 # binaries. ssh-cmpclient is built for Enterprise Linux 8, which the base image
 # matches. Build with make setup-certifier-clients.
-FROM rockylinux:8-minimal@sha256:c584db6d77f40a71ab2364b55be18c154b8e92ba48189e2d82ba0aef64ffee32
+FROM rockylinux:9-minimal@sha256:305de618a5681ff75b1d608fd22b10f362867dff2f550a4f1d427d21cd7f42b4
 RUN microdnf install -y libnsl && microdnf clean all
 COPY bin/ /usr/local/certifier/bin/
 COPY lib/ /usr/local/certifier/lib/
