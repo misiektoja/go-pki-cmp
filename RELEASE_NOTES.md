@@ -4,10 +4,11 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.8.0 - TBD
 
-This release lets a client ask for implicit confirmation, collect a certificate the CA keeps waiting in a later process, revoke a certificate it holds no copy of by issuer and serial number, send an invalidity date with a revocation and shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
+This release adds central key generation (RFC 9483 section 4.1.6) to the client and the server: a device can have the CA generate its key pair and receive the private key signed and encrypted for it. The release also lets a client ask for implicit confirmation, collect a certificate the CA keeps waiting in a later process, revoke a certificate it holds no copy of by issuer and serial number, send an invalidity date with a revocation and shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
 
 ### `client`
 
+* **`SendIRWithCentralKeyGeneration`**, **`SendCRWithCentralKeyGeneration`** and **`SendKURWithCentralKeyGeneration`** ask the CA to generate the key pair. The request names a key algorithm or leaves the choice to the CA. **`EnrollResult.GeneratedKey`** holds the private key as a parsed key and as PKCS #8. The CA encrypts it to the shared secret of MAC credentials or for an RSA or ECDSA protection key. The client checks its signature and that it matches the issued certificate. With `WithTrustedCAs` the signer must also chain to the trusted CAs and be a key generation authority. The client reads the AsymmetricKeyPackage of RFC 9810 as well as the id-data form that OpenSSL sends. A deferred request resumes with `ResumeEnrollment` and gets the key with the certificate.
 * **`SendRRBySerial`** revokes a certificate named by its issuer and serial number, for a requester that has no copy of it, such as a registration authority or an operator who knows only the serial number and the CA. The CA decides whether the signer may revoke it, as for `SendRR`.
 * **`WithInvalidityDate`** adds the invalidityDate CRL entry extension (RFC 5280 section 5.3.2) to a revocation request: the time at which the key was compromised or the certificate otherwise became invalid, which the CA may publish in the CRL entry. It is sent as a GeneralizedTime in UTC with a resolution of one second.
 * **`WithImplicitConfirm`** asks the CA for implicit confirmation of an ir, cr, kur or p10cr, as RFC 9483 section 4.1.1 recommends. When the CA grants it, the client returns with **`EnrollResult.ImplicitConfirm`** set and sends no certConf, which saves a round trip. A CA that does not grant it gets the certConf as before. A grant the request did not ask for is honored as well, because the CA has closed the transaction. Before this release the client sent a certConf after such a grant, which a CA refuses as an unknown transaction.
@@ -18,16 +19,23 @@ This release lets a client ask for implicit confirmation, collect a certificate 
 
 ### `server`
 
+* **`WithCentralKeyGeneration`** generates the key pair for an ir, cr or kur that asks for it. A **`KeyGenerator`** you provide makes the pair. A key generation authority whose certificate asserts id-kp-cmKGA or is a CA certificate signs the private key. The server encrypts it to the shared secret of a MAC-protected request or for the RSA or ECDSA protection key of a signed one. By default it uses the id-data form and the RFC 3211 key wrap that OpenSSL clients read. **`WithCentralKeyGenerationAsymmetricKeyPackage`** selects the RFC 9810 AsymmetricKeyPackage and **`WithCentralKeyGenerationAESKeyWrap`** the AES key wrap of RFC 9481. Your CA sees **`POPCentralKeyGeneration`** and gets the generated key from **`GeneratedPublicKeyFromContext`**. Delayed requests and snapshots keep the encrypted key until the certificate is ready.
 * **`WithAnyCertReqID`** accepts an ir, cr or kur with a certReqId other than 0, which `LightweightPolicy` refuses by default as RFC 9483 asks, and repeats it in the response. Use it for RFC 4210 clients that number their requests or to test how a client checks the certReqId.
 * **`RevocationRequest.InvalidityDate`** holds the invalidityDate a revocation request asks for, zero when it carries none, so a `Revoker` can publish it in the CRL entry. A request whose invalidityDate is not a GeneralizedTime is refused with badDataFormat and one that carries two with badRequest.
 
 ### `pkicmp`
 
+* **`NewKeyPackage`** and **`ParseKeyPackage`** sign and verify the SignedData around a centrally generated private key in either content form. **`CertTemplate.RequestsCentralKeyGeneration`** and **`CentralKeyGenerationPublicKey`** read and build a request for central key generation. **`IsKeyGenerationAuthority`** checks a signer certificate. **`CertifiedKeyPair.EncryptedPrivateKey`** and **`SetEncryptedPrivateKey`** read and set the encrypted key. **`SignatureCredentials.Key`** returns the protection key.
 * **`NewRevDetailsBySerial`** builds the RevDetails of a revocation request from an issuer name and a serial number, without the certificate. **`NewInvalidityDateExtension`** encodes an invalidityDate and **`RevDetails.AddCRLEntryExtension`** adds a CRL entry extension after the reasonCode.
 * **`SignatureCredentials.WithHash`** returns credentials that protect messages with the chosen digest instead of the one the key type selects, with the same choices and limits as `WithPOPHash`. **`CertReqMsg.GeneratePOPWithHash`** does the same for a proof of possession built by hand. A SHA-1 signature is still refused by a verifier unless it allows SHA-1.
 
+### `cms`
+
+* **`EncryptSignedData`** encrypts a SignedData for one recipient. **`Password`** and **`PWRIKEKPassword`** encrypt for a shared secret with PBKDF2 and either the AES key wrap of RFC 9481 or the RFC 3211 key wrap that OpenSSL reads. **`Decrypt`** opens both.
+
 ### `examples/mockserver`
 
+* **The mock CA generates key pairs** for central key generation: ECDSA, RSA, Ed25519 and ML-DSA keys, signed by a key generation authority certificate with id-kp-cmKGA. **`MockCA.CentralKeyGeneration`** returns the server option. The example command enables it.
 * **The mock CA records the invalidityDate** of a revocation request, logs it and publishes it in the CRL entry.
 * **The mock CA certifies ML-KEM-768 and ML-KEM-1024 keys** that prove possession by decryption, when the server accepts it with `WithEncryptedCertificatePOP` or `WithChallengeResponsePOP`. Their certificates have keyEncipherment as the only key usage. Before, the mock CA failed to sign them.
 
