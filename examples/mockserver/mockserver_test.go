@@ -67,6 +67,13 @@ func (c *confirmingCA) requireAccepted(t *testing.T, cert *x509.Certificate) {
 // client that trusts it.
 func newServer(t *testing.T, extra ...server.Option) (*confirmingCA, *client.Client) {
 	t.Helper()
+	ca, url := serve(t, extra...)
+	return ca, client.NewClient(url, client.WithTrustedCAs(trustCA(ca)))
+}
+
+// serve serves the mock CA as cmd/main.go does with the server options in extra and returns its URL.
+func serve(t *testing.T, extra ...server.Option) (*confirmingCA, string) {
+	t.Helper()
 	mock, err := mockserver.New(map[string][]byte{string(reference): iak}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	ca := &confirmingCA{MockCA: mock, confirmed: map[string]server.ConfirmStatus{}}
@@ -76,15 +83,20 @@ func newServer(t *testing.T, extra ...server.Option) (*confirmingCA, *client.Cli
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
 		mock.CentralKeyGeneration(),
+		server.WithRAAuthorizer(ca),
 	}, extra)
 	srv := server.NewCAServer(ca, server.LightweightPolicy(), opts...)
 	require.NoError(t, srv.Err())
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
+	return ca, ts.URL
+}
 
+// trustCA returns a pool that holds the certificate of ca.
+func trustCA(ca *confirmingCA) *x509.CertPool {
 	pool := x509.NewCertPool()
-	pool.AddCert(mock.Cert())
-	return ca, client.NewClient(ts.URL, client.WithTrustedCAs(pool))
+	pool.AddCert(ca.Cert())
+	return pool
 }
 
 // requireCertifies checks that crypto/x509 parses cert and that cert carries the public key of key under a signature from ca.
@@ -372,4 +384,70 @@ func TestCentralKeyGeneration(t *testing.T) {
 			client.WithSenderKID(reference), client.WithSender(subject), client.WithTemplateSubject(subject))
 		require.True(t, pkicmp.HasFailure(err, pkicmp.FailBadAlg), "got %v", err)
 	})
+}
+
+// TestRegistrationAuthority enrolls a registration authority certificate with
+// id-kp-cmcRA and has the RA forward an ir and a kur of an end entity in nested
+// messages. The mock CA refuses an RA certificate without that extended key
+// usage, a revoked one and a MAC-protected nested message.
+func TestRegistrationAuthority(t *testing.T) {
+	ctx := context.Background()
+	ca, url := serve(t)
+	c := client.NewClient(url, client.WithTrustedCAs(trustCA(ca)))
+	macCreds, err := pkicmp.NewMACCredentials(iak)
+	require.NoError(t, err)
+	enroll := func(c *client.Client, name string, extra ...client.RequestOption) (*ecdsa.PrivateKey, *x509.Certificate) {
+		t.Helper()
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		subject := pkix.Name{CommonName: name}
+		res, err := c.SendIR(ctx, key, macCreds, append([]client.RequestOption{
+			client.WithSenderKID(reference), client.WithSender(subject), client.WithTemplateSubject(subject),
+		}, extra...)...)
+		require.NoError(t, err)
+		return key, res.Certificate
+	}
+	eku, err := asn1.Marshal([]asn1.ObjectIdentifier{{1, 3, 6, 1, 5, 5, 7, 3, 28}})
+	require.NoError(t, err)
+	raKey, raCert := enroll(c, "ra", client.WithTemplateExtension(pkix.Extension{Id: asn1.ObjectIdentifier{2, 5, 29, 37}, Value: eku}))
+	raCreds, err := pkicmp.NewSignatureCredentials(raKey, raCert, ca.Cert())
+	require.NoError(t, err)
+	ra := client.NewClient(url, client.WithTrustedCAs(trustCA(ca)), client.WithRegistrationAuthority(raCreds))
+
+	deviceKey, device := enroll(ra, "device")
+	ca.requireAccepted(t, device)
+	deviceCreds, err := pkicmp.NewSignatureCredentials(deviceKey, device, ca.Cert())
+	require.NoError(t, err)
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	kur, err := ra.SendKUR(ctx, newKey, deviceCreds, client.WithTemplateSubject(device.Subject))
+	require.NoError(t, err)
+	ca.requireAccepted(t, kur.Certificate)
+
+	// The device certificate lacks id-kp-cmcRA.
+	notRACreds, err := pkicmp.NewSignatureCredentials(deviceKey, device, ca.Cert())
+	require.NoError(t, err)
+	notRA := client.NewClient(url, client.WithTrustedCAs(trustCA(ca)), client.WithRegistrationAuthority(notRACreds))
+	_, err = notRA.SendIR(ctx, newKey, macCreds, client.WithSenderKID(reference),
+		client.WithSender(pkix.Name{CommonName: "x"}), client.WithTemplateSubject(pkix.Name{CommonName: "x"}))
+	require.True(t, pkicmp.HasFailure(err, pkicmp.FailNotAuthorized), "got %v", err)
+
+	requireRefusal(t, ca.AuthorizeRA(ctx, &server.SenderIdentity{MACVerified: true}, nil, &server.SenderIdentity{}),
+		pkicmp.FailWrongIntegrity)
+
+	// A revoked RA certificate no longer authenticates the nested message.
+	require.NoError(t, c.SendRR(ctx, raCert, pkicmp.CRLReasonKeyCompromise, raCreds))
+	requireRefusal(t, ca.AuthorizeRA(ctx, &server.SenderIdentity{Certificate: raCert}, nil, &server.SenderIdentity{}),
+		pkicmp.FailNotAuthorized)
+	_, err = ra.SendIR(ctx, newKey, macCreds, client.WithSenderKID(reference),
+		client.WithSender(pkix.Name{CommonName: "y"}), client.WithTemplateSubject(pkix.Name{CommonName: "y"}))
+	require.Error(t, err)
+}
+
+// requireRefusal checks that err is a server.Error with failInfo.
+func requireRefusal(t *testing.T, err error, failInfo pkicmp.PKIFailureInfo) {
+	t.Helper()
+	var serr *server.Error
+	require.ErrorAs(t, err, &serr)
+	require.Equal(t, failInfo, serr.FailureInfo, "got %v", err)
 }
