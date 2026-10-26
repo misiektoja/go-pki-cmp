@@ -8,9 +8,11 @@
 #                                          as ssh-cmpclient, which needs it
 #
 # lib/ must exist even when it is empty. Both clients are linux/amd64
-# binaries. ssh-cmpclient is built for Enterprise Linux 8, which the base image
-# matches. Build with make setup-certifier-clients.
-FROM rockylinux:8-minimal@sha256:c584db6d77f40a71ab2364b55be18c154b8e92ba48189e2d82ba0aef64ffee32
+# binaries. Certifier 7 supports only Enterprise Linux 8 and ssh-cmpclient
+# fails to load on Rocky Linux 9, which lacks libcrypt.so.1. The base image
+# comes from rockylinux/rockylinux because the official rockylinux image stopped
+# at 8.9. Build with make setup-certifier-clients.
+FROM rockylinux/rockylinux:8-minimal@sha256:6d2ede107b4f005a638728711dae05d5fbbfd8abd521cecf5ab61196b361c965
 RUN microdnf install -y libnsl && microdnf clean all
 COPY bin/ /usr/local/certifier/bin/
 COPY lib/ /usr/local/certifier/lib/
