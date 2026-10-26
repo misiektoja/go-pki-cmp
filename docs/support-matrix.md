@@ -41,7 +41,7 @@ was tested with.
 
 | Mechanism | Algorithms |
 | --- | --- |
-| MAC | PBMAC1 (default) and PasswordBasedMac with HMAC-SHA1 to HMAC-SHA512. Iteration counts from 1 to 500000 are accepted by default |
+| MAC | PBMAC1 (default) and PasswordBasedMac with HMAC-SHA1 to HMAC-SHA512. Iteration counts from 100 to 500000 are accepted by default |
 | Signature | RSA PKCS #1 v1.5 and ECDSA with SHA-256, SHA-384 or SHA-512, Ed25519, ML-DSA-44, ML-DSA-65, ML-DSA-87, SLH-DSA and composite ML-DSA |
 | SHA-1 signatures | RSA and ECDSA with SHA-1, off by default. `WithSHA1Signatures` in the `client` or `server` package accepts them |
 

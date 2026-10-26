@@ -73,7 +73,7 @@ accepted on the trust chain alone.
 | `SenderKID`, `AllowSenderKIDMismatch` | Select candidates by subject key identifier or try all of them |
 | `CurrentTime` | Validate the certificates at another time, such as when a recorded message arrived |
 | `AllowSHA1Signatures` | Accept SHA-1 signatures, refused by default |
-| `MinMACIterationCount`, `MaxMACIterationCount` | Bound the MAC iteration count, 1 to 500000 by default. For PBMAC1 the maximum covers the iterations multiplied by the PRF blocks of the key length |
+| `MinMACIterationCount`, `MaxMACIterationCount` | Bound the MAC iteration count, 100 to 500000 by default. For PBMAC1 the maximum covers the iterations multiplied by the PRF blocks of the key length |
 | `RequireDigitalSignatureKeyUsage` | Require the digitalSignature bit that RFC 9483 section 3.5 asks for. Deployed CAs often lack it |
 
 Do not take `CurrentTime` from the message when the result decides whether to act on it, because

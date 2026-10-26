@@ -9,12 +9,13 @@ full.
 | Option | Default | Effect |
 | --- | --- | --- |
 | [`WithSigner`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSigner) | None | Key, certificate and chain that sign responses. `Err` reports a key that does not match |
+| [`WithUnprotectedErrorsBeforeAuthentication`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithUnprotectedErrorsBeforeAuthentication) | Off | Leaves errors raised before authentication unprotected, so a slow signer does not sign them |
 | [`WithExtraCerts`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithExtraCerts) | None | Certificates added to `extraCerts` of every response |
 | [`WithSender`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSender) | Subject of the signer certificate | Server name in response headers. A request for another recipient is refused |
 | [`WithSecretLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSecretLookup) | None | Finds shared secrets. Without it MAC-protected messages are refused |
 | [`WithCertificateLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCertificateLookup) | None | Finds sender certificates. Without it signed messages are refused |
 | [`WithRAAuthorizer`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRAAuthorizer) | None | Accepts nested messages from registration authorities |
-| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 1 to 500000 | Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length |
+| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 100 to 500000 | Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length |
 | [`WithSHA1Signatures`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSHA1Signatures) | Off | Accepts SHA-1 signatures in protection and proof of possession |
 
 ## Confirmation and waiting
