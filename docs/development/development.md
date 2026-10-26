@@ -60,6 +60,10 @@ make docs-serve PYTHON=.venv/bin/python
 navigation fails the build. CI runs the same build on every change to the documentation and
 publishes the site from the default branch.
 
+The toolchain is pinned with hashes in `docs/requirements.txt`, which `make docs-deps` installs in
+hash-checking mode. The direct dependencies live in `docs/requirements.in`. To change a version, edit
+that file and run `make docs-requirements`, which needs pip-tools in the `PYTHON` environment.
+
 Package documentation on [pkg.go.dev](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp) comes from
 the Go doc comments and `make docs` serves it locally with pkgsite. User-facing behavior changes
 belong in both places: the doc comment for the API and the relevant page here for the walkthrough.
