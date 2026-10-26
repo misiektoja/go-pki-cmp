@@ -345,6 +345,13 @@ func (m *PKIMessage) verifyPBMAC1(opts VerifyOptions) (*VerifyResult, error) {
 	if err := validatePBKDF2KeyLength(pbkdf2Params.KeyLength, macHash); err != nil {
 		return nil, err
 	}
+	// PBKDF2 repeats the iterations for every block of PRF output the key needs
+	// (RFC 8018 §5.2), so the maximum bounds that product. Otherwise a peer
+	// multiplies the work the iteration count permits by asking for a long key
+	// from a short PRF: 128 bytes from HMAC-SHA1 take seven times the iterations.
+	if err := validatePBKDF2Work(pbkdf2Params.IterationCount, pbkdf2Params.KeyLength, prfHash, maxIterations); err != nil {
+		return nil, err
+	}
 
 	data, err := m.protectedPart()
 	if err != nil {

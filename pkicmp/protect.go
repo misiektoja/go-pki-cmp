@@ -238,6 +238,10 @@ func (m *PKIMessage) protectWithPBMAC1Options(opts pbmac1Options) error {
 	if err := validatePBKDF2KeyLength(keyLen, macHash); err != nil {
 		return err
 	}
+	_, maxIterations := macIterationLimits(opts.MinIterationCount, opts.MaxIterationCount)
+	if err := validatePBKDF2Work(iterCount, keyLen, prfHash, maxIterations); err != nil {
+		return err
+	}
 
 	// Generate random salt (RFC 8018 §7.1).
 	salt := make([]byte, defaultPBMSaltLength)
@@ -566,6 +570,22 @@ func validatePBKDF2KeyLength(keyLength int, macHash crypto.Hash) error {
 	if keyLength > maxKeyLength {
 		return &ParseError{
 			Detail: fmt.Sprintf("PBKDF2 keyLength too large: %d (maximum %d for this MAC)", keyLength, maxKeyLength),
+		}
+	}
+	return nil
+}
+
+// validatePBKDF2Work bounds the PRF invocations of one PBKDF2 derivation, which
+// are iterationCount for every block of PRF output the key length needs
+// (RFC 8018 §5.2). maximum is the iteration bound macIterationLimits returns
+// and applies to the product, so that the key length cannot multiply the work
+// the iteration count alone permits.
+func validatePBKDF2Work(iterationCount, keyLength int, prf crypto.Hash, maximum int) error {
+	blocks := (keyLength + prf.Size() - 1) / prf.Size()
+	if iterationCount > maximum/blocks {
+		return &ParseError{
+			Detail: fmt.Sprintf("PBKDF2 work too large: %d iterations for %d PRF blocks (maximum %d in total)",
+				iterationCount, blocks, maximum),
 		}
 	}
 	return nil
