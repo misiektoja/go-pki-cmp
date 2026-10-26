@@ -14,12 +14,13 @@ package server
 // The solution is to use a composite key: hash(credentialID + transactionID). This ensures
 // that two clients with different credentials have completely separate key spaces, even if
 // they use the same transactionID. The credentialID is derived from what the server verified:
-//   - MAC protection: hash of senderKID and the sender name, which together select the shared secret
+//   - MAC protection: HMAC keyed with the shared secret, so clients that share a secret share an identity
 //   - Signature protection: hash of the signer certificate
 //
 // This is secure because the credentialID is not client-controlled — it's derived from
 // the cryptographic proof the client provided. An attacker would need the victim's
-// shared secret or private key to produce a matching composite key.
+// shared secret or private key to produce a matching composite key. For the same
+// reason the per-credential quota cannot be escaped by editing header fields.
 
 import (
 	"crypto/rand"
@@ -143,9 +144,16 @@ type transactionEntry struct {
 type transactionTracker struct {
 	transactions sync.Map // transactionKey → *transactionEntry
 
-	count                        atomic.Int64
-	maxTransactions              int
-	credentialCounts             sync.Map // credentialKey → *atomic.Int64
+	count           atomic.Int64
+	maxTransactions int
+
+	// credentialCounts holds the number of transactions of every credential that
+	// has one. An entry is removed with its last transaction, so the map stays
+	// bounded by the transactions themselves rather than growing with every
+	// credential the server has ever seen. mu guards it, because a counter
+	// cannot be removed at zero and re-created atomically without a lock.
+	mu                           sync.Mutex
+	credentialCounts             map[credentialKey]int
 	maxTransactionsPerCredential int
 }
 
@@ -153,6 +161,7 @@ func newTransactionTracker(maxTxn, maxPerCred int) *transactionTracker {
 	return &transactionTracker{
 		maxTransactions:              maxTxn,
 		maxTransactionsPerCredential: maxPerCred,
+		credentialCounts:             make(map[credentialKey]int),
 	}
 }
 
@@ -177,10 +186,7 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 		return false, errors.New("maximum transaction limit reached")
 	}
 
-	credCount := t.getOrCreateCredCount(ck)
-	newCredCount := credCount.Add(1)
-	if int(newCredCount) > t.maxTransactionsPerCredential {
-		credCount.Add(-1)
+	if !t.reserveCredential(ck) {
 		t.count.Add(-1)
 		return false, errors.New("per-credential transaction limit reached")
 	}
@@ -195,7 +201,7 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 	_, loaded := t.transactions.LoadOrStore(key, entry)
 	if loaded {
 		// Already existed — release reserved capacity.
-		credCount.Add(-1)
+		t.releaseCredential(ck)
 		t.count.Add(-1)
 		return true, nil
 	}
@@ -203,10 +209,42 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 	return false, nil
 }
 
-// getOrCreateCredCount returns the atomic counter for a credential key.
-func (t *transactionTracker) getOrCreateCredCount(ck credentialKey) *atomic.Int64 {
-	val, _ := t.credentialCounts.LoadOrStore(ck, &atomic.Int64{})
-	return val.(*atomic.Int64)
+// reserveCredential counts one more transaction for a credential and reports
+// whether that stays within maxTransactionsPerCredential.
+func (t *transactionTracker) reserveCredential(ck credentialKey) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.credentialCounts[ck] >= t.maxTransactionsPerCredential {
+		return false
+	}
+	t.credentialCounts[ck]++
+	return true
+}
+
+// releaseCredential counts one transaction less for a credential and forgets
+// the credential with its last one.
+func (t *transactionTracker) releaseCredential(ck credentialKey) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.credentialCounts[ck] <= 1 {
+		delete(t.credentialCounts, ck)
+		return
+	}
+	t.credentialCounts[ck]--
+}
+
+// credentialCount returns the number of transactions counted for a credential.
+func (t *transactionTracker) credentialCount(ck credentialKey) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.credentialCounts[ck]
+}
+
+// trackedCredentials returns the number of credentials that have a transaction.
+func (t *transactionTracker) trackedCredentials() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.credentialCounts)
 }
 
 // waitingState is what a waiting transaction keeps between polls.
@@ -435,7 +473,7 @@ func (t *transactionTracker) remove(credentialID, transactionID []byte, entry *t
 		return false
 	}
 	t.count.Add(-1)
-	t.getOrCreateCredCount(entry.credentialKey).Add(-1)
+	t.releaseCredential(entry.credentialKey)
 	return true
 }
 
@@ -445,8 +483,7 @@ func (t *transactionTracker) delete(credentialID, transactionID []byte) {
 	if loaded {
 		entry := v.(*transactionEntry)
 		t.count.Add(-1)
-		credCount := t.getOrCreateCredCount(entry.credentialKey)
-		credCount.Add(-1)
+		t.releaseCredential(entry.credentialKey)
 	}
 }
 
@@ -486,8 +523,7 @@ func (t *transactionTracker) cleanupExpired(maxAge, waitingAge time.Duration) ex
 			return true
 		}
 		t.count.Add(-1)
-		credCount := t.getOrCreateCredCount(entry.credentialKey)
-		credCount.Add(-1)
+		t.releaseCredential(entry.credentialKey)
 		switch {
 		case entry.state == stateIssued && entry.cert != nil:
 			expired.issued = append(expired.issued, expiredIssued{

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
@@ -174,8 +173,7 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 		if _, duplicate := next.transactions.LoadOrStore(saved.Key, entry); duplicate {
 			return errors.New("duplicate saved transaction")
 		}
-		count, _ := next.credentialCounts.LoadOrStore(saved.Credential, &atomic.Int64{})
-		if count.(*atomic.Int64).Add(1) > int64(next.maxTransactionsPerCredential) {
+		if !next.reserveCredential(saved.Credential) {
 			return errors.New("saved credential exceeds transaction capacity")
 		}
 		next.count.Add(1)
