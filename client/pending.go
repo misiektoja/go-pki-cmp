@@ -42,8 +42,11 @@ type PendingEnrollment struct {
 	// pollReq names.
 	CertReqID int64 `json:"certReqId"`
 	// PublicKey is the DER SubjectPublicKeyInfo of the requested key, which
-	// the issued certificate must certify.
+	// the issued certificate must certify. It is empty for central key generation.
 	PublicKey []byte `json:"publicKey"`
+	// CentralKeyGeneration reports that the request asked the CA to generate
+	// the key pair, which the final response carries.
+	CentralKeyGeneration bool `json:"centralKeyGeneration,omitempty"`
 	// IndirectPOP is the proof of possession by decryption the request asked
 	// for. It is zero for a signature proof and for a p10cr.
 	IndirectPOP IndirectPOP `json:"indirectPop,omitempty"`
@@ -68,7 +71,9 @@ const opResume = "resume enrollment"
 // transaction by them, and the client needs the trust settings of the one that
 // sent the request, such as [WithTrustedCAs]. The header fields that later
 // messages repeat come from pending, so request options other than
-// [WithDeferredPolling] are ignored.
+// [WithDeferredPolling] are ignored. For a request with central key
+// generation, creds also decrypt the generated private key, which
+// [EnrollResult.GeneratedKey] then holds.
 //
 // The first pollReq waits for [PendingEnrollment.NextPoll], at most the
 // maximum of [WithCheckAfterLimits]. A context deadline and [WithMaxPolls]
@@ -128,22 +133,26 @@ func (txn *enrollment) pending(state *pollState) (*PendingEnrollment, error) {
 	if err != nil {
 		return nil, &Error{Op: "encode the recipient of a pending enrollment", Err: err}
 	}
-	publicKey, err := pkicmp.MarshalPublicKey(txn.requestedKey)
-	if err != nil {
-		return nil, &Error{Op: "encode the public key of a pending enrollment", Err: err}
+	var publicKey []byte
+	if !txn.central {
+		publicKey, err = pkicmp.MarshalPublicKey(txn.requestedKey)
+		if err != nil {
+			return nil, &Error{Op: "encode the public key of a pending enrollment", Err: err}
+		}
 	}
 	p := &PendingEnrollment{
-		RequestType:   txn.requestType,
-		PVNO:          txn.header.PVNO,
-		TransactionID: bytes.Clone(txn.header.TransactionID),
-		Sender:        sender,
-		Recipient:     recipient,
-		SenderKID:     bytes.Clone(txn.header.SenderKID),
-		RequestNonce:  bytes.Clone(state.delayed.SenderNonce),
-		ResponseNonce: bytes.Clone(state.recipNonce),
-		CertReqID:     state.certReqID,
-		PublicKey:     publicKey,
-		NextPoll:      state.nextPoll,
+		RequestType:          txn.requestType,
+		PVNO:                 txn.header.PVNO,
+		TransactionID:        bytes.Clone(txn.header.TransactionID),
+		Sender:               sender,
+		Recipient:            recipient,
+		SenderKID:            bytes.Clone(txn.header.SenderKID),
+		RequestNonce:         bytes.Clone(state.delayed.SenderNonce),
+		ResponseNonce:        bytes.Clone(state.recipNonce),
+		CertReqID:            state.certReqID,
+		PublicKey:            publicKey,
+		CentralKeyGeneration: txn.central,
+		NextPoll:             state.nextPoll,
 	}
 	if txn.proof != nil {
 		p.IndirectPOP = txn.proof.method
@@ -152,6 +161,29 @@ func (txn *enrollment) pending(state *pollState) (*PendingEnrollment, error) {
 		p.ServerCertificate = bytes.Clone(state.knownSigner.Raw)
 	}
 	return p, nil
+}
+
+// checkFields reports a field of p that contradicts its request type or that
+// a later message of the transaction needs and p lacks.
+func (p *PendingEnrollment) checkFields() error {
+	p10cr := p.RequestType == pkicmp.BodyTypeP10CR
+	switch {
+	case p10cr && p.CertReqID != -1 && p.CertReqID != 0:
+		return fmt.Errorf("certReqId %d cannot answer a p10cr", p.CertReqID)
+	case p10cr && p.IndirectPOP != 0:
+		return errors.New("a p10cr cannot prove possession by decryption")
+	case p.CentralKeyGeneration && (p10cr || p.IndirectPOP != 0 || len(p.PublicKey) > 0):
+		return errors.New("a request for central key generation has no public key and no proof of possession")
+	case !p10cr && p.CertReqID < 0:
+		return fmt.Errorf("certReqId %d is negative", p.CertReqID)
+	case p.PVNO != pkicmp.PVNO2 && p.PVNO != pkicmp.PVNO3:
+		return fmt.Errorf("unsupported protocol version: %d", p.PVNO)
+	case len(p.TransactionID) == 0:
+		return errors.New("no transaction ID")
+	case len(p.RequestNonce) == 0 || len(p.ResponseNonce) == 0:
+		return errors.New("no request or response nonce")
+	}
+	return nil
 }
 
 // restore checks p and returns the enrollment and the polling state it
@@ -164,7 +196,13 @@ func (p *PendingEnrollment) restore(creds pkicmp.Credentials, proof *decryptionP
 	if creds == nil {
 		return nil, nil, errors.New("no credentials provided")
 	}
-	txn := &enrollment{requestType: p.RequestType, certReqIDs: []int64{p.CertReqID}, proof: proof, creds: creds}
+	txn := &enrollment{
+		requestType: p.RequestType,
+		certReqIDs:  []int64{p.CertReqID},
+		proof:       proof,
+		central:     p.CentralKeyGeneration,
+		creds:       creds,
+	}
 	switch p.RequestType {
 	case pkicmp.BodyTypeIR:
 		txn.expectedRepType = pkicmp.BodyTypeIP
@@ -175,19 +213,8 @@ func (p *PendingEnrollment) restore(creds pkicmp.Credentials, proof *decryptionP
 	default:
 		return nil, nil, fmt.Errorf("request type %s is not ir, cr, kur or p10cr", p.RequestType)
 	}
-	switch {
-	case p.RequestType == pkicmp.BodyTypeP10CR && p.CertReqID != -1 && p.CertReqID != 0:
-		return nil, nil, fmt.Errorf("certReqId %d cannot answer a p10cr", p.CertReqID)
-	case p.RequestType == pkicmp.BodyTypeP10CR && p.IndirectPOP != 0:
-		return nil, nil, errors.New("a p10cr cannot prove possession by decryption")
-	case p.RequestType != pkicmp.BodyTypeP10CR && p.CertReqID < 0:
-		return nil, nil, fmt.Errorf("certReqId %d is negative", p.CertReqID)
-	case p.PVNO != pkicmp.PVNO2 && p.PVNO != pkicmp.PVNO3:
-		return nil, nil, fmt.Errorf("unsupported protocol version: %d", p.PVNO)
-	case len(p.TransactionID) == 0:
-		return nil, nil, errors.New("no transaction ID")
-	case len(p.RequestNonce) == 0 || len(p.ResponseNonce) == 0:
-		return nil, nil, errors.New("no request or response nonce")
+	if err := p.checkFields(); err != nil {
+		return nil, nil, err
 	}
 	if p.RequestType == pkicmp.BodyTypeP10CR {
 		// A p10cr carries no certReqId, and the CA may answer with -1 or 0.
@@ -207,9 +234,11 @@ func (p *PendingEnrollment) restore(creds pkicmp.Credentials, proof *decryptionP
 	if err != nil {
 		return nil, nil, fmt.Errorf("recipient: %w", err)
 	}
-	txn.requestedKey, err = pkicmp.ParsePublicKey(p.PublicKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("public key: %w", err)
+	if !p.CentralKeyGeneration {
+		txn.requestedKey, err = pkicmp.ParsePublicKey(p.PublicKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("public key: %w", err)
+		}
 	}
 	if proof != nil {
 		pub, _, err := decryptionPublicKey(proof.key)

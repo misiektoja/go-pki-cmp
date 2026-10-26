@@ -105,6 +105,21 @@
 // transaction keeps that version. A CMP version 2 CA may still send an RSA
 // certificate in the older EncryptedValue, which the client decrypts as well.
 //
+// # Keys the CA generates
+//
+// [Client.SendIRWithCentralKeyGeneration], [Client.SendCRWithCentralKeyGeneration]
+// and [Client.SendKURWithCentralKeyGeneration] ask the CA to generate the key
+// pair (RFC 9483 §4.1.6). A nil algorithm leaves the choice to the CA:
+//
+//	result, err := c.SendIRWithCentralKeyGeneration(ctx, nil, creds,
+//	    client.WithTemplateSubject(pkix.Name{CommonName: "my-device"}),
+//	)
+//	key := result.GeneratedKey.PrivateKey
+//
+// The CA encrypts the private key for the credentials of the request: MAC
+// credentials or an RSA or ECDSA protection key. The client checks that the
+// key matches the issued certificate before it confirms the certificate.
+//
 // # Support messages
 //
 // General messages ask the CA for information rather than a certificate:

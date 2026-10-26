@@ -27,6 +27,10 @@ type requestOptions struct {
 	invalidityDate time.Time
 	// deferredPolling returns the pending state of a waiting enrollment instead of polling.
 	deferredPolling bool
+	// centralKeyGeneration asks the CA to generate the key pair, of the
+	// algorithm centralKeyAlgorithm or of the CA's choice when it is nil.
+	centralKeyGeneration bool
+	centralKeyAlgorithm  *pkicmp.AlgorithmIdentifier
 }
 
 // RequestOption configures a specific enrollment request.

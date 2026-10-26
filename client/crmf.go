@@ -44,7 +44,8 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 
 // sendCertRequest requests a certificate for pub in an ir, cr or kur. pop adds
 // the proof of possession to the finished request under the request options,
-// and proof is the key that answers an indirect one.
+// and proof is the key that answers an indirect one. pub is nil when the
+// request asks the CA to generate the key pair.
 func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg, *requestOptions) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
 	ropts := &requestOptions{}
 	for _, opt := range opts {
@@ -54,13 +55,17 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 		return nil, &Error{Op: "build request", Err: fmt.Errorf("certReqId %d is negative", ropts.certReqID)}
 	}
 
-	pubDER, err := pkicmp.MarshalPublicKey(pub)
-	if err != nil {
-		return nil, &Error{Op: "marshal public key", Err: err}
-	}
-
-	tmpl := pkicmp.CertTemplate{
-		PublicKey: pubDER,
+	var tmpl pkicmp.CertTemplate
+	switch {
+	case !ropts.centralKeyGeneration:
+		pubDER, err := pkicmp.MarshalPublicKey(pub)
+		if err != nil {
+			return nil, &Error{Op: "marshal public key", Err: err}
+		}
+		tmpl.PublicKey = pubDER
+	case ropts.centralKeyAlgorithm != nil:
+		// RFC 9483 §4.1.6: the algorithm with a zero-length key states a preference.
+		tmpl.PublicKey = pkicmp.CentralKeyGenerationPublicKey(*ropts.centralKeyAlgorithm)
 	}
 
 	var oldCertificate *x509.Certificate

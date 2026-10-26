@@ -29,9 +29,10 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		return nil, err
 	}
 
-	// The encrypted certificate and the popdecc challenge come back as
-	// EnvelopedData, which needs cmp2021, so RFC 9810 §7 asks for pvno 3.
-	opts.cmp2021 = proof != nil
+	// The encrypted certificate, the popdecc challenge and a centrally
+	// generated private key come back as EnvelopedData, which needs cmp2021,
+	// so RFC 9810 §7 and RFC 9483 §4.1.6 ask for pvno 3.
+	opts.cmp2021 = proof != nil || opts.centralKeyGeneration
 	msg, err := c.newRequest(reqBody, creds, opts)
 	if err != nil {
 		return nil, err
@@ -85,6 +86,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		certReqIDs:      certReqIDs,
 		requestedKey:    requestedKey,
 		proof:           proof,
+		central:         opts.centralKeyGeneration,
 		creds:           creds,
 	}
 	if certResp.Status.Status == pkicmp.StatusWaiting {
@@ -117,9 +119,12 @@ type enrollment struct {
 	requestType     pkicmp.BodyType
 	expectedRepType pkicmp.BodyType
 	certReqIDs      []int64
-	requestedKey    crypto.PublicKey
-	proof           *decryptionProof
-	creds           pkicmp.Credentials
+	// requestedKey is nil when central is set.
+	requestedKey crypto.PublicKey
+	proof        *decryptionProof
+	// central marks a request that asked the CA to generate the key pair.
+	central bool
+	creds   pkicmp.Credentials
 }
 
 // pollEnrollment polls for the final response to a waiting enrollment and
@@ -197,6 +202,20 @@ func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp 
 			"certificate does not certify the requested public key", cmpResp.wrapError(err))
 	}
 
+	var generated *GeneratedKey
+	if txn.central {
+		var responder *x509.Certificate
+		if vr != nil {
+			responder = vr.ProtectionCertificate
+		}
+		candidates := slices.Concat(extraCerts, caPubs)
+		generated, err = c.openGeneratedKey(certResp, cert, txn.creds, trustPool, candidates, responder)
+		if err != nil {
+			return nil, c.rejectCertificate(ctx, conf, cert, certResp.CertReqID,
+				"the generated private key cannot be used", cmpResp.wrapError(err))
+		}
+	}
+
 	if !implicit {
 		// RFC 9810 requires an explicit hash when the signature does not identify one.
 		certStatus, err := pkicmp.NewCertStatus(cert, certResp.CertReqID)
@@ -213,6 +232,7 @@ func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp 
 		CAPubs:            caPubs,
 		ExtraCertificates: extraCerts,
 		ImplicitConfirm:   implicit,
+		GeneratedKey:      generated,
 	}, nil
 }
 
