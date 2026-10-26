@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/misiektoja/go-pki-cmp/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 )
 
 // ProtectionMechanism identifies a class of message protection.
@@ -344,6 +345,13 @@ func (m *PKIMessage) verifyPBMAC1(opts VerifyOptions) (*VerifyResult, error) {
 	if err := validatePBKDF2KeyLength(pbkdf2Params.KeyLength, macHash); err != nil {
 		return nil, err
 	}
+	// PBKDF2 repeats the iterations for every block of PRF output the key needs
+	// (RFC 8018 §5.2), so the maximum bounds that product. Otherwise a peer
+	// multiplies the work the iteration count permits by asking for a long key
+	// from a short PRF: 128 bytes from HMAC-SHA1 take seven times the iterations.
+	if err := validatePBKDF2Work(pbkdf2Params.IterationCount, pbkdf2Params.KeyLength, prfHash, maxIterations); err != nil {
+		return nil, err
+	}
 
 	data, err := m.protectedPart()
 	if err != nil {
@@ -563,6 +571,9 @@ func signatureChecker(alg AlgorithmIdentifier, allowSHA1 bool) (func(cert *x509.
 		return nil, err
 	}
 	return func(cert *x509.Certificate, data, signature []byte) error {
+		if err := keylimit.Check(cert.PublicKey); err != nil {
+			return err
+		}
 		return cert.CheckSignature(sigAlg, data, signature)
 	}, nil
 }

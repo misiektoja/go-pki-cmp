@@ -9,12 +9,13 @@ full.
 | Option | Default | Effect |
 | --- | --- | --- |
 | [`WithSigner`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSigner) | None | Key, certificate and chain that sign responses. `Err` reports a key that does not match |
+| [`WithUnprotectedErrorsBeforeAuthentication`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithUnprotectedErrorsBeforeAuthentication) | Off | Leaves errors raised before authentication unprotected, so a slow signer does not sign them |
 | [`WithExtraCerts`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithExtraCerts) | None | Certificates added to `extraCerts` of every response |
 | [`WithSender`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSender) | Subject of the signer certificate | Server name in response headers. A request for another recipient is refused |
 | [`WithSecretLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSecretLookup) | None | Finds shared secrets. Without it MAC-protected messages are refused |
 | [`WithCertificateLookup`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCertificateLookup) | None | Finds sender certificates. Without it signed messages are refused |
 | [`WithRAAuthorizer`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRAAuthorizer) | None | Accepts nested messages from registration authorities |
-| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 1 to 500000 | Accepted MAC iteration counts |
+| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithMACIterationLimits) | 100 to 1000000 | Accepted MAC iteration counts, for PBMAC1 multiplied by the PRF blocks of the key length |
 | [`WithSHA1Signatures`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSHA1Signatures) | Off | Accepts SHA-1 signatures in protection and proof of possession |
 
 ## Confirmation and waiting
@@ -36,6 +37,14 @@ full.
 | [`WithSignatureProtectionPOP`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSignatureProtectionPOP) | Off | Accepts a request without proof whose protection was signed with the requested key |
 | [`WithPoposkInputVariants`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithPoposkInputVariants) | Off | Accepts the signature proof the Insta Certifier 10 cmpclient sends |
 
+## Central key generation
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| [`WithCentralKeyGeneration`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGeneration) | Off | Generates the key pair for requests without a public key and signs the private key with a key generation authority |
+| [`WithCentralKeyGenerationAESKeyWrap`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAESKeyWrap) | Off | Encrypts the key for a MAC-protected request with the AES key wrap instead of the RFC 3211 key wrap that OpenSSL reads |
+| [`WithCentralKeyGenerationAsymmetricKeyPackage`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAsymmetricKeyPackage) | Off | Signs the key as an RFC 9810 AsymmetricKeyPackage instead of the id-data that OpenSSL reads |
+
 ## Request rules
 
 | Option | Default | Effect |
@@ -45,6 +54,7 @@ full.
 | [`WithOptionalCertConfRecipNonce`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalCertConfRecipNonce) | Off | Accepts `certConf` without recipNonce |
 | [`WithOptionalPollReqRecipNonce`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalPollReqRecipNonce) | Off | Accepts `pollReq` without recipNonce |
 | [`WithOptionalSubject`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalSubject) | Off | Accepts a template without the subject field when it requests a subjectAltName |
+| [`WithAnyCertReqID`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithAnyCertReqID) | Off | Accepts an ir, cr or kur with a certReqId other than 0 and repeats it in the response |
 | [`WithRawSubject`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithRawSubject) | Off | Passes the requested subject unchanged in `template.RawSubject` |
 | [`WithOptionalRevocationReason`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalRevocationReason) | Off | Accepts a revocation request without reasonCode |
 | [`WithOptionalRevocationIssuer`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithOptionalRevocationIssuer) | Off | Accepts a revocation request without an issuer |

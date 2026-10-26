@@ -62,6 +62,7 @@ type serverConfig struct {
 	signerKey                    crypto.Signer
 	signerCert                   *x509.Certificate
 	signerChain                  []*x509.Certificate
+	unprotectedPreAuthErrors     bool
 	secretLookup                 SecretLookup
 	certificateLookup            CertificateLookup
 	extraCerts                   []*x509.Certificate
@@ -75,6 +76,7 @@ type serverConfig struct {
 	optionalPollReqRecipNonce    bool
 	allowSHA1Signatures          bool
 	allowPoposkInputVariants     bool
+	anyCertReqID                 bool
 	rawSubject                   bool
 	optionalSubject              bool
 	optionalRevocationReason     bool
@@ -91,11 +93,19 @@ type serverConfig struct {
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
 	waitingLifetime              time.Duration        // zero selects defaultWaitingLifetime
 	waitingExpirer               WaitingExpirer       // set by WithWaitingExpirer or NewCAServer
+	keyGenerator                 KeyGenerator
+	kgaKey                       crypto.Signer
+	kgaCert                      *x509.Certificate
+	kgaChain                     []*x509.Certificate
+	kgaAESKeyWrap                bool
+	kgaKeyPackage                pkicmp.KeyPackageContent
 
 	// Built once by New from signerKey and signerCert. signerErr records a
 	// rejected pair so responses fail visibly instead of going out unprotected.
 	signerCreds *pkicmp.SignatureCredentials
 	signerErr   error
+	// kgaErr records central key generation settings that cannot work.
+	kgaErr error
 }
 
 // WithSigner configures signature-based response protection. The key must match
@@ -106,6 +116,31 @@ func WithSigner(key crypto.Signer, cert *x509.Certificate, chain ...*x509.Certif
 		c.signerKey = key
 		c.signerCert = cert
 		c.signerChain = chain
+	}
+}
+
+// WithUnprotectedErrorsBeforeAuthentication sends an error raised before the
+// sender was authenticated without protection: a malformed message, an
+// unsupported version, a wrong recipient, an unknown sender or a failed MAC or
+// signature check. By default such errors are signed with the [WithSigner]
+// key, as RFC 9483 §3.6.4 recommends. The same section allows omitting the
+// protection when it is not clear which credential the recipient could verify
+// it with, which is the case before authentication.
+//
+// Use it when the signer is slow. One SLH-DSA-SHA2-128s signature takes well
+// over 100 ms, so unauthenticated requests of a few bytes can keep a CPU core
+// busy signing errors nobody can verify. A faster response signer, such as an
+// ML-DSA or ECDSA registration authority certificate, avoids the cost without
+// this option. A request forwarded by an authenticated registration authority
+// is answered with a protected error either way, because it comes from a
+// known peer.
+//
+// RFC 9483 §3.5 requires a client to accept an unprotected error. The client
+// of this module reports one as an unverified status. OpenSSL reports a
+// missing protection instead of the status unless -unprotected_errors is set.
+func WithUnprotectedErrorsBeforeAuthentication() Option {
+	return func(c *serverConfig) {
+		c.unprotectedPreAuthErrors = true
 	}
 }
 
@@ -140,7 +175,8 @@ func WithSender(name pkix.Name) Option {
 // WithConfirmWaitTime sets the confirmWaitTime included in certificate responses
 // and controls when [Server.CleanupExpired] considers transactions stale, except
 // waiting requests, which [WithWaitingLifetime] governs. The default is 10
-// seconds. RFC 9810 §5.1.1.2.
+// seconds. RFC 9810 §5.1.1.2. A certConf that arrives later is refused with
+// badRequest and the CA hears [ConfirmExpired], as RFC 9483 §4.1.1 asks.
 func WithConfirmWaitTime(d time.Duration) Option {
 	return func(c *serverConfig) {
 		c.confirmWait = d
@@ -192,7 +228,8 @@ func WithImplicitConfirm() Option {
 //     protection certificate or that hold a certificate not certifying the one
 //     before it (§3.3). The chain may stop below a self-signed root, which §3.3
 //     recommends leaving out,
-//   - a certConf whose senderNonce repeats one used earlier in the transaction (§3.1),
+//   - a certConf, pollReq or popdecr whose senderNonce repeats the senderNonce
+//     of the last request or response in the transaction (§3.1),
 //   - a request without a transactionID (§3.5), which RFC 4210 and RFC 9810
 //     let the server assign instead,
 //   - a message whose senderNonce is missing or shorter than 128 bits (§3.5),
@@ -312,6 +349,19 @@ func WithPoposkInputVariants() Option {
 func WithRawSubject() Option {
 	return func(c *serverConfig) {
 		c.rawSubject = true
+	}
+}
+
+// WithAnyCertReqID accepts an ir, cr or kur whose certReqId is not 0. RFC 9483
+// §4.1.3 requires 0, so [LightweightPolicy] refuses any other value with
+// badRequest by default. The response, the pollRep and the certConf check
+// repeat the value of the request either way, as RFC 4211 §5 asks. Use the
+// option for RFC 4210 clients that number their requests, or to test how a
+// client checks the certReqId of a response. [WithStrictProfileValidation]
+// refuses such a request whether or not this option is set.
+func WithAnyCertReqID() Option {
+	return func(c *serverConfig) {
+		c.anyCertReqID = true
 	}
 }
 
@@ -484,9 +534,9 @@ func WithRAAuthorizer(authorizer RAAuthorizer) Option {
 // The client chooses the count and every iteration runs before the MAC can be
 // checked, so the maximum bounds the work an unauthenticated request costs.
 // Only a request naming a known shared secret reaches that point. Raise the
-// maximum for devices configured with more iterations. Raise the minimum, for
-// example to the 100 that RFC 4211 §4.4 requires, to refuse protection too
-// cheap to slow an offline guess of a weak shared secret.
+// maximum for devices configured with more iterations. Lower the minimum below
+// the 100 that RFC 4211 §4.4 requires only for a peer that sends fewer: a small
+// count makes an offline guess of a weak shared secret cheap.
 func WithMACIterationLimits(minimum, maximum int) Option {
 	return func(c *serverConfig) {
 		c.minMACIterationCount = minimum

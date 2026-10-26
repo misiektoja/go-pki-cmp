@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
@@ -47,7 +48,8 @@ func verifySLHDSA(id slhdsa.ID, pub crypto.PublicKey, data, signature []byte) er
 // request. It checks SLH-DSA signatures (RFC 9909) itself and passes every
 // other request to compositex509.CheckCertificateRequestSignature, which covers
 // classical, ML-DSA and composite ML-DSA keys. crypto/x509 parses an SLH-DSA
-// request with a nil PublicKey, so its own check always fails for one.
+// request with a nil PublicKey, so its own check always fails for one. An RSA
+// key above [MaxRSAModulusBits] is refused with [ErrRSAKeyTooLarge] before the check.
 func CheckCertificateRequestSignature(csr *x509.CertificateRequest) error {
 	alg, err := outerSignatureAlgorithm(csr.Raw)
 	if err != nil {
@@ -58,6 +60,9 @@ func CheckCertificateRequestSignature(csr *x509.CertificateRequest) error {
 		return err
 	}
 	if !ok {
+		if err := keylimit.Check(csr.PublicKey); err != nil {
+			return err
+		}
 		return compositex509.CheckCertificateRequestSignature(csr)
 	}
 	pub, err := ParsePublicKey(csr.RawSubjectPublicKeyInfo)

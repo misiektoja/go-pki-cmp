@@ -7,13 +7,21 @@ for your application.
 
 ### Some CMP operations are not implemented
 
-Key recovery, central key generation, cross-certification and announcements are not implemented.
+Key recovery, cross-certification and announcements are not implemented.
 Requests for them are refused with badRequest and the text "message type not supported".
 
 ### One request per nested message
 
 A registration authority may forward one request per nested message. Batches (RFC 9483 section
-5.2.2.2) are refused with badRequest. The client does not send nested messages.
+5.2.2.2) are refused with badRequest. A client with `WithRegistrationAuthority` sends one request per
+nested message and does not batch.
+
+### Central key generation needs a key that can decrypt
+
+A centrally generated private key is encrypted for the requester. A signature-protected request
+needs an RSA or ECDSA P-256, P-384 or P-521 protection key. Other keys, such as Ed25519 or ML-DSA, can
+receive a generated key only through a MAC-protected request. The CMP version 2 EncryptedValue form
+of the private key is not supported.
 
 ### ML-KEM-512 and older Dilithium encodings
 
@@ -32,7 +40,9 @@ path may carry name constraints.
 An SLH-DSA CA key signs every issued certificate and, as the `WithSigner` key, every protected
 response. The small parameter sets, whose names end in `s`, can take hundreds of milliseconds or more
 per signature. An enrollment with explicit confirmation needs at least two signatures. A separate
-classical or ML-DSA signer certificate in `WithSigner` keeps the responses fast.
+classical or ML-DSA signer certificate in `WithSigner` keeps the responses fast. Errors the server
+returns before authentication are signed too, so every unauthenticated request costs a signature
+unless `WithUnprotectedErrorsBeforeAuthentication` leaves those errors unprotected.
 
 ### Proof by decryption needs a capable CA
 
@@ -69,14 +79,11 @@ The server caps transactions in total and per credential. Other limits belong in
 
 ## Client
 
-### No sender for nested messages
-
-A client cannot act as a registration authority and wrap requests in nested messages.
-
 ### Polling time is chosen by the CA
 
 The client waits as long as the CA asks, within `WithCheckAfterLimits`, up to `WithMaxPolls` times.
-Only a context deadline bounds the whole operation.
+Only a context deadline bounds the whole operation. `WithDeferredPolling` returns at the first
+waiting answer, so that `ResumeEnrollment` can collect the certificate later.
 
 ## Operational limits
 
@@ -84,11 +91,13 @@ Only a context deadline bounds the whole operation.
 | --- | --- | --- |
 | Request body at the server | 1 MiB | `server.MaxRequestBodySize` |
 | Response body at the client | 10 MiB | `client.WithMaxResponseBytes` |
+| HTTP exchange at the client | 120 seconds | `client.WithHTTPClient` |
 | Concurrent transactions | 10000 | `server.WithMaxTransactions` |
 | Transactions per credential | 100 | `server.WithMaxTransactionsPerCredential` |
 | Confirmation wait | 10 seconds | `server.WithConfirmWaitTime` |
 | Waiting request lifetime | 24 hours | `server.WithWaitingLifetime` |
-| MAC iteration count | 1 to 500000 | `WithMACIterationLimits` in either package |
+| MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length | 100 to 1000000 | `WithMACIterationLimits` in either package |
+| RSA modulus in a key or certificate from a peer | 16384 bits | Fixed, `pkicmp.MaxRSAModulusBits` |
 | Poll attempts | 60 | `client.WithMaxPolls` |
 | Wait between polls | 1 second to 1 hour | `client.WithCheckAfterLimits` |
 | Snapshot size | 64 MiB | Fixed |

@@ -58,13 +58,16 @@ func New(handler Handler, opts ...Option) *Server {
 			s.cfg.signerKey, s.cfg.signerCert, s.cfg.signerChain...,
 		)
 	}
+	s.cfg.kgaErr = s.cfg.checkKeyGeneration()
 	return s
 }
 
 // Err reports a configuration error detected by [New], such as a signer key that
-// does not match its certificate. A server with a non-nil Err answers every
-// request with systemFailure, so callers should check it at startup.
-func (s *Server) Err() error { return s.cfg.signerErr }
+// does not match its certificate. A server with a signer error answers every
+// request with systemFailure. A server with a [WithCentralKeyGeneration] error
+// answers every request for central key generation with systemFailure. Check it
+// at startup.
+func (s *Server) Err() error { return errors.Join(s.cfg.signerErr, s.cfg.kgaErr) }
 
 // isCMPMediaType reports whether a Content-Type value identifies the CMP media type.
 func isCMPMediaType(value string) bool {
@@ -121,13 +124,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // malformedMessageResponse refuses a message whose content after the header could not be decoded.
 //
-// The message was never authenticated, so the error is protected like any other
+// The message was never authenticated, so the error is answered like any other
 // error raised before authentication.
 func (s *Server) malformedMessageResponse(header *pkicmp.PKIHeader) *pkicmp.PKIMessage {
 	req := &pkicmp.PKIMessage{Header: *header}
 	// RFC 9810 §7: answer with the closest supported version.
 	req.Header.PVNO = min(max(req.Header.PVNO, pkicmp.PVNO2), pkicmp.PVNO3)
-	return s.buildErrorResponse(req, nil, pkicmp.PKIStatusInfo{
+	return s.unauthenticatedError(req, nil, pkicmp.PKIStatusInfo{
 		Status:       pkicmp.StatusRejection,
 		FailInfo:     pkicmp.FailBadDataFormat,
 		StatusString: pkicmp.PKIFreeText{"malformed message"},
@@ -157,7 +160,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 
 	// RFC 9810 §7: Validate PVNO.
 	if msg.Header.PVNO < pkicmp.PVNO2 || msg.Header.PVNO > pkicmp.PVNO3 {
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailUnsupportedVersion,
 			StatusString: pkicmp.PKIFreeText{fmt.Sprintf("unsupported pvno %d", msg.Header.PVNO)},
@@ -173,10 +176,10 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 
 	// RFC 9810 §5.1.1: Verify that the recipient matches the server's identity.
 	if err := s.verifyRecipient(msg); err != nil {
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRequest,
-			StatusString: pkicmp.PKIFreeText{err.Error()},
+			StatusString: statusText(err),
 		})
 		return resp
 	}
@@ -192,10 +195,10 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		if errors.As(err, &srvErr) && srvErr.FailureInfo == pkicmp.FailBadAlg {
 			failInfo = pkicmp.FailBadAlg
 		}
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     failInfo,
-			StatusString: pkicmp.PKIFreeText{err.Error()},
+			StatusString: statusText(err),
 		})
 		return resp
 	}
@@ -205,21 +208,21 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfileExtraCerts(msg, sender); err != nil {
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfilePOP(msg); err != nil {
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadPOP,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfileGenM(msg); err != nil {
@@ -297,6 +300,7 @@ func (s *Server) policyConfig() policyConfig {
 	return policyConfig{
 		allowSHA1Signatures:       s.cfg.allowSHA1Signatures,
 		allowPoposkInputVariants:  s.cfg.allowPoposkInputVariants && relaxed,
+		anyCertReqID:              s.cfg.anyCertReqID && relaxed,
 		minMACIterationCount:      s.cfg.minMACIterationCount,
 		maxMACIterationCount:      s.cfg.maxMACIterationCount,
 		optionalSubject:           s.cfg.optionalSubject && relaxed,

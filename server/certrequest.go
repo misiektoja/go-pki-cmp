@@ -23,6 +23,9 @@ type parsedCRMF struct {
 	popoAbsent   bool // request carries no proof of possession at all
 	// subsequentMessage is the method a keyEncipherment or keyAgreement proof asks for.
 	subsequentMessage *int64
+	// centralKeyGeneration reports a template that asks the server to generate
+	// the key pair (RFC 9483 §4.1.6). publicKey is then nil.
+	centralKeyGeneration bool
 }
 
 // parseCRMFMsg extracts fields from a CRMF request body.
@@ -60,8 +63,9 @@ func parseCRMFMsg(msg *pkicmp.PKIMessage) (*parsedCRMF, error) {
 	}
 	result.rawSubject = reqMsg.CertReq.CertTemplate.RawSubject
 
-	// Extract public key.
-	if len(reqMsg.CertReq.CertTemplate.PublicKey) > 0 {
+	// Extract public key. A key with an empty subjectPublicKey asks for central key generation.
+	_, result.centralKeyGeneration = reqMsg.CertReq.CertTemplate.RequestsCentralKeyGeneration()
+	if !result.centralKeyGeneration {
 		pub, err := pkicmp.ParsePublicKey(reqMsg.CertReq.CertTemplate.PublicKey)
 		if err != nil {
 			return nil, rejection(pkicmp.FailBadAlg, err.Error())
@@ -122,6 +126,9 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage, sende
 		if err != nil {
 			return err
 		}
+		if crmf.centralKeyGeneration {
+			return checkCentralKeyGeneration(ctx, crmf)
+		}
 		if err := verifyPOPMsg(msg, popOptions(ctx, sender)); err != nil {
 			failInfo := pkicmp.FailBadPOP
 			var verr *pkicmp.VerificationError
@@ -156,6 +163,19 @@ func enforceProofOfPossession(ctx context.Context, msg *pkicmp.PKIMessage, sende
 		// Only certificate requests carry a proof of possession.
 		return nil
 	}
+}
+
+// checkCentralKeyGeneration accepts a request for central key generation that
+// the server answers with a key it generated (RFC 9483 §4.1.6). Such a request
+// carries no proof of possession.
+func checkCentralKeyGeneration(ctx context.Context, crmf *parsedCRMF) error {
+	if POPMethodFromContext(ctx) != POPCentralKeyGeneration || GeneratedPublicKeyFromContext(ctx) == nil {
+		return rejection(pkicmp.FailBadCertTemplate, "public key required")
+	}
+	if !crmf.popoAbsent {
+		return rejection(pkicmp.FailBadPOP, "a request for central key generation must not carry a proof of possession")
+	}
+	return nil
 }
 
 // signedWithRequestedKey reports whether the message protection was verified

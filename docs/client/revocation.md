@@ -24,6 +24,33 @@ A nil error means the CA revoked the certificate. A refusal arrives as a `*pkicm
 A registration authority or another management entity that revokes for an end entity signs with its
 own credentials (RFC 9483 section 5.3.2). The CA decides whether it may.
 
+## Revocation by serial number
+
+A requester that has no copy of the certificate, such as an operator who knows only its serial number
+and the CA, names it with `Client.SendRRBySerial`:
+
+```go
+serial, _ := new(big.Int).SetString("1A2B", 16)
+err := c.SendRRBySerial(context.Background(), pkix.Name{CommonName: "Example CA"}, serial,
+	pkicmp.CRLReasonKeyCompromise, raCreds)
+```
+
+The issuer name is encoded from the `pkix.Name`. A CA that compares the name bytes needs the
+attributes in the order and with the string types of the certificate. The `server` package compares
+the decoded attributes, so the string types may differ there.
+
+## Invalidity date
+
+`WithInvalidityDate` adds the invalidityDate CRL entry extension (RFC 5280 section 5.3.2) to the
+request: the time at which the key is known or suspected to have been compromised or the certificate
+otherwise became invalid. A CA may publish it in the CRL entry. It is sent as a GeneralizedTime in
+UTC with a resolution of one second.
+
+```go
+err := c.SendRR(context.Background(), cert, pkicmp.CRLReasonKeyCompromise, creds,
+	client.WithInvalidityDate(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)))
+```
+
 ## Holds
 
 `pkicmp.CRLReasonCertificateHold` suspends a certificate and `pkicmp.CRLReasonRemoveFromCRL` releases

@@ -217,6 +217,8 @@ type SignatureCredentials struct {
 	key   crypto.Signer
 	cert  *x509.Certificate
 	chain []*x509.Certificate // optional intermediate certificates
+	// hash replaces the digest the key type selects. Zero keeps the default.
+	hash crypto.Hash
 }
 
 // NewSignatureCredentials creates credentials for certificate-based signature
@@ -249,6 +251,26 @@ func (c *SignatureCredentials) Certificate() *x509.Certificate {
 	return c.cert
 }
 
+// Key returns the signing key. A client uses it to decrypt a private key the
+// CA generated for it and encrypted to the protection certificate.
+func (c *SignatureCredentials) Key() crypto.Signer {
+	return c.key
+}
+
+// WithHash returns credentials that sign with the digest hash instead of the
+// one the key type selects. An RSA or ECDSA key takes SHA-1, SHA-256, SHA-384
+// or SHA-512. Other key types take no digest and are refused with a
+// [*ProtectionError]. RFC 9481 §7.1 deprecates SHA-1, so a peer accepts it
+// only when configured to, as [VerifyOptions.AllowSHA1Signatures] does here.
+func (c *SignatureCredentials) WithHash(hash crypto.Hash) (*SignatureCredentials, error) {
+	if _, _, err := signatureAlgorithmForHash(c.key, hash); err != nil {
+		return nil, &ProtectionError{Reason: ReasonUnsupportedAlgorithm, Err: err}
+	}
+	withHash := *c
+	withHash.hash = hash
+	return &withHash, nil
+}
+
 func (c *SignatureCredentials) Protect(msg *PKIMessage) error {
-	return msg.protectWithSignature(c.key, c.cert, c.chain...)
+	return msg.protectWithSignature(c.key, c.hash, c.cert, c.chain...)
 }

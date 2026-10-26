@@ -1,6 +1,7 @@
-// Package kemcert creates test certificates for keys that crypto/x509 cannot
-// certify, such as ML-KEM keys (RFC 9935), and test certificates and requests
-// signed with keys it cannot sign with, such as SLH-DSA keys (RFC 9909).
+// Package kemcert creates certificates for keys that crypto/x509 cannot
+// certify, such as ML-KEM keys (RFC 9935), for the tests and the example mock
+// CA, and test certificates and requests signed with keys it cannot sign with,
+// such as SLH-DSA keys (RFC 9909).
 package kemcert
 
 import (

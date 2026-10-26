@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
@@ -45,6 +44,10 @@ type savedTransaction struct {
 	// ChallengeRequest and ChallengeAnswer hold a request that waits for its popdecr.
 	ChallengeRequest []byte `json:",omitempty"`
 	ChallengeAnswer  []byte `json:",omitempty"`
+	// PrivateKey and GeneratedKey hold a centrally generated key pair while its
+	// request waits: the private key encrypted for the requester and the public key.
+	PrivateKey   []byte `json:",omitempty"`
+	GeneratedKey []byte `json:",omitempty"`
 }
 
 // SnapshotTransactions encodes trusted recovery state while the caller excludes concurrent requests and cleanup.
@@ -71,6 +74,8 @@ func (s *Server) SnapshotTransactions() ([]byte, error) {
 			POPMethod:           entry.popMethod,
 			ChallengeRequest:    entry.challengeRequest,
 			ChallengeAnswer:     entry.challengeAnswer,
+			PrivateKey:          entry.privateKey,
+			GeneratedKey:        entry.generatedKey,
 		}
 		if entry.cert != nil {
 			saved.Certificate = entry.cert.Raw
@@ -141,6 +146,8 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 			popMethod:           saved.POPMethod,
 			challengeRequest:    saved.ChallengeRequest,
 			challengeAnswer:     saved.ChallengeAnswer,
+			privateKey:          saved.PrivateKey,
+			generatedKey:        saved.GeneratedKey,
 		}
 		if len(saved.Certificate) > 0 {
 			cert, err := x509.ParseCertificate(saved.Certificate)
@@ -166,8 +173,7 @@ func (s *Server) RestoreTransactions(data []byte, decodeIssueRef func(json.RawMe
 		if _, duplicate := next.transactions.LoadOrStore(saved.Key, entry); duplicate {
 			return errors.New("duplicate saved transaction")
 		}
-		count, _ := next.credentialCounts.LoadOrStore(saved.Credential, &atomic.Int64{})
-		if count.(*atomic.Int64).Add(1) > int64(next.maxTransactionsPerCredential) {
+		if !next.reserveCredential(saved.Credential) {
 			return errors.New("saved credential exceeds transaction capacity")
 		}
 		next.count.Add(1)
@@ -182,7 +188,7 @@ func validateSaved(saved *savedTransaction) error {
 		saved.LastActivity.IsZero() || saved.LastActivity.After(time.Now().Add(time.Minute)) {
 		return errors.New("invalid saved transaction state or timestamp")
 	}
-	if saved.POPMethod < POPSignature || saved.POPMethod > POPChallengeResponse {
+	if saved.POPMethod < POPSignature || saved.POPMethod > POPCentralKeyGeneration {
 		return errors.New("invalid saved proof of possession method")
 	}
 	switch saved.State {
@@ -195,6 +201,9 @@ func validateSaved(saved *savedTransaction) error {
 	case statePending:
 		if saved.PollRef == "" || len(saved.SenderNonce) < 16 || saved.CheckAfter < 0 {
 			return errors.New("pending transaction is incomplete")
+		}
+		if saved.POPMethod == POPCentralKeyGeneration && (len(saved.PrivateKey) == 0 || len(saved.GeneratedKey) == 0) {
+			return errors.New("pending central key generation is incomplete")
 		}
 	case stateChallenged:
 		if saved.POPMethod != POPChallengeResponse || saved.CertReqID == nil || len(saved.ChallengeRequest) == 0 ||

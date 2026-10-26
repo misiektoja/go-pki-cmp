@@ -6,9 +6,11 @@ polling flows. This page covers the limits, the cleanup and moving the state to 
 ## Transaction identity
 
 Transactions are keyed by the sender's verified credential and the transaction ID, so one client
-cannot continue another client's transaction (RFC 9810 section 5.1.1). A client may leave the
-transaction ID out of its first request. The server then assigns a random 128-bit one and returns it,
-as RFC 4210 and RFC 9810 require. `WithStrictProfileValidation` refuses such requests instead.
+cannot continue another client's transaction (RFC 9810 section 5.1.1). For a MAC-protected client
+the credential is the shared secret itself, whichever header field selected it, and for a signed
+client it is the protection certificate. A client may leave the transaction ID out of its first
+request. The server then assigns a random 128-bit one and returns it, as RFC 4210 and RFC 9810
+require. `WithStrictProfileValidation` refuses such requests instead.
 
 ## Limits
 
@@ -39,7 +41,9 @@ go func() {
 ```
 
 Entries expire by last activity: `WithConfirmWaitTime` for most, `WithWaitingLifetime` for waiting
-requests.
+requests. A `certConf` that arrives after the confirmWaitTime is refused with badRequest even before
+`CleanupExpired` runs. `CertificateConfirmer` then hears `ConfirmExpired`, as RFC 9483 section 4.1.1
+asks.
 
 ## Durable recovery
 
@@ -57,7 +61,9 @@ The host must:
   completed transaction ID. The library provides neither database transactions nor a response cache.
 
 Treat snapshots as trusted private server data, never as client input. They have a versioned format
-and contain no secrets or signing keys, unless your `IssueRef` holds them. `IssueRef` must be JSON
+and contain no secrets or signing keys, unless your `IssueRef` holds them. A waiting request for
+[central key generation](central-key-generation.md) keeps its private key encrypted for the client.
+`IssueRef` must be JSON
 serializable. Pass a decoder to `RestoreTransactions` when its original Go type matters. A nil
 decoder uses the standard encoding/json value types.
 

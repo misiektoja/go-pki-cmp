@@ -128,7 +128,7 @@ func validateCRMF(ctx context.Context, msg *pkicmp.PKIMessage, sender *SenderIde
 	}
 
 	// RFC 9483 §4.1.3: certReqId MUST be 0.
-	if crmf.certReqID != 0 {
+	if crmf.certReqID != 0 && !policyConfigFrom(ctx).anyCertReqID {
 		return rejection(pkicmp.FailBadRequest, "certReqId must be 0")
 	}
 

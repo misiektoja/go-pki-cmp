@@ -9,12 +9,18 @@ import (
 	"encoding/asn1"
 	"math/big"
 	"reflect"
+	"time"
+
+	"golang.org/x/crypto/cryptobyte"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // oidCRLReason identifies the RFC 5280 §5.3.1 reasonCode CRL entry extension.
 var oidCRLReason = asn1.ObjectIdentifier{2, 5, 29, 21}
+
+// oidInvalidityDate identifies the RFC 5280 §5.3.2 invalidityDate CRL entry extension.
+var oidInvalidityDate = asn1.ObjectIdentifier{2, 5, 29, 24}
 
 // Revoker is an optional interface for CAs that handle revocation requests (RFC 9483 §4.2).
 type Revoker interface {
@@ -65,7 +71,13 @@ type RevocationRequest struct {
 	// Reason is the requested reason code. It is unspecified when the request
 	// carries none, which RFC 5280 §5.3.1 treats the same way.
 	Reason pkicmp.CRLReason
-	// Extensions holds every requested CRL entry extension, including reasonCode.
+	// InvalidityDate is the requested invalidityDate (RFC 5280 §5.3.2), the
+	// time at which the key is known or suspected to have been compromised or
+	// the certificate otherwise became invalid, for the CA to publish in the
+	// CRL entry. It is zero when the request carries none.
+	InvalidityDate time.Time
+	// Extensions holds every requested CRL entry extension, including
+	// reasonCode and invalidityDate.
 	Extensions []pkix.Extension
 
 	subject   pkix.RDNSequence // optional subject from the template
@@ -147,24 +159,48 @@ func parseRevocationRequest(msg *pkicmp.PKIMessage, optionalIssuer bool) (*Revoc
 	if err != nil {
 		return nil, rejection(pkicmp.FailBadDataFormat, "malformed crlEntryDetails")
 	}
-	for _, ext := range req.Extensions {
-		if !ext.Id.Equal(oidCRLReason) {
-			continue
-		}
-		// Two reason codes, such as a revocation and a release from hold, leave
-		// the request without a single meaning.
-		if req.hasReason {
-			return nil, rejection(pkicmp.FailBadRequest, "more than one reasonCode")
-		}
-		var code asn1.Enumerated
-		rest, err := asn1.Unmarshal(ext.Value, &code)
-		if err != nil || len(rest) > 0 || !pkicmp.CRLReason(code).Valid() {
-			return nil, rejection(pkicmp.FailBadDataFormat, "invalid reasonCode")
-		}
-		req.Reason = pkicmp.CRLReason(code)
-		req.hasReason = true
+	if err := req.readCRLEntryExtensions(); err != nil {
+		return nil, err
 	}
 	return req, nil
+}
+
+// readCRLEntryExtensions decodes the reasonCode and invalidityDate among the
+// requested CRL entry extensions. Other extensions stay in Extensions for the
+// CA to read.
+func (r *RevocationRequest) readCRLEntryExtensions() error {
+	var hasInvalidityDate bool
+	for _, ext := range r.Extensions {
+		switch {
+		case ext.Id.Equal(oidCRLReason):
+			// Two reason codes, such as a revocation and a release from hold,
+			// leave the request without a single meaning.
+			if r.hasReason {
+				return rejection(pkicmp.FailBadRequest, "more than one reasonCode")
+			}
+			var code asn1.Enumerated
+			rest, err := asn1.Unmarshal(ext.Value, &code)
+			if err != nil || len(rest) > 0 || !pkicmp.CRLReason(code).Valid() {
+				return rejection(pkicmp.FailBadDataFormat, "invalid reasonCode")
+			}
+			r.Reason = pkicmp.CRLReason(code)
+			r.hasReason = true
+		case ext.Id.Equal(oidInvalidityDate):
+			if hasInvalidityDate {
+				return rejection(pkicmp.FailBadRequest, "more than one invalidityDate")
+			}
+			// RFC 5280 §5.3.2 encodes the date as a GeneralizedTime. encoding/asn1
+			// would also take a UTCTime, so the tag is checked here.
+			var t time.Time
+			value := cryptobyte.String(ext.Value)
+			if !value.ReadASN1GeneralizedTime(&t) || !value.Empty() {
+				return rejection(pkicmp.FailBadDataFormat, "invalid invalidityDate")
+			}
+			r.InvalidityDate = t
+			hasInvalidityDate = true
+		}
+	}
+	return nil
 }
 
 // handleRevocation authorizes a revocation request and passes it to the CA.
@@ -225,11 +261,12 @@ func (s *Server) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage, s
 		} else {
 			respMsg := s.buildErrorResponse(msg, sender, waitingStatus(resp.Waiting))
 			if s.setPending(credID, txnID, waitingState{
-				reqType:     requestRR,
-				certReqID:   -1,
-				pollRef:     resp.Waiting.PollRef,
-				senderNonce: respMsg.Header.SenderNonce,
-				checkAfter:  advertisedCheckAfter(resp.Waiting.CheckAfter),
+				reqType:           requestRR,
+				certReqID:         -1,
+				pollRef:           resp.Waiting.PollRef,
+				senderNonce:       respMsg.Header.SenderNonce,
+				clientSenderNonce: msg.Header.SenderNonce,
+				checkAfter:        advertisedCheckAfter(resp.Waiting.CheckAfter),
 			}) {
 				return respMsg
 			}

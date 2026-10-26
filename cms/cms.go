@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	oidData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
+	oidData       = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
+	oidSignedData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
 
 	oidAES128CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
 	oidAES192CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 22}
@@ -229,11 +230,31 @@ func contentKeySize(oid asn1.ObjectIdentifier) (int, bool) {
 // Encrypt returns the DER encoding of an EnvelopedData that encrypts content for one recipient.
 //
 // The recipient key is an *rsa.PublicKey, an *ecdsa.PublicKey or *ecdh.PublicKey on
-// P-256, P-384 or P-521, or an ML-KEM-768 or ML-KEM-1024 [crypto.Encapsulator] such as
-// *mlkem.EncapsulationKey768. rid names the recipient key in the RecipientInfo.
+// P-256, P-384 or P-521 or an ML-KEM-768 or ML-KEM-1024 [crypto.Encapsulator] such
+// as *mlkem.EncapsulationKey768. rid names the recipient key in the RecipientInfo.
+// A [Password] or [PWRIKEKPassword] encrypts for a shared secret with a zero rid.
 func Encrypt(content []byte, recipient crypto.PublicKey, rid RecipientID) ([]byte, error) {
-	if err := rid.validate(); err != nil {
-		return nil, err
+	return encrypt(content, oidData, recipient, rid)
+}
+
+// EncryptSignedData is [Encrypt] for the DER encoding of a SignedData (RFC 5652
+// §5), which the EnvelopedData labels id-signedData. RFC 9483 §4.1.6 sends a
+// centrally generated private key this way.
+func EncryptSignedData(signedData []byte, recipient crypto.PublicKey, rid RecipientID) ([]byte, error) {
+	return encrypt(signedData, oidSignedData, recipient, rid)
+}
+
+// encrypt returns an EnvelopedData that encrypts content of type contentType for one recipient.
+func encrypt(content []byte, contentType asn1.ObjectIdentifier, recipient crypto.PublicKey, rid RecipientID) ([]byte, error) {
+	switch recipient.(type) {
+	case Password, PWRIKEKPassword:
+		if rid.Issuer != nil || rid.SerialNumber != nil || rid.SubjectKeyID != nil {
+			return nil, errors.New("cms: a password recipient takes no recipient identifier")
+		}
+	default:
+		if err := rid.validate(); err != nil {
+			return nil, err
+		}
 	}
 	cek := make([]byte, 32)
 	iv := make([]byte, aes.BlockSize)
@@ -244,6 +265,11 @@ func Encrypt(content []byte, recipient crypto.PublicKey, rid RecipientID) ([]byt
 	var err error
 	version := int64(2)
 	switch key := recipient.(type) {
+	case Password, PWRIKEKPassword:
+		// RFC 5652 §6.1 and RFC 9483 erratum 7833 set version 3 for a pwri.
+		_, pwriKEK := key.(PWRIKEKPassword)
+		ri, err = passwordRecipient(passwordBytes(key), pwriKEK, cek)
+		version = 3
 	case *rsa.PublicKey:
 		ri, err = keyTransRecipient(key, rid, cek)
 		if rid.SubjectKeyID == nil {
@@ -278,7 +304,7 @@ func Encrypt(content []byte, recipient crypto.PublicKey, rid RecipientID) ([]byt
 			b.AddBytes(ri)
 		})
 		b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
-			b.AddASN1ObjectIdentifier(oidData)
+			b.AddASN1ObjectIdentifier(contentType)
 			b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 				b.AddASN1ObjectIdentifier(oidAES256CBC)
 				b.AddASN1OctetString(iv)
@@ -365,8 +391,11 @@ func parseEnvelope(der []byte) (*envelope, error) {
 //
 // The key is a [crypto.Decrypter] with an RSA public key, an *ecdsa.PrivateKey or
 // [ecdh.KeyExchanger] on P-256, P-384 or P-521, or an ML-KEM-768 or ML-KEM-1024
-// [crypto.Decapsulator] such as *mlkem.DecapsulationKey768. Decrypt uses the first
-// RecipientInfo whose type fits the key and does not compare its recipient identifier.
+// [crypto.Decapsulator] such as *mlkem.DecapsulationKey768. A [Password] or
+// [PWRIKEKPassword] opens a PasswordRecipientInfo with either key wrap. Decrypt
+// uses the first RecipientInfo whose type fits the key and does not compare its
+// recipient identifier. It does not check the content type, because OpenSSL
+// labels a SignedData id-data.
 func Decrypt(der []byte, key any) ([]byte, error) {
 	env, err := parseEnvelope(der)
 	if err != nil {
@@ -374,6 +403,9 @@ func Decrypt(der []byte, key any) ([]byte, error) {
 	}
 	var open func(ri cryptobyte.String) ([]byte, bool, error)
 	switch k := key.(type) {
+	case Password, PWRIKEKPassword:
+		password := passwordBytes(k)
+		open = func(ri cryptobyte.String) ([]byte, bool, error) { return openPasswordRecipient(ri, password) }
 	case crypto.Decapsulator:
 		open = func(ri cryptobyte.String) ([]byte, bool, error) { return openKEMRecipient(ri, k) }
 	case *ecdsa.PrivateKey:

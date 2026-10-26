@@ -36,7 +36,7 @@ func TestMessageSignatures(t *testing.T) {
 		require.NoError(t, err)
 		t.Run(cert.SignatureAlgorithm.String(), func(t *testing.T) {
 			msg := NewPKIMessage(NewPKIConfBody(), MessageOptions{Sender: NewDirectoryName(cert.Subject), Recipient: NewDirectoryName(cert.Subject)})
-			require.NoError(t, msg.protectWithSignature(key, cert))
+			require.NoError(t, msg.protectWithSignature(key, 0, cert))
 			der, err := msg.MarshalBinary()
 			require.NoError(t, err)
 			parsed, err := ParsePKIMessage(der)

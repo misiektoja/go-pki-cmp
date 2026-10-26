@@ -37,12 +37,17 @@ func main() {
 	//   - WithExtraCerts: appends the CA cert to outgoing response extraCerts.
 	//   - WithSecretLookup: enables MAC (shared-secret) protection for IR/CR.
 	//   - WithCertificateLookup: enables signature protection for KUR/certConf/RR.
+	//   - CentralKeyGeneration: lets a client ask the CA to generate its key pair.
+	//   - WithRAAuthorizer: accepts requests that a registration authority with
+	//     an id-kp-cmcRA certificate from this CA forwards in nested messages.
 	srv := server.NewCAServer(ca,
 		server.LightweightPolicy(),
 		server.WithSigner(ca.Key(), ca.Cert()),
 		server.WithExtraCerts([]*x509.Certificate{ca.Cert()}),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
+		ca.CentralKeyGeneration(),
+		server.WithRAAuthorizer(ca),
 	)
 	if err := srv.Err(); err != nil {
 		log.Error("server misconfigured", "err", err)

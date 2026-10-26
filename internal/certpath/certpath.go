@@ -7,8 +7,10 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"errors"
+	"slices"
 	"time"
 
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 	"github.com/misiektoja/go-pki-cmp/internal/slhdsasig"
 )
 
@@ -31,8 +33,12 @@ var errUntrusted = errors.New("certificate does not chain to a trusted certifica
 // crypto/x509 alone. Such a link is followed only when its issuer is in candidates,
 // because a CertPool cannot return the anchor it holds. Such paths are refused
 // when a certificate in them carries name constraints, which this check cannot
-// enforce.
+// enforce. A candidate whose RSA key exceeds keylimit.MaxRSAModulusBits is
+// ignored, because crypto/x509 would otherwise verify signatures with it.
 func Verify(cert *x509.Certificate, roots *x509.CertPool, candidates []*x509.Certificate, now time.Time) error {
+	candidates = slices.DeleteFunc(slices.Clone(candidates), func(c *x509.Certificate) bool {
+		return keylimit.Check(c.PublicKey) != nil
+	})
 	intermediates := x509.NewCertPool()
 	for _, candidate := range candidates {
 		intermediates.AddCert(candidate)

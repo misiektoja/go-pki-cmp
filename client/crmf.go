@@ -33,8 +33,8 @@ func (c *Client) SendKUR(ctx context.Context, newKey crypto.Signer, creds pkicmp
 
 // sendCRMF requests a certificate for a signing key, which proves possession by signature.
 func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
-	pop := func(m *pkicmp.CertReqMsg) error {
-		if err := m.GeneratePOP(key); err != nil {
+	pop := func(m *pkicmp.CertReqMsg, ropts *requestOptions) error {
+		if err := m.GeneratePOPWithHash(key, ropts.popHash); err != nil {
 			return &Error{Op: "generate POP", Err: err}
 		}
 		return nil
@@ -43,21 +43,29 @@ func (c *Client) sendCRMF(ctx context.Context, key crypto.Signer, creds pkicmp.C
 }
 
 // sendCertRequest requests a certificate for pub in an ir, cr or kur. pop adds
-// the proof of possession to the finished request, and proof is the key that
-// answers an indirect one.
-func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
+// the proof of possession to the finished request under the request options,
+// and proof is the key that answers an indirect one. pub is nil when the
+// request asks the CA to generate the key pair.
+func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop func(*pkicmp.CertReqMsg, *requestOptions) error, proof *decryptionProof, creds pkicmp.Credentials, expectedRepType pkicmp.BodyType, opts []RequestOption) (*EnrollResult, error) {
 	ropts := &requestOptions{}
 	for _, opt := range opts {
 		opt(ropts)
 	}
-
-	pubDER, err := pkicmp.MarshalPublicKey(pub)
-	if err != nil {
-		return nil, &Error{Op: "marshal public key", Err: err}
+	if ropts.certReqID < 0 {
+		return nil, &Error{Op: "build request", Err: fmt.Errorf("certReqId %d is negative", ropts.certReqID)}
 	}
 
-	tmpl := pkicmp.CertTemplate{
-		PublicKey: pubDER,
+	var tmpl pkicmp.CertTemplate
+	switch {
+	case !ropts.centralKeyGeneration:
+		pubDER, err := pkicmp.MarshalPublicKey(pub)
+		if err != nil {
+			return nil, &Error{Op: "marshal public key", Err: err}
+		}
+		tmpl.PublicKey = pubDER
+	case ropts.centralKeyAlgorithm != nil:
+		// RFC 9483 §4.1.6: the algorithm with a zero-length key states a preference.
+		tmpl.PublicKey = pkicmp.CentralKeyGenerationPublicKey(*ropts.centralKeyAlgorithm)
 	}
 
 	var oldCertificate *x509.Certificate
@@ -101,8 +109,14 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 		tmpl.Extensions = extDER
 	}
 
+	validity, err := templateValidity(ropts.templateValidity)
+	if err != nil {
+		return nil, &Error{Op: "build request", Err: err}
+	}
+	tmpl.Validity = validity
+
 	certReq := pkicmp.CertRequest{
-		CertReqID:    0,
+		CertReqID:    ropts.certReqID,
 		CertTemplate: tmpl,
 	}
 	if oldCertificate != nil {
@@ -117,7 +131,7 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 		CertReq: certReq,
 	}
 
-	if err := pop(&certReqMsg); err != nil {
+	if err := pop(&certReqMsg, ropts); err != nil {
 		return nil, err
 	}
 
@@ -135,6 +149,17 @@ func (c *Client) sendCertRequest(ctx context.Context, pub crypto.PublicKey, pop 
 	}
 
 	return c.enroll(ctx, body, expectedRepType, creds, ropts, pub, proof)
+}
+
+// templateValidity returns the validity a template asks for, or nil when v has no bound.
+func templateValidity(v *pkicmp.OptionalValidity) (*pkicmp.OptionalValidity, error) {
+	if v == nil || (v.NotBefore.IsZero() && v.NotAfter.IsZero()) {
+		return nil, nil
+	}
+	if !v.NotBefore.IsZero() && !v.NotAfter.IsZero() && v.NotAfter.Before(v.NotBefore) {
+		return nil, fmt.Errorf("template validity ends before it starts")
+	}
+	return v, nil
 }
 
 // oidSubjectAltName identifies the RFC 5280 §4.2.1.6 subjectAltName extension.

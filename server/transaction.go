@@ -14,12 +14,13 @@ package server
 // The solution is to use a composite key: hash(credentialID + transactionID). This ensures
 // that two clients with different credentials have completely separate key spaces, even if
 // they use the same transactionID. The credentialID is derived from what the server verified:
-//   - MAC protection: hash of senderKID and the sender name, which together select the shared secret
+//   - MAC protection: HMAC keyed with the shared secret, so clients that share a secret share an identity
 //   - Signature protection: hash of the signer certificate
 //
 // This is secure because the credentialID is not client-controlled — it's derived from
 // the cryptographic proof the client provided. An attacker would need the victim's
-// shared secret or private key to produce a matching composite key.
+// shared secret or private key to produce a matching composite key. For the same
+// reason the per-credential quota cannot be escaped by editing header fields.
 
 import (
 	"crypto/rand"
@@ -105,6 +106,11 @@ type transactionEntry struct {
 	// implicitConfirm records that the delayed request asked for implicit
 	// confirmation, which the pollReq that collects the certificate does not repeat.
 	implicitConfirm bool
+	// privateKey holds the DER EnvelopedData of a centrally generated private
+	// key until the certificate is ready. Only the requester can decrypt it.
+	// generatedKey holds the DER SubjectPublicKeyInfo of the pair.
+	privateKey   []byte
+	generatedKey []byte
 
 	// Set when state == statePending or stateIssued
 	//
@@ -118,7 +124,7 @@ type transactionEntry struct {
 	cert                *x509.Certificate
 	issueRef            any    // opaque CA reference for CertificateConfirmer
 	issuedSenderNonce   []byte // server's senderNonce from the issued response
-	clientSenderNonce   []byte // client's senderNonce from the cert request
+	clientSenderNonce   []byte // client's senderNonce from the request the last response answered
 	protectionAlgorithm *pkicmp.AlgorithmIdentifier
 	protectionParams    pkicmp.MACCredentialOption // decoded protection parameters for echo-back
 
@@ -138,9 +144,16 @@ type transactionEntry struct {
 type transactionTracker struct {
 	transactions sync.Map // transactionKey → *transactionEntry
 
-	count                        atomic.Int64
-	maxTransactions              int
-	credentialCounts             sync.Map // credentialKey → *atomic.Int64
+	count           atomic.Int64
+	maxTransactions int
+
+	// credentialCounts holds the number of transactions of every credential that
+	// has one. An entry is removed with its last transaction, so the map stays
+	// bounded by the transactions themselves rather than growing with every
+	// credential the server has ever seen. mu guards it, because a counter
+	// cannot be removed at zero and re-created atomically without a lock.
+	mu                           sync.Mutex
+	credentialCounts             map[credentialKey]int
 	maxTransactionsPerCredential int
 }
 
@@ -148,6 +161,7 @@ func newTransactionTracker(maxTxn, maxPerCred int) *transactionTracker {
 	return &transactionTracker{
 		maxTransactions:              maxTxn,
 		maxTransactionsPerCredential: maxPerCred,
+		credentialCounts:             make(map[credentialKey]int),
 	}
 }
 
@@ -172,10 +186,7 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 		return false, errors.New("maximum transaction limit reached")
 	}
 
-	credCount := t.getOrCreateCredCount(ck)
-	newCredCount := credCount.Add(1)
-	if int(newCredCount) > t.maxTransactionsPerCredential {
-		credCount.Add(-1)
+	if !t.reserveCredential(ck) {
 		t.count.Add(-1)
 		return false, errors.New("per-credential transaction limit reached")
 	}
@@ -190,7 +201,7 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 	_, loaded := t.transactions.LoadOrStore(key, entry)
 	if loaded {
 		// Already existed — release reserved capacity.
-		credCount.Add(-1)
+		t.releaseCredential(ck)
 		t.count.Add(-1)
 		return true, nil
 	}
@@ -198,10 +209,42 @@ func (t *transactionTracker) startIfAbsent(credentialID, transactionID []byte) (
 	return false, nil
 }
 
-// getOrCreateCredCount returns the atomic counter for a credential key.
-func (t *transactionTracker) getOrCreateCredCount(ck credentialKey) *atomic.Int64 {
-	val, _ := t.credentialCounts.LoadOrStore(ck, &atomic.Int64{})
-	return val.(*atomic.Int64)
+// reserveCredential counts one more transaction for a credential and reports
+// whether that stays within maxTransactionsPerCredential.
+func (t *transactionTracker) reserveCredential(ck credentialKey) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.credentialCounts[ck] >= t.maxTransactionsPerCredential {
+		return false
+	}
+	t.credentialCounts[ck]++
+	return true
+}
+
+// releaseCredential counts one transaction less for a credential and forgets
+// the credential with its last one.
+func (t *transactionTracker) releaseCredential(ck credentialKey) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.credentialCounts[ck] <= 1 {
+		delete(t.credentialCounts, ck)
+		return
+	}
+	t.credentialCounts[ck]--
+}
+
+// credentialCount returns the number of transactions counted for a credential.
+func (t *transactionTracker) credentialCount(ck credentialKey) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.credentialCounts[ck]
+}
+
+// trackedCredentials returns the number of credentials that have a transaction.
+func (t *transactionTracker) trackedCredentials() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.credentialCounts)
 }
 
 // waitingState is what a waiting transaction keeps between polls.
@@ -210,10 +253,15 @@ type waitingState struct {
 	certReqID       int64
 	implicitConfirm bool
 	popMethod       POPMethod
-	pollRef         string
-	senderNonce     []byte
-	checkAfter      time.Duration
-	lastPollTime    time.Time
+	// privateKey and generatedKey hold a centrally generated key pair, see transactionEntry.
+	privateKey   []byte
+	generatedKey []byte
+	pollRef      string
+	senderNonce  []byte
+	// clientSenderNonce is the senderNonce of the request that the waiting response answered.
+	clientSenderNonce []byte
+	checkAfter        time.Duration
+	lastPollTime      time.Time
 }
 
 // setPending moves an active, waiting or challenged transaction to the waiting state w describes.
@@ -232,17 +280,20 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, w wa
 	}
 
 	newEntry := &transactionEntry{
-		state:           statePending,
-		lastActivity:    time.Now(),
-		credentialKey:   ck,
-		reqType:         w.reqType,
-		pollRef:         w.pollRef,
-		senderNonce:     w.senderNonce,
-		lastPollTime:    w.lastPollTime,
-		checkAfter:      w.checkAfter,
-		implicitConfirm: w.implicitConfirm,
-		popMethod:       w.popMethod,
-		certReqID:       &w.certReqID,
+		state:             statePending,
+		lastActivity:      time.Now(),
+		credentialKey:     ck,
+		reqType:           w.reqType,
+		pollRef:           w.pollRef,
+		senderNonce:       w.senderNonce,
+		clientSenderNonce: w.clientSenderNonce,
+		lastPollTime:      w.lastPollTime,
+		checkAfter:        w.checkAfter,
+		implicitConfirm:   w.implicitConfirm,
+		popMethod:         w.popMethod,
+		privateKey:        w.privateKey,
+		generatedKey:      w.generatedKey,
+		certReqID:         &w.certReqID,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
 }
@@ -250,14 +301,17 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, w wa
 // waiting returns the state of a waiting entry, for a transition that keeps the request's details.
 func (e *transactionEntry) waiting() waitingState {
 	w := waitingState{
-		reqType:         e.reqType,
-		implicitConfirm: e.implicitConfirm,
-		popMethod:       e.popMethod,
-		pollRef:         e.pollRef,
-		senderNonce:     e.senderNonce,
-		checkAfter:      e.checkAfter,
-		lastPollTime:    e.lastPollTime,
-		certReqID:       -1,
+		reqType:           e.reqType,
+		implicitConfirm:   e.implicitConfirm,
+		popMethod:         e.popMethod,
+		privateKey:        e.privateKey,
+		generatedKey:      e.generatedKey,
+		pollRef:           e.pollRef,
+		senderNonce:       e.senderNonce,
+		clientSenderNonce: e.clientSenderNonce,
+		checkAfter:        e.checkAfter,
+		lastPollTime:      e.lastPollTime,
+		certReqID:         -1,
 	}
 	if e.certReqID != nil {
 		w.certReqID = *e.certReqID
@@ -332,6 +386,8 @@ type challengeState struct {
 	request         []byte
 	answer          []byte
 	senderNonce     []byte
+	// clientSenderNonce is the senderNonce of the request that the popdecc answered.
+	clientSenderNonce []byte
 }
 
 // setChallenged moves an active transaction to the challenged state c describes.
@@ -342,16 +398,17 @@ func (t *transactionTracker) setChallenged(credentialID, transactionID []byte, c
 		return false
 	}
 	newEntry := &transactionEntry{
-		state:            stateChallenged,
-		lastActivity:     time.Now(),
-		credentialKey:    makeCredentialKey(credentialID),
-		reqType:          c.reqType,
-		popMethod:        POPChallengeResponse,
-		certReqID:        &c.certReqID,
-		implicitConfirm:  c.implicitConfirm,
-		senderNonce:      c.senderNonce,
-		challengeRequest: c.request,
-		challengeAnswer:  c.answer,
+		state:             stateChallenged,
+		lastActivity:      time.Now(),
+		credentialKey:     makeCredentialKey(credentialID),
+		reqType:           c.reqType,
+		popMethod:         POPChallengeResponse,
+		certReqID:         &c.certReqID,
+		implicitConfirm:   c.implicitConfirm,
+		senderNonce:       c.senderNonce,
+		clientSenderNonce: c.clientSenderNonce,
+		challengeRequest:  c.request,
+		challengeAnswer:   c.answer,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
 }
@@ -409,14 +466,24 @@ func (t *transactionTracker) setCompleted(credentialID, transactionID []byte) {
 	}
 }
 
+// remove deletes the transaction when its entry is still entry and reports
+// whether it did, so that only one caller hears that the transaction ended.
+func (t *transactionTracker) remove(credentialID, transactionID []byte, entry *transactionEntry) bool {
+	if !t.transactions.CompareAndDelete(makeKey(credentialID, transactionID), entry) {
+		return false
+	}
+	t.count.Add(-1)
+	t.releaseCredential(entry.credentialKey)
+	return true
+}
+
 func (t *transactionTracker) delete(credentialID, transactionID []byte) {
 	key := makeKey(credentialID, transactionID)
 	v, loaded := t.transactions.LoadAndDelete(key)
 	if loaded {
 		entry := v.(*transactionEntry)
 		t.count.Add(-1)
-		credCount := t.getOrCreateCredCount(entry.credentialKey)
-		credCount.Add(-1)
+		t.releaseCredential(entry.credentialKey)
 	}
 }
 
@@ -456,8 +523,7 @@ func (t *transactionTracker) cleanupExpired(maxAge, waitingAge time.Duration) ex
 			return true
 		}
 		t.count.Add(-1)
-		credCount := t.getOrCreateCredCount(entry.credentialKey)
-		credCount.Add(-1)
+		t.releaseCredential(entry.credentialKey)
 		switch {
 		case entry.state == stateIssued && entry.cert != nil:
 			expired.issued = append(expired.issued, expiredIssued{

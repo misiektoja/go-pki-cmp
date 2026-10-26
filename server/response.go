@@ -20,13 +20,15 @@ func (s *Server) buildResponseWithEchoProtection(req *pkicmp.PKIMessage, body *p
 	return s.buildResponseInternal(req, body, sender, nil, protectionParams)
 }
 
-// Echo transactionID and senderNonce as recipNonce and generate a fresh senderNonce
-// per RFC 9810 section 5.1.1.
-func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, sender *SenderIdentity, generalInfo []pkicmp.InfoTypeAndValue, protectionParams pkicmp.MACCredentialOption) *pkicmp.PKIMessage {
+// newResponse creates an unprotected response to req. It echoes the
+// transactionID, answers the senderNonce with recipNonce and carries a fresh
+// senderNonce (RFC 9810 §5.1.1). It has no senderKID and no extraCerts, which
+// only serve to verify protection.
+func (s *Server) newResponse(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, generalInfo []pkicmp.InfoTypeAndValue) *pkicmp.PKIMessage {
 	senderNonce := make([]byte, 16)
 	_, _ = rand.Read(senderNonce)
 
-	resp := &pkicmp.PKIMessage{
+	return &pkicmp.PKIMessage{
 		Header: pkicmp.PKIHeader{
 			PVNO:          req.Header.PVNO,
 			Sender:        s.responseSender(),
@@ -39,6 +41,11 @@ func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIB
 		},
 		Body: body,
 	}
+}
+
+// buildResponseInternal creates a response and protects it for sender.
+func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, sender *SenderIdentity, generalInfo []pkicmp.InfoTypeAndValue, protectionParams pkicmp.MACCredentialOption) *pkicmp.PKIMessage {
+	resp := s.newResponse(req, body, generalInfo)
 
 	// RFC 9810 §5.1.1: senderKID names the key that protects the response.
 	// protectResponseWithOptions MAC-protects the response to a MAC-protected
@@ -95,6 +102,19 @@ func (s *Server) buildErrorResponse(req *pkicmp.PKIMessage, sender *SenderIdenti
 	return s.buildResponse(req, pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: si}), sender)
 }
 
+// unauthenticatedError creates an error response for a request whose sender was
+// not authenticated. It carries no protection when
+// WithUnprotectedErrorsBeforeAuthentication is set, unless fwd reports that an
+// authenticated registration authority forwarded the request: that error goes
+// back to a known peer and is protected as any other.
+func (s *Server) unauthenticatedError(req *pkicmp.PKIMessage, fwd *forwarding, si pkicmp.PKIStatusInfo) *pkicmp.PKIMessage {
+	body := pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: si})
+	if s.cfg.unprotectedPreAuthErrors && fwd == nil {
+		return s.newResponse(req, body, nil)
+	}
+	return s.buildResponse(req, body, nil)
+}
+
 // buildRevRepResponse creates an rp with one status for the single revocation requested.
 func (s *Server) buildRevRepResponse(req *pkicmp.PKIMessage, si pkicmp.PKIStatusInfo, sender *SenderIdentity) *pkicmp.PKIMessage {
 	return s.buildResponse(req, pkicmp.NewRPBody(&pkicmp.RevRepContent{Status: []pkicmp.PKIStatusInfo{si}}), sender)
@@ -108,8 +128,10 @@ type certRep struct {
 	// encrypted carries cert instead of the plaintext certificate, for the
 	// encrypted certificate proof of possession.
 	encrypted *pkicmp.CertOrEncCert
-	caCerts   []*x509.Certificate
-	reqType   RequestType
+	// privateKey is the DER EnvelopedData of a centrally generated private key.
+	privateKey []byte
+	caCerts    []*x509.Certificate
+	reqType    RequestType
 	// implicit reports that the client asked for implicit confirmation and may
 	// be granted it. The server grants it only with a certificate, so a waiting
 	// or rejected response carries none.
@@ -130,6 +152,9 @@ func (s *Server) buildCertRep(req *pkicmp.PKIMessage, sender *SenderIdentity, r 
 			certOrEncCert = *r.encrypted
 		}
 		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{CertOrEncCert: certOrEncCert}
+		if r.privateKey != nil {
+			certResp.CertifiedKeyPair.SetEncryptedPrivateKey(r.privateKey)
+		}
 	}
 
 	rep := &pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{certResp}}
@@ -208,6 +233,10 @@ type certRequestInfo struct {
 	// implicit reports that the client asked for implicit confirmation.
 	implicit bool
 	method   POPMethod
+	// privateKey and generatedKey are the DER EnvelopedData of a centrally
+	// generated private key and the DER SubjectPublicKeyInfo of its public key.
+	privateKey   []byte
+	generatedKey []byte
 }
 
 // handleCertRequest processes certificate requests through the configured handler.
@@ -235,10 +264,14 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 		method:    requestPOPMethod(msg),
 	}
 	ctx = contextWithPOPMethod(ctx, req.method)
-	if req.method == POPChallengeResponse {
+	switch req.method {
+	case POPChallengeResponse:
 		return s.challengePossession(ctx, msg, sender, credID, req)
+	case POPCentralKeyGeneration:
+		return s.generateKey(ctx, msg, sender, credID, req)
+	default:
+		return s.issue(ctx, msg, msg, sender, credID, req)
 	}
-	return s.issue(ctx, msg, msg, sender, credID, req)
 }
 
 // issue passes the certificate request in msg to the handler and answers reply
@@ -269,13 +302,16 @@ func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sende
 			certReqID: req.certReqID, status: waitingStatus(resp.Waiting), reqType: req.reqType, implicit: req.implicit,
 		})
 		if !s.setPending(credID, reply.Header.TransactionID, waitingState{
-			reqType:         req.reqType,
-			certReqID:       req.certReqID,
-			implicitConfirm: req.implicit,
-			popMethod:       req.method,
-			pollRef:         resp.Waiting.PollRef,
-			senderNonce:     respMsg.Header.SenderNonce,
-			checkAfter:      advertisedCheckAfter(resp.Waiting.CheckAfter),
+			reqType:           req.reqType,
+			certReqID:         req.certReqID,
+			implicitConfirm:   req.implicit,
+			popMethod:         req.method,
+			privateKey:        req.privateKey,
+			generatedKey:      req.generatedKey,
+			pollRef:           resp.Waiting.PollRef,
+			senderNonce:       respMsg.Header.SenderNonce,
+			clientSenderNonce: reply.Header.SenderNonce,
+			checkAfter:        advertisedCheckAfter(resp.Waiting.CheckAfter),
 		}) {
 			return s.buildErrorResponse(reply, sender, pkicmp.PKIStatusInfo{
 				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
@@ -289,9 +325,24 @@ func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sende
 // deliver answers reply with the certificate the CA issued and records what its
 // confirmation needs. The certificate is encrypted for its own key when the
 // request chose the encrypted certificate proof of possession, and such a
-// request is never granted implicit confirmation, because its certConf is the proof.
+// request is never granted implicit confirmation, because its certConf is the
+// proof. A centrally generated private key goes with the certificate that
+// certifies its public key.
 func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, req certRequestInfo, resp *Response) *pkicmp.PKIMessage {
 	txnID := reply.Header.TransactionID
+	// undeliverable answers a certificate that exists but cannot reach its
+	// holder. The CA hears that it was not accepted.
+	undeliverable := func() *pkicmp.PKIMessage {
+		s.setCompleted(credID, txnID)
+		if s.cfg.confirmer != nil {
+			_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmRejected, resp.IssueRef)
+		}
+		return s.buildCertRep(reply, sender, certRep{
+			certReqID: req.certReqID,
+			status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
+			reqType:   req.reqType,
+		})
+	}
 	r := certRep{
 		certReqID:        req.certReqID,
 		status:           issuedStatus(resp),
@@ -304,18 +355,15 @@ func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *
 	if req.method == POPEncryptedCertificate && resp.Certificate != nil && grantsCertificate(r.status) {
 		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO, s.cfg.envelopedDataForVersion2)
 		if err != nil {
-			// The certificate exists but cannot reach its holder, so the CA hears that it was not accepted.
-			s.setCompleted(credID, txnID)
-			if s.cfg.confirmer != nil {
-				_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmRejected, resp.IssueRef)
-			}
-			return s.buildCertRep(reply, sender, certRep{
-				certReqID: req.certReqID,
-				status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
-				reqType:   req.reqType,
-			})
+			return undeliverable()
 		}
 		r.encrypted = &encrypted
+	}
+	if req.method == POPCentralKeyGeneration && resp.Certificate != nil && grantsCertificate(r.status) {
+		if !samePublicKey(req.generatedKey, certificatePublicKey(resp.Certificate)) {
+			return undeliverable()
+		}
+		r.privateKey = req.privateKey
 	}
 	respMsg := s.buildCertRep(reply, sender, r)
 
@@ -401,6 +449,10 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 			StatusString: pkicmp.PKIFreeText{"recipNonce mismatch"},
 		})
 	}
+	// As for a certConf, a repeated senderNonce is only refused under WithStrictProfileValidation.
+	if s.cfg.strictProfile && reusesSenderNonce(msg, pending.senderNonce, pending.clientSenderNonce) {
+		return s.buildErrorResponse(msg, sender, senderNonceReused())
+	}
 
 	waiting := pending.waiting()
 	if pending.certReqID != nil && !pollRefersTo(certReqID, waiting.certReqID) {
@@ -424,6 +476,11 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 
 	ctx = contextWithPollRef(ctx, pending.pollRef)
 	ctx = contextWithPOPMethod(ctx, waiting.popMethod)
+	if waiting.popMethod == POPCentralKeyGeneration {
+		if pub, err := pkicmp.ParsePublicKey(waiting.generatedKey); err == nil {
+			ctx = contextWithGeneratedPublicKey(ctx, pub)
+		}
+	}
 
 	resp, err := s.handler.HandleCMP(ctx, msg, sender)
 	if err != nil {
@@ -452,10 +509,12 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 
 	// Certificate ready → respond with ip/cp/kup matching original request type.
 	return s.deliver(ctx, msg, sender, credID, certRequestInfo{
-		certReqID: waiting.certReqID,
-		reqType:   waiting.reqType,
-		implicit:  waiting.implicitConfirm,
-		method:    waiting.popMethod,
+		certReqID:    waiting.certReqID,
+		reqType:      waiting.reqType,
+		implicit:     waiting.implicitConfirm,
+		method:       waiting.popMethod,
+		privateKey:   waiting.privateKey,
+		generatedKey: waiting.generatedKey,
 	}, resp)
 }
 
@@ -478,6 +537,7 @@ func (s *Server) answerPoll(msg *pkicmp.PKIMessage, sender *SenderIdentity, cred
 	pollRep := pkicmp.PollRepContent{item}
 	respMsg := s.buildResponse(msg, pkicmp.NewPollRepBody(&pollRep), sender)
 	waiting.senderNonce = respMsg.Header.SenderNonce
+	waiting.clientSenderNonce = msg.Header.SenderNonce
 	if !s.setPending(credID, msg.Header.TransactionID, waiting) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,

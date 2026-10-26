@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 
+	"github.com/misiektoja/go-pki-cmp/internal/kemcert"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/misiektoja/go-pki-cmp/server"
 )
@@ -35,12 +37,15 @@ import (
 // oidKeyUsage identifies the RFC 5280 §4.2.1.3 keyUsage extension.
 var oidKeyUsage = asn1.ObjectIdentifier{2, 5, 29, 15}
 
-// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], [server.CertificateLookup]
-// and the general message interfaces [server.CACertificatesProvider], [server.RootCAUpdateProvider],
-// [server.CertReqTemplateProvider] and [server.CRLProvider].
+// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], [server.CertificateLookup],
+// [server.KeyGenerator] and the general message interfaces [server.CACertificatesProvider],
+// [server.RootCAUpdateProvider], [server.CertReqTemplateProvider] and [server.CRLProvider].
 type MockCA struct {
 	key  *ecdsa.PrivateKey // CA private key used to sign issued certificates
 	cert *x509.Certificate // CA certificate returned in caPubs on IR responses
+
+	kgaKey  *ecdsa.PrivateKey // key generation authority key that signs centrally generated keys
+	kgaCert *x509.Certificate // key generation authority certificate the CA issued
 
 	mu          sync.Mutex            // guards issuedCerts, revoked and the CRL state against concurrent HTTP requests
 	issuedCerts []*x509.Certificate   // certificates issued so far; used by LookupCertificate
@@ -65,9 +70,15 @@ func New(secrets map[string][]byte, log *slog.Logger) (*MockCA, error) {
 	if err != nil {
 		return nil, err
 	}
+	kgaKey, kgaCert, err := generateKGA(key, cert)
+	if err != nil {
+		return nil, err
+	}
 	return &MockCA{
 		key:        key,
 		cert:       cert,
+		kgaKey:     kgaKey,
+		kgaCert:    kgaCert,
 		Log:        log,
 		secrets:    secrets,
 		revoked:    map[string]revocation{},
@@ -82,8 +93,8 @@ func (c *MockCA) Key() *ecdsa.PrivateKey { return c.key }
 // Cert returns the CA certificate.
 func (c *MockCA) Cert() *x509.Certificate { return c.cert }
 
-// IssueCertificate implements server.CA. It certifies composite ML-DSA keys
-// as well as the key types crypto/x509 supports.
+// IssueCertificate implements server.CA. It certifies composite ML-DSA and
+// ML-KEM keys as well as the key types crypto/x509 supports.
 func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType, tmpl *x509.Certificate, sender *server.SenderIdentity) (*server.Response, error) {
 	// Log who is requesting a certificate and how their request was authenticated.
 	// SenderIdentity is populated by the server after verifying the request's
@@ -122,6 +133,10 @@ func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType,
 		return e.Id.Equal(oidKeyUsage)
 	})
 	tmpl.KeyUsage = x509.KeyUsageDigitalSignature
+	if isMLKEM(tmpl.PublicKey) {
+		// RFC 9935 §5 allows keyEncipherment as the only key usage of an ML-KEM key.
+		tmpl.KeyUsage = x509.KeyUsageKeyEncipherment
+	}
 
 	c.Log.Info("issuing certificate",
 		"type", reqType,
@@ -129,16 +144,13 @@ func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType,
 		"serial", serial.String(),
 	)
 
-	// Sign the certificate. A composite ML-DSA subject key arrives as
-	// *compositemldsa.PublicKey, which x509.CreateCertificate rejects.
-	// compositex509.CreateCertificate certifies it and passes every other key
-	// to x509.CreateCertificate unchanged.
-	der, err := compositex509.CreateCertificate(rand.Reader, tmpl, c.cert, tmpl.PublicKey, c.key)
+	der, err := c.sign(tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("signing certificate: %w", err)
 	}
-	// crypto/x509 parses a composite certificate but leaves PublicKey nil.
-	// compositex509.ParsePKIXPublicKey reads the key from RawSubjectPublicKeyInfo.
+	// crypto/x509 parses a composite or ML-KEM certificate but leaves PublicKey
+	// nil. compositex509.ParsePKIXPublicKey and pkicmp.ParsePublicKey read the
+	// key from RawSubjectPublicKeyInfo.
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
@@ -163,6 +175,31 @@ func (c *MockCA) IssueCertificate(_ context.Context, reqType server.RequestType,
 	}
 
 	return resp, nil
+}
+
+// sign issues the certificate of tmpl. A composite ML-DSA subject key arrives
+// as *compositemldsa.PublicKey, which x509.CreateCertificate rejects.
+// compositex509.CreateCertificate certifies it and passes every other key to
+// x509.CreateCertificate unchanged. Neither certifies an ML-KEM key, so
+// kemcert lays its certificate out around the RFC 9935 SubjectPublicKeyInfo.
+func (c *MockCA) sign(tmpl *x509.Certificate) ([]byte, error) {
+	if !isMLKEM(tmpl.PublicKey) {
+		return compositex509.CreateCertificate(rand.Reader, tmpl, c.cert, tmpl.PublicKey, c.key)
+	}
+	spki, err := pkicmp.MarshalPublicKey(tmpl.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	return kemcert.CreateCertificate(tmpl, c.cert, spki, c.key)
+}
+
+// isMLKEM reports whether pub is an ML-KEM key, which crypto/x509 cannot certify.
+func isMLKEM(pub any) bool {
+	switch pub.(type) {
+	case *mlkem.EncapsulationKey768, *mlkem.EncapsulationKey1024:
+		return true
+	}
+	return false
 }
 
 // LookupSecret implements server.SecretLookup.
@@ -262,14 +299,23 @@ func (c *MockCA) RevokeCertificate(_ context.Context, req *server.RevocationRequ
 			StatusText:  "certificate already revoked",
 		}
 	}
-	c.revoked[serial] = revocation{serial: cert.SerialNumber, reason: req.Reason, at: time.Now()}
+	c.revoked[serial] = revocation{
+		serial:         cert.SerialNumber,
+		reason:         req.Reason,
+		at:             time.Now(),
+		invalidityDate: req.InvalidityDate,
+	}
 	c.crlChanged()
 
-	c.Log.Info("certificate revoked",
+	attrs := []any{
 		"subject", cert.Subject.String(),
 		"serial", serial,
 		"reason", req.Reason.String(),
-	)
+	}
+	if !req.InvalidityDate.IsZero() {
+		attrs = append(attrs, "invalidityDate", req.InvalidityDate.UTC().Format(time.RFC3339))
+	}
+	c.Log.Info("certificate revoked", attrs...)
 	return nil
 }
 

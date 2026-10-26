@@ -330,6 +330,41 @@ func signatureAlgorithmFromKey(key crypto.Signer) (asn1.ObjectIdentifier, crypto
 	}
 }
 
+// signatureAlgorithmForHash returns the signature algorithm of key with the
+// digest hash. The zero hash selects the default of [signatureAlgorithmFromKey].
+// Only RSA and ECDSA keys take a digest: SHA-1, SHA-256, SHA-384 or SHA-512,
+// the set the verifier knows. SHA-1 is deprecated by RFC 9481 §7.1 and a
+// verifier accepts it only when asked to.
+func signatureAlgorithmForHash(key crypto.Signer, hash crypto.Hash) (asn1.ObjectIdentifier, crypto.Hash, error) {
+	if hash == 0 {
+		return signatureAlgorithmFromKey(key)
+	}
+	var oids map[crypto.Hash]asn1.ObjectIdentifier
+	switch key.Public().(type) {
+	case *rsa.PublicKey:
+		oids = map[crypto.Hash]asn1.ObjectIdentifier{
+			crypto.SHA1:   oidSHA1WithRSAEncryption,
+			crypto.SHA256: oidSHA256WithRSAEncryption,
+			crypto.SHA384: oidSHA384WithRSAEncryption,
+			crypto.SHA512: oidSHA512WithRSAEncryption,
+		}
+	case *ecdsa.PublicKey:
+		oids = map[crypto.Hash]asn1.ObjectIdentifier{
+			crypto.SHA1:   oidECDSAWithSHA1,
+			crypto.SHA256: oidECDSAWithSHA256,
+			crypto.SHA384: oidECDSAWithSHA384,
+			crypto.SHA512: oidECDSAWithSHA512,
+		}
+	default:
+		return nil, 0, &ParseError{Detail: fmt.Sprintf("%T signatures take no digest", key.Public())}
+	}
+	oid, ok := oids[hash]
+	if !ok {
+		return nil, 0, &ParseError{Detail: fmt.Sprintf("unsupported signature digest %v", hash)}
+	}
+	return oid, hash, nil
+}
+
 // ImplicitConfirmInfoValue returns an InfoTypeAndValue for the implicitConfirm
 // info type (RFC 9810 §5.1.1).
 func ImplicitConfirmInfoValue() InfoTypeAndValue {

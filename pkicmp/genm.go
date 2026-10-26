@@ -580,6 +580,18 @@ func addTime(b *cryptobyte.Builder, t time.Time) {
 	b.AddASN1GeneralizedTime(t)
 }
 
+// readTime reads a Time of RFC 5280 §4.1, a UTCTime or a GeneralizedTime, and reports whether it was valid.
+func readTime(s *cryptobyte.String, t *time.Time) bool {
+	switch {
+	case s.PeekASN1Tag(cbasn1.UTCTime):
+		return s.ReadASN1UTCTime(t)
+	case s.PeekASN1Tag(cbasn1.GeneralizedTime):
+		return s.ReadASN1GeneralizedTime(t)
+	default:
+		return false
+	}
+}
+
 // ParseCRLStatusListInfo returns the CRL statuses of a CRL update request. RFC
 // 9810 requires at least one, so an absent or empty value is an error.
 func ParseCRLStatusListInfo(itav InfoTypeAndValue) ([]CRLStatus, error) {

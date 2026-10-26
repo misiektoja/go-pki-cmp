@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,6 +120,20 @@ func TestMalformedCertificateRequest(t *testing.T) {
 		// A SEQUENCE holding an INTEGER where Extension SEQUENCEs belong.
 		reqMsg.CertReq.CertTemplate.Extensions = []byte{0x30, 0x03, 0x02, 0x01, 0x00}
 		req := signed(t, pkicmp.NewCRBody(&pkicmp.CertReqMessages{reqMsg}))
+		assertBadDataFormat(t, req, postCMP(t, ts, req))
+	})
+	t.Run("TemplateValidity", func(t *testing.T) {
+		reqMsg := newCertReqMsg(t, key, "device-1")
+		reqMsg.CertReq.CertTemplate.Validity = &pkicmp.OptionalValidity{NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}
+		der, err := pkicmp.NewPKIMessage(pkicmp.NewCRBody(&pkicmp.CertReqMessages{reqMsg}), pkicmp.MessageOptions{}).MarshalBinary()
+		require.NoError(t, err)
+		parsed, err := pkicmp.ParsePKIMessage(der)
+		require.NoError(t, err)
+		// notAfter [1] holding an INTEGER of the same length where a Time belongs.
+		notAfter := []byte{0xa1, 0x0f, 0x17, 0x0d}
+		require.Equal(t, 1, bytes.Count(parsed.Body.Raw, notAfter))
+		raw := bytes.Replace(parsed.Body.Raw, notAfter, []byte{0xa1, 0x0f, 0x02, 0x0d}, 1)
+		req := signed(t, &pkicmp.PKIBody{Type: pkicmp.BodyTypeCR, Raw: raw})
 		assertBadDataFormat(t, req, postCMP(t, ts, req))
 	})
 }

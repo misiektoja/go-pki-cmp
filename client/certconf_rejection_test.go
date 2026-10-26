@@ -30,6 +30,7 @@ type confirmRecorder struct {
 	issue    func(req *pkicmp.PKIMessage) []byte
 	adjust   func(rep *pkicmp.CertRepMessage)
 	answer   *pkicmp.PKIBody
+	grant    bool // grant implicit confirmation to every certificate request, asked for or not
 	statuses []pkicmp.CertStatus
 }
 
@@ -71,6 +72,9 @@ func (r *confirmRecorder) serve(t *testing.T) *httptest.Server {
 			Header: pkicmp.PKIHeader{PVNO: msg.Header.PVNO, TransactionID: msg.Header.TransactionID, RecipNonce: msg.Header.SenderNonce},
 			Body:   respBody,
 		}
+		if r.grant && msg.Body.Type != pkicmp.BodyTypeCertConf {
+			resp.Header.GeneralInfo = []pkicmp.InfoTypeAndValue{pkicmp.ImplicitConfirmInfoValue()}
+		}
 		creds, _ := pkicmp.NewMACCredentials([]byte("secret"))
 		_ = creds.Protect(resp)
 		der, _ := resp.MarshalBinary()
@@ -110,8 +114,8 @@ func issueFor(t *testing.T, issuer *certyaml.Certificate, pub any) *x509.Certifi
 	return cert
 }
 
-// sendIR enrolls a fresh P-256 key with MAC credentials and the given trust anchors.
-func sendIR(t *testing.T, url string, trusted *x509.Certificate) (*client.EnrollResult, error) {
+// sendIR enrolls a fresh P-256 key with MAC credentials, the given trust anchors and extra request options.
+func sendIR(t *testing.T, url string, trusted *x509.Certificate, opts ...client.RequestOption) (*client.EnrollResult, error) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -120,7 +124,8 @@ func sendIR(t *testing.T, url string, trusted *x509.Certificate) (*client.Enroll
 	pool := x509.NewCertPool()
 	pool.AddCert(trusted)
 	c := client.NewClient(url, client.WithTrustedCAs(pool))
-	return c.SendIR(context.Background(), key, creds, client.WithSenderKID([]byte("test")), client.WithTemplateSubject(pkix.Name{CommonName: "test"}))
+	opts = append([]client.RequestOption{client.WithSenderKID([]byte("test")), client.WithTemplateSubject(pkix.Name{CommonName: "test"})}, opts...)
+	return c.SendIR(context.Background(), key, creds, opts...)
 }
 
 // assertRejected checks that exactly one certConf rejected cert with text.

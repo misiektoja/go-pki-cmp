@@ -2,6 +2,51 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.8.0 - 27 Oct 2026
+
+This release adds **central key generation** (RFC 9483 section 4.1.6): the CA generates the key pair and sends the private key signed and encrypted for the device. A client can also act as a registration authority, use implicit confirmation, resume a waiting enrollment in a later process and revoke a certificate by issuer and serial number. It also limits the work a peer can force on a verifier with large RSA keys or PBMAC1 parameters. Before upgrading, read the entries on the MAC iteration minimum and the per-credential transaction quota.
+
+### `client`
+
+* **Central key generation.** **`SendIRWithCentralKeyGeneration`**, **`SendCRWithCentralKeyGeneration`** and **`SendKURWithCentralKeyGeneration`** ask the CA to generate the key pair. **`EnrollResult.GeneratedKey`** holds the private key. The client verifies its signature and checks it against the issued certificate. The CA encrypts the key to the MAC shared secret or to an RSA or ECDSA protection key.
+* **`WithRegistrationAuthority`** sends every request of an operation in a nested message signed with the RA credentials (RFC 9483 section 5.2.2.1). The OpenSSL 4.1 mock server does not accept nested messages.
+* **`WithImplicitConfirm`** asks the CA for implicit confirmation. When the CA grants it, **`EnrollResult.ImplicitConfirm`** is set and no certConf is sent. The client now also honors a grant it did not ask for. It used to send a certConf that the CA refused.
+* **`WithDeferredPolling`** returns at the first waiting answer with **`EnrollResult.Pending`** set. **`ResumeEnrollment`** continues from that state later, also in another process. Polling that stops before the CA decides now returns a **`PendingError`** that resumes the same way. `errors.Is` still finds the context error in it.
+* **`SendRRBySerial`** revokes a certificate by issuer and serial number without a copy of it. **`WithInvalidityDate`** adds an invalidityDate to a revocation request.
+* **New request options** set the certReqId (**`WithCertReqID`**), extra generalInfo items (**`WithGeneralInfo`**), the proof-of-possession digest (**`WithPOPHash`**) and a requested validity (**`WithTemplateValidity`**), which the CA may ignore.
+* **The default HTTP client times out an exchange after 120 seconds** (`DefaultHTTPTimeout`). `WithHTTPClient` replaces the client and its timeout.
+* **Test aids** **`WithCertConfStatus`**, **`WithMessageMutator`** and **`WithProtectedMessageMutator`** send messages that break RFC 9483 to check how a CA handles them. Do not use them in production.
+
+### `server`
+
+* **`WithCentralKeyGeneration`** generates the key pair with a **`KeyGenerator`** you provide and signs the private key with a key generation authority. The default format is the one OpenSSL clients read. **`WithCentralKeyGenerationAsymmetricKeyPackage`** and **`WithCentralKeyGenerationAESKeyWrap`** select the RFC 9810 and RFC 9481 formats. The CA gets the public key from **`GeneratedPublicKeyFromContext`**.
+* **`WithUnprotectedErrorsBeforeAuthentication`** sends errors raised before the sender is authenticated without protection, as RFC 9483 section 3.6.4 allows. Use it with a slow signer such as SLH-DSA, which otherwise signs an error for every unauthenticated request.
+* **The per-credential quota follows the shared secret.** Transactions and `WithMaxTransactionsPerCredential` of MAC-protected clients are keyed by the shared secret instead of the sender name, which a client could change to get a fresh quota. Clients that share a secret share a quota. MAC transactions in a snapshot from an earlier version cannot be resumed.
+* **A late certConf** after the confirmWaitTime is refused with badRequest and the `CertificateConfirmer` hears `ConfirmExpired`. It used to be accepted until `CleanupExpired` ran.
+* **`WithStrictProfileValidation`** refuses a pollReq or popdecr that repeats the senderNonce of the last request or response in the transaction.
+* **`WithAnyCertReqID`** accepts a certReqId other than 0. **`RevocationRequest.InvalidityDate`** passes the requested invalidityDate to the `Revoker`.
+* **The statusString of a refused protection or recipient** holds only the reason, such as `message not protected`, without the Go error text.
+
+### `pkicmp`
+
+* **Central key generation** helpers, such as **`NewKeyPackage`**, **`ParseKeyPackage`** and **`CertTemplate.RequestsCentralKeyGeneration`**.
+* **`NewRevDetailsBySerial`** and **`NewInvalidityDateExtension`** build revocations by serial number and with an invalidityDate.
+* **`CertTemplate.Validity`** reads and writes a requested validity. A malformed validity now fails parsing.
+* **`SignatureCredentials.WithHash`** and **`CertReqMsg.GeneratePOPWithHash`** choose the signature digest.
+* **RSA keys above 16384 bits are refused** with **`ErrRSAKeyTooLarge`** wherever a peer supplies one.
+* **`DefaultMinMACIterationCount` is 100**, as RFC 4211 requires, instead of 1. A MAC with fewer iterations is refused unless `WithMACIterationLimits` lowers the minimum. `NewMACCredentials` needs the same option to send fewer.
+* **PBMAC1 limits cover the whole key derivation**, iterations times PRF output blocks. **`DefaultMaxMACIterationCount`** is 1000000 units of that work, enough for the Siemens CMP test suite.
+* **Trailing bytes inside the `extraCerts` wrapper** now fail parsing with a `ParseError`.
+
+### `cms`
+
+* **`EncryptSignedData`** encrypts a SignedData for one recipient. **`Password`** and **`PWRIKEKPassword`** encrypt for a shared secret with the RFC 9481 or the RFC 3211 key wrap. `Decrypt` opens both.
+
+### `examples/mockserver`
+
+* **The mock CA generates key pairs for central key generation and accepts registration authorities.** The example command enables both. It also publishes the invalidityDate of a revocation in the CRL entry.
+* **The mock CA certifies ML-KEM-768 and ML-KEM-1024 keys** that prove possession by decryption. It used to fail to sign them.
+
 ## v0.7.2 - 22 Oct 2026
 
 This release lets a client keep the CA certificates in caPubs from becoming trust anchors and requires Go 1.27.3, which fixes GO-2026-6809 in `crypto/x509`.

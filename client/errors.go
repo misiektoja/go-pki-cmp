@@ -34,6 +34,10 @@ func (e *Error) Unwrap() error {
 type ConfirmationError struct {
 	// Certificate is the certificate the CA issued.
 	Certificate *x509.Certificate
+	// GeneratedKey is the private key of a request for central key
+	// generation, which the client checked before the certConf. It is nil
+	// for any other request.
+	GeneratedKey *GeneratedKey
 	// Err is why the confirmation failed.
 	Err error
 }
@@ -43,6 +47,30 @@ func (e *ConfirmationError) Error() string {
 }
 
 func (e *ConfirmationError) Unwrap() error {
+	return e.Err
+}
+
+// PendingError reports that an enrollment stopped polling while the CA still
+// had the request waiting: the context ended, a pollReq got no usable answer
+// or [WithMaxPolls] was reached. Pending holds the state that continues the
+// transaction with [Client.ResumeEnrollment]. Err is the cause, so
+// [errors.Is] still finds a context error.
+//
+// When a pollReq reached the CA but its answer was lost, the CA expects the
+// senderNonce of that lost answer and refuses the resumed poll with
+// badRecipientNonce.
+type PendingError struct {
+	// Pending is the state of the waiting transaction.
+	Pending *PendingEnrollment
+	// Err is why polling stopped.
+	Err error
+}
+
+func (e *PendingError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *PendingError) Unwrap() error {
 	return e.Err
 }
 

@@ -61,6 +61,8 @@ nav:
       - Revocation: client/revocation.md
       - Support messages: client/support-messages.md
       - Keys that cannot sign: client/indirect-pop.md
+      - Keys the CA generates: client/central-key-generation.md
+      - Acting as a registration authority: client/registration-authority.md
   - Server guide:
       - Implementing a CA: server/ca.md
       - Authentication: server/authentication.md
@@ -69,6 +71,7 @@ nav:
       - Revocation: server/revocation.md
       - Support messages: server/support-messages.md
       - Keys that cannot sign: server/indirect-pop.md
+      - Keys the server generates: server/central-key-generation.md
       - Registration authorities: server/registration-authorities.md
       - Transactions and recovery: server/transactions.md
   - Message layer:

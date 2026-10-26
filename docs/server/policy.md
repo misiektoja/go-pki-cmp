@@ -62,7 +62,9 @@ Deployed clients break them, so they are off by default. `WithStrictProfileValid
 * A signed request must carry `extraCerts` that lead with the protection certificate and form a
   chain.
 * A request must carry a transaction ID and every message a senderNonce of at least 128 bits.
-* A `certConf` must hold one CertStatus and must not reuse a senderNonce.
+* A `certConf` must hold one CertStatus.
+* A `certConf`, `pollReq` or `popdecr` must not repeat the senderNonce of the last request or
+  response in the transaction.
 * A signature proof of possession must not carry poposkInput.
 * Proof by decryption is allowed only for keys that cannot sign.
 
@@ -87,6 +89,7 @@ authenticates the request.
 | `WithPoposkInputVariants` | A signature proof that carries poposkInput although the template holds subject and key | Insta Certifier 10 cmpclient |
 | `WithSignatureProtectionPOP` | A CRMF request without proof whose protection was signed with the requested key | Insta Certifier 7 ssh-cmpclient `UPDATE` that keeps the key |
 | `WithOptionalSubject` | A template without the subject field that names the entity in subjectAltName | Clients that leave the field out |
+| `WithAnyCertReqID` | An ir, cr or kur with a certReqId other than 0, repeated in the response | RFC 4210 clients that number their requests, tests of the certReqId check of a client |
 | `WithOptionalRevocationReason` | A revocation request without reasonCode | Insta Certifier 10 cmpclient `rr` |
 | `WithOptionalRevocationIssuer` | A revocation request without an issuer | Clients that name only the serial number |
 | `WithMACRevocation` | A MAC-protected revocation request, decided by `RevocationAuthorizer` | Clients that revoke with a shared secret |

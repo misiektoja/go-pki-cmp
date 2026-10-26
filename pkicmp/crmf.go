@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"math/big"
+	"time"
 
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
@@ -67,8 +68,17 @@ func (m *CertReqMsg) marshal(mctx *marshalContext, b *cryptobyte.Builder) {
 }
 
 // GeneratePOP generates a Signature proofOfPossession using the provided private key
-// over the DER-encoded CertRequest and assigns it to m.Popo.
+// over the DER-encoded CertRequest and assigns it to m.Popo. The signature
+// algorithm follows the key type.
 func (m *CertReqMsg) GeneratePOP(key crypto.Signer) error {
+	return m.GeneratePOPWithHash(key, 0)
+}
+
+// GeneratePOPWithHash is [CertReqMsg.GeneratePOP] with the digest of the
+// signature chosen for an RSA or ECDSA key: SHA-1, SHA-256, SHA-384 or
+// SHA-512. The zero hash selects the default of the key type. Other key types
+// take no digest and fail with a [*ParseError].
+func (m *CertReqMsg) GeneratePOPWithHash(key crypto.Signer, hash crypto.Hash) error {
 	mctx := &marshalContext{MinRequiredPVNO: PVNO2}
 
 	var b cryptobyte.Builder
@@ -78,7 +88,7 @@ func (m *CertReqMsg) GeneratePOP(key crypto.Signer) error {
 		return &ParseError{Detail: "marshal CertRequest for POP", Err: err}
 	}
 
-	sigAlgOID, hashFunc, err := signatureAlgorithmFromKey(key)
+	sigAlgOID, hashFunc, err := signatureAlgorithmForHash(key, hash)
 	if err != nil {
 		return err
 	}
@@ -357,13 +367,15 @@ func (a *AttributeTypeAndValue) unmarshal(s *cryptobyte.String) error {
 
 // CertTemplate per RFC 4211 §2.
 //
-// Only serialNumber [1], issuer [3], subject [5], publicKey [6] and extensions [9]
-// are supported. Other fields (version, signingAlg, validity, issuerUID,
-// subjectUID) are silently skipped during parsing.
+// Only serialNumber [1], issuer [3], validity [4], subject [5], publicKey [6]
+// and extensions [9] are supported. Other fields (version, signingAlg,
+// issuerUID, subjectUID) are silently skipped during parsing.
 type CertTemplate struct {
 	// SerialNumber identifies an existing certificate, as in a revocation request.
 	SerialNumber *big.Int
 	Issuer       []byte // Raw DER Name, such as x509.Certificate.RawIssuer
+	// Validity is the validity period the request asks for, nil for none.
+	Validity *OptionalValidity
 	// Subject is the requested certificate subject DN.
 	Subject GeneralName
 	// RawSubject is the DER Name of the subject exactly as received, which keeps
@@ -392,6 +404,11 @@ func (t *CertTemplate) marshal(_ *marshalContext, b *cryptobyte.Builder) {
 			b.AddASN1(cbasn1.Tag(3).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
 				b.AddBytes(t.Issuer)
 			})
+		}
+		if t.Validity != nil {
+			// validity [4] OptionalValidity OPTIONAL
+			// IMPLICIT tagging means [4] replaces the SEQUENCE tag.
+			t.Validity.marshal(b)
 		}
 		switch {
 		case len(t.Subject.DirectoryName) > 0:
@@ -474,6 +491,16 @@ func (t *CertTemplate) unmarshal(s *cryptobyte.String) error {
 				return &ParseError{Detail: "invalid issuer name"}
 			}
 			t.Issuer = name
+		case cbasn1.Tag(4).ContextSpecific().Constructed():
+			var content cryptobyte.String
+			if !sub.ReadASN1(&content, tag) {
+				return &ParseError{Detail: "invalid validity tag"}
+			}
+			validity, err := parseOptionalValidity(content)
+			if err != nil {
+				return err
+			}
+			t.Validity = validity
 		case cbasn1.Tag(5).ContextSpecific().Constructed():
 			var content cryptobyte.String
 			if !sub.ReadASN1(&content, tag) {
@@ -501,6 +528,78 @@ func (t *CertTemplate) unmarshal(s *cryptobyte.String) error {
 		}
 	}
 	return nil
+}
+
+// OptionalValidity is the validity period a certificate template asks for
+// (RFC 4211 §5). A zero NotBefore or NotAfter leaves that bound to the CA, and
+// at least one must be set. The CA decides the validity it grants and may
+// shorten or ignore the request.
+//
+//	OptionalValidity ::= SEQUENCE {
+//	    notBefore  [0] Time OPTIONAL,
+//	    notAfter   [1] Time OPTIONAL } -- at least one MUST be present
+//
+// Times are encoded as RFC 5280 §4.1.2.5 requires: UTCTime through 2049 and
+// GeneralizedTime from 2050, in UTC with a resolution of one second.
+type OptionalValidity struct {
+	NotBefore time.Time
+	NotAfter  time.Time
+}
+
+// marshal encodes the validity as the IMPLICIT [4] field of a CertTemplate.
+func (v *OptionalValidity) marshal(b *cryptobyte.Builder) {
+	if v.NotBefore.IsZero() && v.NotAfter.IsZero() {
+		b.SetError(fmt.Errorf("pkicmp: certificate template validity has neither notBefore nor notAfter"))
+		return
+	}
+	b.AddASN1(cbasn1.Tag(4).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+		// Time is a CHOICE, so the tags of notBefore and notAfter are EXPLICIT.
+		if !v.NotBefore.IsZero() {
+			b.AddASN1(cbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+				addTime(b, v.NotBefore)
+			})
+		}
+		if !v.NotAfter.IsZero() {
+			b.AddASN1(cbasn1.Tag(1).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+				addTime(b, v.NotAfter)
+			})
+		}
+	})
+}
+
+// parseOptionalValidity reads the contents of the [4] validity field, which must hold at least one bound.
+func parseOptionalValidity(s cryptobyte.String) (*OptionalValidity, error) {
+	var v OptionalValidity
+	bounds := []struct {
+		tag  cbasn1.Tag
+		name string
+		time *time.Time
+	}{
+		{tag: cbasn1.Tag(0).ContextSpecific().Constructed(), name: "notBefore", time: &v.NotBefore},
+		{tag: cbasn1.Tag(1).ContextSpecific().Constructed(), name: "notAfter", time: &v.NotAfter},
+	}
+	present := false
+	for _, bound := range bounds {
+		var explicit cryptobyte.String
+		var found bool
+		if !s.ReadOptionalASN1(&explicit, &found, bound.tag) {
+			return nil, &ParseError{Detail: "invalid validity " + bound.name}
+		}
+		if !found {
+			continue
+		}
+		if !readTime(&explicit, bound.time) || !explicit.Empty() {
+			return nil, &ParseError{Detail: "invalid validity " + bound.name}
+		}
+		present = true
+	}
+	if !s.Empty() {
+		return nil, &ParseError{Detail: "trailing data in validity"}
+	}
+	if !present {
+		return nil, &ParseError{Detail: "validity has neither notBefore nor notAfter"}
+	}
+	return &v, nil
 }
 
 // proofOfPossession per RFC 4211 §4.

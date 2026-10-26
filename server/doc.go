@@ -217,6 +217,9 @@
 //	    return c.store.Revoke(cert, req.Reason)
 //	}
 //
+// [RevocationRequest.InvalidityDate] is the invalidityDate the request asks
+// for (RFC 5280 §5.3.2), zero when it carries none.
+//
 // The server authorizes the request before calling RevokeCertificate. By
 // default only the certificate being revoked may sign it, as RFC 9483 §4.2
 // requires. Requests signed by anyone else, such as a registration authority
@@ -321,9 +324,11 @@
 //	    return store[senderKID]
 //	}
 //
-// The server keeps a MAC client's transactions apart from other clients by its
-// senderKID and sender name together, so clients that send only a name, as
-// RFC 4210 §5.1.1 allows, do not share transactions or quotas.
+// The server keeps a MAC client's transactions and its share of
+// [WithMaxTransactionsPerCredential] apart from other clients by the shared
+// secret itself, whichever of the two fields the lookup used to find it. Clients
+// that share one secret share one quota, and clients that send only a name, as
+// RFC 4210 §5.1.1 allows, keep separate transactions as long as their secrets differ.
 //
 // For signature-protected messages (e.g., KUR), the client's identity is its
 // certificate. The sender DN is only a lookup key: the server resolves a
@@ -365,6 +370,8 @@
 //     made with the requested key. [WithEncryptedCertificatePOP] and
 //     [WithChallengeResponsePOP] accept the indirect methods of RFC 9810
 //     §5.2.8.3 for RSA, ECDH and ML-KEM keys. X25519 is refused with badAlg.
+//     [WithCentralKeyGeneration] accepts a request without a public key and
+//     generates the key pair (RFC 9483 §4.1.6).
 //   - Rejection of a BasicConstraints extension that cannot be decoded, so that
 //     no extension reaches [CA.IssueCertificate] that the checks above did not
 //     understand.

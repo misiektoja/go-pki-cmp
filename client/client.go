@@ -28,6 +28,8 @@ type Client struct {
 	ignoreCAPubsTrust   bool
 	minMACIterations    int
 	maxMACIterations    int
+	// raCreds sign the nested message around every request when the client acts as a registration authority.
+	raCreds *pkicmp.SignatureCredentials
 }
 
 const (
@@ -49,6 +51,13 @@ const (
 	// interval a CA is expected to request and only guards against a checkAfter
 	// large enough to park the operation or to overflow into no wait at all.
 	DefaultMaxCheckAfter = 60 * time.Minute
+
+	// DefaultHTTPTimeout bounds one HTTP exchange of the HTTP client that
+	// NewClient creates, from the connection to the end of the response body.
+	// A CA that accepts the connection and never answers would otherwise hold
+	// the call until the context expires. [WithHTTPClient] replaces the client
+	// and with it the timeout.
+	DefaultHTTPTimeout = 120 * time.Second
 )
 
 // Option is a functional option for configuring a Client.
@@ -58,7 +67,7 @@ type Option func(*Client)
 func NewClient(endpoint string, opts ...Option) *Client {
 	c := &Client{
 		endpoint:         endpoint,
-		httpClient:       http.DefaultClient,
+		httpClient:       &http.Client{Timeout: DefaultHTTPTimeout},
 		maxResponseBytes: DefaultMaxResponseBytes,
 		maxPolls:         DefaultMaxPolls,
 		minCheckAfter:    DefaultMinCheckAfter,
@@ -70,7 +79,8 @@ func NewClient(endpoint string, opts ...Option) *Client {
 	return c
 }
 
-// WithHTTPClient sets a custom HTTP client.
+// WithHTTPClient sets the HTTP client, for TLS settings, a proxy or another
+// timeout. The default uses the default transport with [DefaultHTTPTimeout].
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }
@@ -195,6 +205,25 @@ func WithMACIterationLimits(minimum, maximum int) Option {
 	}
 }
 
+// WithRegistrationAuthority makes the client act as a registration authority
+// (RA) that approves the requests it sends (RFC 9483 §5.2.2.1). Every request
+// of an operation, including certConf, pollReq and popdecr, goes out wrapped in
+// a nested message signed with creds. The nested message copies the
+// transactionID, senderNonce and recipNonce of the request and carries the RA
+// certificate and its chain in extraCerts. The request inside keeps the
+// protection made with the credentials of the Send method, so the CA can verify
+// both.
+//
+// The CA answers the request itself, not the nested message, so responses are
+// verified as without this option. An error about the nested message, such as a
+// refusal of the RA, arrives as an error response to the request.
+//
+// A nested message carries one request. Batching several requests (RFC 9483
+// §5.2.2.2) is not supported. A nil creds turns the wrapping off.
+func WithRegistrationAuthority(creds *pkicmp.SignatureCredentials) Option {
+	return func(c *Client) { c.raCreds = creds }
+}
+
 // WithMaxResponseBytes sets the maximum number of bytes accepted from a CMP
 // HTTP response body. Set to 0 or a negative value to disable the limit.
 func WithMaxResponseBytes(n int64) Option {
@@ -239,4 +268,13 @@ type EnrollResult struct {
 	CAPubs []*x509.Certificate
 	// ExtraCertificates contains certificates from the PKIMessage extraCerts field (RFC 9810 §5.1).
 	ExtraCertificates []*x509.Certificate
+	// ImplicitConfirm is true when the CA granted implicit confirmation, so the
+	// transaction ended with the certificate response and no certConf was sent.
+	ImplicitConfirm bool
+	// GeneratedKey is the private key the CA generated for a request that
+	// asked for central key generation. It is nil for any other request.
+	GeneratedKey *GeneratedKey
+	// Pending holds the transaction state when [WithDeferredPolling] stopped the
+	// call at an answer with status waiting. The other fields are then empty.
+	Pending *PendingEnrollment
 }

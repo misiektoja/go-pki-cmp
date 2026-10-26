@@ -238,6 +238,10 @@ func (m *PKIMessage) protectWithPBMAC1Options(opts pbmac1Options) error {
 	if err := validatePBKDF2KeyLength(keyLen, macHash); err != nil {
 		return err
 	}
+	_, maxIterations := macIterationLimits(opts.MinIterationCount, opts.MaxIterationCount)
+	if err := validatePBKDF2Work(iterCount, keyLen, prfHash, maxIterations); err != nil {
+		return err
+	}
 
 	// Generate random salt (RFC 8018 §7.1).
 	salt := make([]byte, defaultPBMSaltLength)
@@ -334,16 +338,17 @@ func parsePBKDF2Params(der []byte) (*pbkdf2ParamsASN1, error) {
 }
 
 // protectWithSignature signs the message using the given key.
-// The signature algorithm is inferred from the key type.
+// The signature algorithm is inferred from the key type, with the digest of an
+// RSA or ECDSA signature replaced by hash when it is not zero.
 // cert is added to ExtraCerts and its SubjectKeyId is set as Header.SenderKID.
 // chain provides optional intermediate certificates to include in ExtraCerts.
 // RFC 9810 §5.1.3.3.
-func (m *PKIMessage) protectWithSignature(key crypto.Signer, cert *x509.Certificate, chain ...*x509.Certificate) error {
+func (m *PKIMessage) protectWithSignature(key crypto.Signer, hash crypto.Hash, cert *x509.Certificate, chain ...*x509.Certificate) error {
 	if m.Body == nil {
 		return &ParseError{Detail: detailMissingMessageBody}
 	}
 
-	sigAlgOID, hash, err := signatureAlgorithmFromKey(key)
+	sigAlgOID, hash, err := signatureAlgorithmForHash(key, hash)
 	if err != nil {
 		return &ProtectionError{Reason: ReasonUnsupportedAlgorithm, Err: err}
 	}
@@ -504,16 +509,22 @@ var (
 
 const (
 	// DefaultMinMACIterationCount is the smallest PasswordBasedMac or PBMAC1
-	// iteration count accepted by default. RFC 4211 §4.4 requires at least 100,
-	// but the default stays at 1 so that a peer choosing fewer is not rejected.
-	DefaultMinMACIterationCount = 1
+	// iteration count accepted by default, the minimum RFC 4211 §4.4 requires.
+	// A peer that sends fewer needs WithMACIterationLimits or
+	// VerifyOptions.MinMACIterationCount.
+	DefaultMinMACIterationCount = 100
 
 	// DefaultMaxMACIterationCount is the largest PasswordBasedMac or PBMAC1
-	// iteration count accepted by default. No RFC sets a maximum. RFC 4210 and
-	// RFC 9810 let an implementation limit the count to reduce the risk of
-	// denial of service, because the peer chooses it and the receiver must run
-	// every iteration before it can check the MAC.
-	DefaultMaxMACIterationCount = 500000
+	// iteration count accepted by default. For PBMAC1 it bounds the whole
+	// PBKDF2 derivation, the iterations multiplied by the PRF output blocks
+	// the key length needs. No RFC sets a maximum. RFC 4210 and RFC 9810 let
+	// an implementation limit the count to reduce the risk of denial of
+	// service, because the peer chooses it and the receiver must run every
+	// iteration before it can check the MAC. The default leaves room for the
+	// 262144 iterations and 32-byte key the Siemens CMP test suite sends with
+	// every PRF, two blocks from HMAC-SHA224, and for the 600000 iterations
+	// OWASP recommends for PBKDF2-HMAC-SHA256.
+	DefaultMaxMACIterationCount = 1000000
 )
 
 // macIterationLimits returns the effective iteration count bounds. A
@@ -565,6 +576,22 @@ func validatePBKDF2KeyLength(keyLength int, macHash crypto.Hash) error {
 	if keyLength > maxKeyLength {
 		return &ParseError{
 			Detail: fmt.Sprintf("PBKDF2 keyLength too large: %d (maximum %d for this MAC)", keyLength, maxKeyLength),
+		}
+	}
+	return nil
+}
+
+// validatePBKDF2Work bounds the PRF invocations of one PBKDF2 derivation, which
+// are iterationCount for every block of PRF output the key length needs
+// (RFC 8018 §5.2). maximum is the iteration bound macIterationLimits returns
+// and applies to the product, so that the key length cannot multiply the work
+// the iteration count alone permits.
+func validatePBKDF2Work(iterationCount, keyLength int, prf crypto.Hash, maximum int) error {
+	blocks := (keyLength + prf.Size() - 1) / prf.Size()
+	if iterationCount > maximum/blocks {
+		return &ParseError{
+			Detail: fmt.Sprintf("PBKDF2 work too large: %d iterations for %d PRF blocks (maximum %d in total)",
+				iterationCount, blocks, maximum),
 		}
 	}
 	return nil

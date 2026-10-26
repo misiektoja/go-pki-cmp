@@ -20,6 +20,8 @@ type revocation struct {
 	serial *big.Int
 	reason pkicmp.CRLReason
 	at     time.Time
+	// invalidityDate is the time the requester gave for the compromise, zero when it gave none.
+	invalidityDate time.Time
 }
 
 // Algorithm OIDs for the key specification of the certificate request template.
@@ -86,11 +88,20 @@ func (c *MockCA) LatestCRL(_ context.Context, source pkicmp.CRLSource, _ *server
 		NextUpdate: c.crlUpdated.Add(24 * time.Hour),
 	}
 	for _, r := range c.revoked {
-		tmpl.RevokedCertificateEntries = append(tmpl.RevokedCertificateEntries, x509.RevocationListEntry{
+		entry := x509.RevocationListEntry{
 			SerialNumber:   r.serial,
 			RevocationTime: r.at,
 			ReasonCode:     int(r.reason),
-		})
+		}
+		// The requested invalidityDate is published in the CRL entry (RFC 5280 §5.3.2).
+		if !r.invalidityDate.IsZero() {
+			ext, err := pkicmp.NewInvalidityDateExtension(r.invalidityDate)
+			if err != nil {
+				return nil, err
+			}
+			entry.ExtraExtensions = []pkix.Extension{ext}
+		}
+		tmpl.RevokedCertificateEntries = append(tmpl.RevokedCertificateEntries, entry)
 	}
 	der, err := x509.CreateRevocationList(rand.Reader, tmpl, c.cert, c.key)
 	if err != nil {

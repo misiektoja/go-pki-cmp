@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
@@ -72,6 +73,20 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 		})
 	}
 
+	// RFC 9483 §4.1.1: a certConf that misses confirmWaitTime is handled like
+	// a rejection, also when CleanupExpired has not removed the transaction yet.
+	if s.cfg.confirmWait > 0 && time.Since(entry.lastActivity) > s.cfg.confirmWait {
+		if s.remove(credID, txnID, entry) && s.cfg.confirmer != nil {
+			_ = s.cfg.confirmer.ConfirmCertificate(contextWithPOPMethod(ctx, entry.popMethod),
+				entry.cert, ConfirmExpired, entry.issueRef)
+		}
+		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailBadRequest,
+			StatusString: pkicmp.PKIFreeText{"certConf after confirmWaitTime"},
+		})
+	}
+
 	// Each CertStatus reaches the CA as a verdict on the issued certificate, so
 	// every one of them must name it (RFC 9810 §5.3.18).
 	if statusErr := s.checkCertStatuses(*conf, entry); statusErr != nil {
@@ -107,16 +122,9 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 	// that recipNonce matches, which is enforced above whenever it is present.
 	// Rejecting a repeat by default would discard an already-issued certificate
 	// over a peer-side generation defect that deployed clients exhibit.
-	if s.cfg.strictProfile {
-		repeatsServerNonce := bytes.Equal(msg.Header.SenderNonce, entry.issuedSenderNonce)
-		repeatsOwnNonce := len(entry.clientSenderNonce) > 0 && bytes.Equal(msg.Header.SenderNonce, entry.clientSenderNonce)
-		if repeatsServerNonce || repeatsOwnNonce {
-			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
-				Status:       pkicmp.StatusRejection,
-				FailInfo:     pkicmp.FailBadSenderNonce,
-				StatusString: pkicmp.PKIFreeText{"senderNonce reused"},
-			})
-		}
+	// The pollReq and popdecr handlers apply the same check.
+	if s.cfg.strictProfile && reusesSenderNonce(msg, entry.issuedSenderNonce, entry.clientSenderNonce) {
+		return s.buildErrorResponse(msg, sender, senderNonceReused())
 	}
 
 	// RFC 9483 §4.1.1: certConf MUST use the same credentials as the first
@@ -204,4 +212,21 @@ func certificatePublicKey(cert *x509.Certificate) crypto.PublicKey {
 		return nil
 	}
 	return pub
+}
+
+// reusesSenderNonce reports whether msg repeats the senderNonce of response, the
+// last message of the server, or of request, the client message that response
+// answered. request is empty when it was not recorded.
+func reusesSenderNonce(msg *pkicmp.PKIMessage, response, request []byte) bool {
+	nonce := msg.Header.SenderNonce
+	return bytes.Equal(nonce, response) || len(request) > 0 && bytes.Equal(nonce, request)
+}
+
+// senderNonceReused is the refusal of a message that [reusesSenderNonce] finds.
+func senderNonceReused() pkicmp.PKIStatusInfo {
+	return pkicmp.PKIStatusInfo{
+		Status:       pkicmp.StatusRejection,
+		FailInfo:     pkicmp.FailBadSenderNonce,
+		StatusString: pkicmp.PKIFreeText{"senderNonce reused"},
+	}
 }

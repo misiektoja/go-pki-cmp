@@ -17,7 +17,8 @@ authenticated requester.
 
 The template arrives with the subject, public key, extensions and subject key identifier from the
 request. `SerialNumber` is nil. The CA must set the serial number and validity and may enforce
-policy, change the subject, add or remove extensions or refuse the request.
+policy, change the subject, add or remove extensions or refuse the request. A validity the CRMF
+template asks for is not passed on.
 
 ```go
 func (c *myCA) IssueCertificate(ctx context.Context, reqType server.RequestType,
@@ -87,8 +88,8 @@ should clear the flag.
   is slow, see [Known limitations](../known-limitations.md#slh-dsa-cas-sign-slowly).
 
 The [example CA](https://github.com/misiektoja/go-pki-cmp/tree/main/examples/mockserver) uses
-`compositex509.CreateCertificate` for every key, so it certifies composite keys as well as the key
-types crypto/x509 supports.
+`compositex509.CreateCertificate`, so it certifies composite keys as well as the key types
+crypto/x509 supports. It certifies ML-KEM keys with keyEncipherment as their only key usage.
 
 ## The response
 

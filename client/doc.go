@@ -5,7 +5,8 @@
 // registration), [Client.SendCR] (certification), [Client.SendKUR] (key update),
 // and [Client.SendP10CR] (PKCS#10 request). All handle the full lifecycle
 // transparently: protection, response verification, polling, and certificate
-// confirmation. [Client.SendRR] asks the CA to revoke a certificate. The
+// confirmation. [Client.SendRR] asks the CA to revoke a certificate and
+// [Client.SendRRBySerial] one known by issuer and serial number only. The
 // support messages of RFC 9483 §4.3, such as [Client.GetRootCAUpdate], ask the
 // CA for information.
 //
@@ -104,6 +105,34 @@
 // transaction keeps that version. A CMP version 2 CA may still send an RSA
 // certificate in the older EncryptedValue, which the client decrypts as well.
 //
+// # Keys the CA generates
+//
+// [Client.SendIRWithCentralKeyGeneration], [Client.SendCRWithCentralKeyGeneration]
+// and [Client.SendKURWithCentralKeyGeneration] ask the CA to generate the key
+// pair (RFC 9483 §4.1.6). A nil algorithm leaves the choice to the CA:
+//
+//	result, err := c.SendIRWithCentralKeyGeneration(ctx, nil, creds,
+//	    client.WithTemplateSubject(pkix.Name{CommonName: "my-device"}),
+//	)
+//	key := result.GeneratedKey.PrivateKey
+//
+// The CA encrypts the private key for the credentials of the request: MAC
+// credentials or an RSA or ECDSA protection key. The client checks that the
+// key matches the issued certificate before it confirms the certificate.
+//
+// # Registration authorities
+//
+// [WithRegistrationAuthority] makes the client act as a registration authority
+// that approves the requests it forwards (RFC 9483 §5.2.2.1). Every request,
+// including certConf and pollReq, goes out in a nested message signed with the
+// RA credentials, while the request inside keeps the protection of the end
+// entity:
+//
+//	c := client.NewClient(url, client.WithRegistrationAuthority(raCreds))
+//	result, err := c.SendIR(ctx, deviceKey, deviceCreds, opts...)
+//
+// The CA answers the request itself, so responses are verified as usual.
+//
 // # Support messages
 //
 // General messages ask the CA for information rather than a certificate:
@@ -129,7 +158,7 @@
 // CA that refuses general messages altogether answers with an error message,
 // returned as [*pkicmp.PKIStatusError]. [WithCertProfile] names a
 // certificate profile in the request header, for example to ask for the
-// template of that profile.
+// template of that profile. [WithGeneralInfo] adds other generalInfo items.
 //
 // # Asynchronous enrollment and polling
 //
@@ -144,7 +173,9 @@
 //     indefinitely or drive polling as fast as the network allows.
 //  3. The final response may identify either the last PollReq or the original
 //     request whose processing was delayed, as RFC 9483 Section 4.4 requires.
-//  4. Once the certificate is issued the client automatically sends certConf.
+//  4. Once the certificate is issued the client automatically sends certConf,
+//     unless the CA granted the implicit confirmation [WithImplicitConfirm]
+//     asks for.
 //  5. The Send* method returns only after the full exchange completes.
 //
 // Control the blocking behavior with:
@@ -156,6 +187,16 @@
 //     1 hour). The ceiling is a guard against an unusable value rather than a
 //     normal-operation bound, because RFC 9810 Section 5.3.22 asks the client to
 //     wait at least the interval the CA sent.
+//   - [WithHTTPClient]: bound each HTTP exchange. The default client gives up
+//     after [DefaultHTTPTimeout].
+//
+// To collect the certificate later, possibly in another process, pass
+// [WithDeferredPolling]. The Send* method then returns at the first waiting
+// answer with [EnrollResult.Pending] set. Save that [PendingEnrollment], for
+// example as JSON, and continue with [Client.ResumeEnrollment] and the same
+// credentials and trust settings. Polling that stops while the CA still waits,
+// for example at the context deadline, returns a [PendingError] whose state
+// resumes the same way.
 //
 // # Response verification
 //
@@ -208,12 +249,30 @@
 // Its subject is not checked, because a CA may return grantedWithMods having
 // changed it. A certificate that fails these checks or arrives under another
 // certReqId is rejected in certConf before the error is returned, so the CA
-// learns of it at once (RFC 9483 §3.6.1).
+// learns of it at once (RFC 9483 §3.6.1). With implicit confirmation granted
+// the error is returned without a message, as the same section asks.
 //
 // A certificate the client accepts can still fail in the confirming certConf,
 // for example when the CA refuses it. The error is then a [ConfirmationError]
-// holding the certificate. The CA may keep it or revoke it as unconfirmed, so
+// holding the certificate and the key of a request for central key
+// generation. The CA may keep it or revoke it as unconfirmed, so
 // check the CA before retrying, because a retry may issue a second one.
+//
+// [WithImplicitConfirm] asks the CA to skip the certConf round trip (RFC 9810
+// §5.1.1.1). When the CA grants it in the certificate response, the Send*
+// method returns with [EnrollResult.ImplicitConfirm] set and sends nothing
+// more. A grant the request did not ask for is honored as well, because the
+// CA has closed the transaction.
+//
+// # Testing a CA
+//
+// Three request options are test aids that send deliberately wrong messages,
+// to check how a CA handles them. [WithCertConfStatus] rejects an issued
+// certificate in the certConf. [WithMessageMutator] changes each message of
+// the operation before it is protected, for example to send a stale
+// recipNonce or a wrong certHash. [WithProtectedMessageMutator] changes it
+// after the protection, for example to remove it. Without them nothing
+// changes. Do not use them in production.
 //
 // # Limits
 //

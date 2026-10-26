@@ -37,9 +37,9 @@ Requires Go 1.27.3 or newer. Releases up to v0.3.2 use the module path
 | Package | Content |
 | --- | --- |
 | [`pkicmp`](./pkicmp/) | CMP and CRMF types with parsing, serialization and MAC or signature protection |
-| [`client`](./client/) | Enrollment, key update, revocation and support messages with polling, response verification and certificate confirmation |
+| [`client`](./client/) | Enrollment, key update, revocation and support messages with response verification, certificate confirmation and polling that can resume in a later process |
 | [`server`](./server/) | An `http.Handler` that authenticates clients, tracks transactions and applies policy in front of your CA |
-| [`cms`](./cms/) | EnvelopedData and EncryptedValue for proof of possession by decryption |
+| [`cms`](./cms/) | EnvelopedData and EncryptedValue for proof of possession by decryption and centrally generated keys |
 
 ## Scope
 
@@ -58,9 +58,12 @@ root CA update, a certificate request template and CRL updates.
 [composite ML-DSA](https://github.com/misiektoja/go-composite-mldsa) keys can enroll and sign CMP
 messages. ML-KEM-768 and ML-KEM-1024 keys, which cannot sign, prove possession by decryption.
 
+**Central key generation:** a client can ask the CA to generate its key pair and receive the private
+key signed and encrypted for it (RFC 9483 section 4.1.6).
+
 **RFC 4210 peers** work with the defaults. Options accept deployed clients that break RFC 9483 rules.
 
-Key recovery, central key generation, cross-certification and announcements are not implemented.
+Key recovery, cross-certification and announcements are not implemented.
 
 The [support matrix](https://misiektoja.github.io/go-pki-cmp/support-matrix/) and
 [known limitations](https://misiektoja.github.io/go-pki-cmp/known-limitations/) give the details.
@@ -125,7 +128,7 @@ Full documentation is at [misiektoja.github.io/go-pki-cmp](https://misiektoja.gi
 * [Getting started](https://misiektoja.github.io/go-pki-cmp/getting-started/)
 * [Support matrix](https://misiektoja.github.io/go-pki-cmp/support-matrix/)
 * [Architecture](https://misiektoja.github.io/go-pki-cmp/architecture/)
-* Client: [Enrollment](https://misiektoja.github.io/go-pki-cmp/client/enrollment/), [Response verification](https://misiektoja.github.io/go-pki-cmp/client/response-verification/), [Revocation](https://misiektoja.github.io/go-pki-cmp/client/revocation/) and [Keys that cannot sign](https://misiektoja.github.io/go-pki-cmp/client/indirect-pop/)
+* Client: [Enrollment](https://misiektoja.github.io/go-pki-cmp/client/enrollment/), [Response verification](https://misiektoja.github.io/go-pki-cmp/client/response-verification/), [Revocation](https://misiektoja.github.io/go-pki-cmp/client/revocation/), [Keys that cannot sign](https://misiektoja.github.io/go-pki-cmp/client/indirect-pop/) and [Keys the CA generates](https://misiektoja.github.io/go-pki-cmp/client/central-key-generation/)
 * Server: [Implementing a CA](https://misiektoja.github.io/go-pki-cmp/server/ca/), [Authentication](https://misiektoja.github.io/go-pki-cmp/server/authentication/), [Policy and client compatibility](https://misiektoja.github.io/go-pki-cmp/server/policy/) and [Transactions and recovery](https://misiektoja.github.io/go-pki-cmp/server/transactions/)
 * [Client options](https://misiektoja.github.io/go-pki-cmp/reference/client-options/) and [Server options](https://misiektoja.github.io/go-pki-cmp/reference/server-options/)
 * [Troubleshooting](https://misiektoja.github.io/go-pki-cmp/operations/troubleshooting/)

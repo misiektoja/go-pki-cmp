@@ -12,6 +12,8 @@ import (
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 )
 
 // algorithms lists the SLH-DSA parameter sets with their identifiers (RFC 9909 §3).
@@ -132,6 +134,11 @@ func SignatureID(signed []byte) (slhdsa.ID, bool, error) {
 // verifies certificates signed by an SLH-DSA parent key. It applies the same
 // basic constraints and key usage checks as crypto/x509.
 func CheckSignatureFrom(cert, parent *x509.Certificate) error {
+	// An oversized RSA parent key is refused before any arithmetic, because one
+	// check with it could take tens of seconds.
+	if err := keylimit.Check(parent.PublicKey); err != nil {
+		return err
+	}
 	pub, ok, err := PublicKey(parent.RawSubjectPublicKeyInfo)
 	if err != nil {
 		return err

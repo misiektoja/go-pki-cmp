@@ -2,13 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"time"
 
@@ -93,52 +92,32 @@ type SenderIdentity struct {
 	// protectionParams captures the decoded MAC parameters from the verified
 	// request, used to protect responses with the same algorithm suite.
 	protectionParams pkicmp.MACCredentialOption
-
-	// headerSender is the sender field of a MAC-protected message, which
-	// together with SenderKID names the shared secret.
-	headerSender pkicmp.GeneralName
 }
 
 // credentialID returns a hash identifying the credentials used for protection.
 // Used to verify that follow-up messages use the same credentials per RFC 9483 §3.2.
 func (s *SenderIdentity) credentialID() ([]byte, error) {
-	h := sha256.New()
 	switch {
 	case s.MACVerified:
-		// SecretLookup may find the secret by senderKID, by the sender name or by
-		// both. RFC 4210 §5.1.1 tells a sender whose name identifies the secret
-		// to omit senderKID. Keying on senderKID alone would give all such
-		// clients one identity. RFC 4210 Appendix D.4 keeps both fields the same
-		// for the whole transaction. The prefix keeps this input apart from a
-		// certificate, whose DER encoding starts with a SEQUENCE tag.
-		h.Write([]byte("cmp-mac"))
-		writeLengthPrefixed(h, s.SenderKID)
-		writeLengthPrefixed(h, senderNameKey(s.headerSender))
+		// The identity is the shared secret itself, not the senderKID and sender
+		// name that selected it. The peer chooses those fields and a lookup may
+		// ignore one of them, so deriving the identity from them would let one
+		// secret mint a fresh identity, with a fresh per-credential quota, for
+		// every sender name. An HMAC keyed with the secret does not reveal it,
+		// and clients that share a secret share one identity, which is what
+		// RFC 9483 §3.2 means by the same credentials.
+		if len(s.secret) == 0 {
+			return nil, errors.New("no shared secret in SenderIdentity")
+		}
+		mac := hmac.New(sha256.New, s.secret)
+		mac.Write([]byte("cmp-mac"))
+		return mac.Sum(nil), nil
 	case s.Certificate != nil:
-		h.Write(s.Certificate.Raw)
+		sum := sha256.Sum256(s.Certificate.Raw)
+		return sum[:], nil
 	default:
 		return nil, errors.New("no credentials in SenderIdentity")
 	}
-	return h.Sum(nil), nil
-}
-
-// senderNameKey returns a stable encoding of a header sender for credential binding.
-func senderNameKey(name pkicmp.GeneralName) []byte {
-	// The decoded form lets a directory name match however its strings are
-	// encoded, as SecretLookup sees it. Other GeneralName variants, including
-	// the NULL-DN, are compared by their DER encoding.
-	if len(name.DirectoryName) > 0 {
-		return []byte("dn:" + name.DirectoryName.String())
-	}
-	return name.Raw
-}
-
-// writeLengthPrefixed writes b preceded by its length, so that adjacent fields cannot run into each other.
-func writeLengthPrefixed(w io.Writer, b []byte) {
-	var n [4]byte
-	binary.BigEndian.PutUint32(n[:], uint32(len(b))) // #nosec G115 -- header fields are bounded by MaxRequestBodySize
-	_, _ = w.Write(n[:])
-	_, _ = w.Write(b)
 }
 
 // WaitingResponse tells the server to respond with "waiting" status.

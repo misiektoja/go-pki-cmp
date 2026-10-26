@@ -56,7 +56,6 @@ func (s *Server) verifyProtection(msg *pkicmp.PKIMessage) (*SenderIdentity, erro
 			MACVerified:      true,
 			secret:           secret,
 			protectionParams: vr.ProtectionParams,
-			headerSender:     msg.Header.Sender,
 		}, nil
 	}
 

@@ -320,6 +320,38 @@ func TestParsePKIMessage(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "trailing data")
 	})
+
+	// extraCerts is EXPLICIT, so its [1] wrapper must hold the certificate SEQUENCE and nothing else.
+	t.Run("RejectsTrailingDataInExtraCerts", func(t *testing.T) {
+		msg := &PKIMessage{
+			Header: PKIHeader{PVNO: PVNO2},
+			Body:   NewPKIConfBody(),
+		}
+		der, err := msg.MarshalBinary()
+		require.NoError(t, err)
+		var content cryptobyte.String
+		s := cryptobyte.String(der)
+		require.True(t, s.ReadASN1(&content, cbasn1.SEQUENCE))
+		// Parsing keeps a CMPCertificate as a raw element, so a short SEQUENCE stands in for one.
+		cert := []byte{0x30, 0x03, 0x02, 0x01, 0x01}
+		for name, trailing := range map[string][]byte{"Byte": {0x00}, "Element": cert} {
+			t.Run(name, func(t *testing.T) {
+				b := cryptobyte.NewBuilder(nil)
+				b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+					b.AddBytes(content)
+					b.AddASN1(cbasn1.Tag(1).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+						b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) { b.AddBytes(cert) })
+						b.AddBytes(trailing)
+					})
+				})
+				wrapped, err := b.Bytes()
+				require.NoError(t, err)
+				_, err = ParsePKIMessage(wrapped)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "trailing data inside extraCerts")
+			})
+		}
+	})
 }
 
 func TestPKIMessagePVNOTigger(t *testing.T) {
