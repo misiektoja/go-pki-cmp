@@ -16,7 +16,7 @@ in full.
 | [`WithoutCAPubsTrust`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithoutCAPubsTrust) | Off | Keeps the CA certificates in `caPubs` of a MAC-protected response from becoming anchors |
 | [`WithSenderKIDMismatch`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSenderKIDMismatch) | Off | Accepts a signed response whose senderKID names none of the candidate certificates |
 | [`WithSHA1Signatures`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithSHA1Signatures) | Off | Accepts responses signed with SHA-1 |
-| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMACIterationLimits) | 1 to 500000 | Accepted MAC iteration counts in responses |
+| [`WithMACIterationLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMACIterationLimits) | 1 to 500000 | Accepted MAC iteration counts in responses, for PBMAC1 multiplied by the PRF blocks of the key length |
 | [`WithMaxPolls`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMaxPolls) | 60 | Poll attempts before the call gives up |
 | [`WithCheckAfterLimits`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithCheckAfterLimits) | 1 second to 1 hour | Clamps each wait the CA asks for |
 | [`WithMaxResponseBytes`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/client#WithMaxResponseBytes) | 10 MiB | Largest accepted response body. Zero or less disables the limit |

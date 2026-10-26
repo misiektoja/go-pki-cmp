@@ -6,9 +6,11 @@ polling flows. This page covers the limits, the cleanup and moving the state to 
 ## Transaction identity
 
 Transactions are keyed by the sender's verified credential and the transaction ID, so one client
-cannot continue another client's transaction (RFC 9810 section 5.1.1). A client may leave the
-transaction ID out of its first request. The server then assigns a random 128-bit one and returns it,
-as RFC 4210 and RFC 9810 require. `WithStrictProfileValidation` refuses such requests instead.
+cannot continue another client's transaction (RFC 9810 section 5.1.1). For a MAC-protected client
+the credential is the shared secret itself, whichever header field selected it, and for a signed
+client it is the protection certificate. A client may leave the transaction ID out of its first
+request. The server then assigns a random 128-bit one and returns it, as RFC 4210 and RFC 9810
+require. `WithStrictProfileValidation` refuses such requests instead.
 
 ## Limits
 

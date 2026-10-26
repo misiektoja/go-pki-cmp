@@ -38,15 +38,19 @@ func Register(senderKID, secret []byte) error {
 }
 ```
 
-The server keeps a MAC client's transactions apart from other clients by its `senderKID` and sender
-name together. Clients that send only a name, as RFC 4210 allows, do not share transactions or
-quotas.
+The server keeps a MAC client's transactions and its share of `WithMaxTransactionsPerCredential`
+apart from other clients by the shared secret itself, whichever field the lookup used to find it. The
+sender name and `senderKID` a request carries do not select the quota, so one secret cannot get a
+second quota by naming a different sender. Clients that share one secret share one quota. Clients
+that send only a name, as RFC 4210 allows, keep separate transactions as long as their secrets differ.
 
 The client chooses the MAC iteration count and the server runs every iteration before it can check
-the MAC. `WithMACIterationLimits` bounds that work, 1 to 500000 by default. A request outside the
-range is refused with badMessageCheck and the text "MAC protection parameters not accepted" before
-any key derivation. Raise the minimum, for example to the 100 that RFC 4211 section 4.4 requires, to
-refuse protection too cheap to slow an offline guess of a weak secret.
+the MAC. `WithMACIterationLimits` bounds that work, 1 to 500000 by default. For PBMAC1 the maximum
+bounds the whole PBKDF2 derivation, the iterations multiplied by the number of PRF output blocks the
+requested key length needs, so a long key from a short PRF cannot multiply the work. A request
+outside the range is refused with badMessageCheck and the text "MAC protection parameters not
+accepted" before any key derivation. Raise the minimum, for example to the 100 that RFC 4211
+section 4.4 requires, to refuse protection too cheap to slow an offline guess of a weak secret.
 
 ## Certificates
 

@@ -93,7 +93,8 @@ waiting answer, so that `ResumeEnrollment` can collect the certificate later.
 | Transactions per credential | 100 | `server.WithMaxTransactionsPerCredential` |
 | Confirmation wait | 10 seconds | `server.WithConfirmWaitTime` |
 | Waiting request lifetime | 24 hours | `server.WithWaitingLifetime` |
-| MAC iteration count | 1 to 500000 | `WithMACIterationLimits` in either package |
+| MAC iteration count, for PBMAC1 multiplied by the PRF blocks of the key length | 1 to 500000 | `WithMACIterationLimits` in either package |
+| RSA modulus in a key or certificate from a peer | 16384 bits | Fixed, `pkicmp.MaxRSAModulusBits` |
 | Poll attempts | 60 | `client.WithMaxPolls` |
 | Wait between polls | 1 second to 1 hour | `client.WithCheckAfterLimits` |
 | Snapshot size | 64 MiB | Fixed |

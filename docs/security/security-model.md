@@ -36,12 +36,14 @@ shared secret.
 
 **Message authentication.** Every message is verified before your code sees it: a MAC with the
 secret your lookup returns or a signature with the certificate it returns. A signed message must name
-the certificate subject as its sender. The MAC iteration count is bounded before any key derivation,
-so an unauthenticated request cannot buy unbounded work.
+the certificate subject as its sender. The MAC key derivation work is bounded before it runs and an
+RSA key above 16384 bits is refused before any public key operation, so an unauthenticated request
+cannot buy unbounded work.
 
 **Transaction binding.** Transactions are keyed by the verified credential and the transaction ID.
-Every message after the first must repeat the previous senderNonce. One client cannot continue,
-confirm or poll another client's transaction.
+For a MAC-protected client the credential is the shared secret itself, so a sender name cannot buy a
+second quota. Every message after the first must repeat the previous senderNonce. One client cannot
+continue, confirm or poll another client's transaction.
 
 **Proof of possession.** A certificate is never issued for a key the requester did not prove
 holding, with or without a policy. An encrypted certificate counts as delivered only after a
