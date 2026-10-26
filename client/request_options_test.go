@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/asn1"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,4 +117,38 @@ func TestWithPOPHash(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.NewClient("http://127.0.0.1:1").SendIR(context.Background(), edKey, creds, client.WithPOPHash(crypto.SHA256))
 	require.ErrorContains(t, err, "take no digest")
+}
+
+// RFC 4211 §5: WithTemplateValidity puts the requested validity into the CertTemplate, which the
+// proof of possession signs.
+func TestWithTemplateValidity(t *testing.T) {
+	notBefore := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	notAfter := notBefore.Add(30 * 24 * time.Hour)
+
+	req, err := sendIRWith(t, client.WithTemplateValidity(notBefore, notAfter))
+	require.NoError(t, err)
+	reqMsg := firstCertReqMsg(t, req)
+	require.NotNil(t, reqMsg.CertReq.CertTemplate.Validity)
+	assert.True(t, reqMsg.CertReq.CertTemplate.Validity.NotBefore.Equal(notBefore))
+	assert.True(t, reqMsg.CertReq.CertTemplate.Validity.NotAfter.Equal(notAfter))
+	assert.NoError(t, pkicmp.VerifyPOP(reqMsg))
+
+	req, err = sendIRWith(t, client.WithTemplateValidity(time.Time{}, notAfter))
+	require.NoError(t, err)
+	validity := firstCertReqMsg(t, req).CertReq.CertTemplate.Validity
+	require.NotNil(t, validity)
+	assert.True(t, validity.NotBefore.IsZero(), "a zero notBefore is left to the CA")
+	assert.True(t, validity.NotAfter.Equal(notAfter))
+
+	req, err = sendIRWith(t, client.WithTemplateValidity(time.Time{}, time.Time{}))
+	require.NoError(t, err)
+	assert.Nil(t, firstCertReqMsg(t, req).CertReq.CertTemplate.Validity, "two zero times ask for no validity")
+
+	req, err = sendIRWith(t)
+	require.NoError(t, err)
+	assert.Nil(t, firstCertReqMsg(t, req).CertReq.CertTemplate.Validity, "the default asks for none")
+
+	received, err := sendIRWith(t, client.WithTemplateValidity(notAfter, notBefore))
+	require.ErrorContains(t, err, "template validity ends before it starts")
+	assert.Nil(t, received, "nothing is sent for a reversed validity")
 }
