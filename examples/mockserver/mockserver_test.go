@@ -5,12 +5,14 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"log/slog"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -57,19 +59,20 @@ func (c *confirmingCA) requireAccepted(t *testing.T, cert *x509.Certificate) {
 	require.Equal(t, server.ConfirmAccepted, status)
 }
 
-// newServer serves the mock CA as cmd/main.go does and returns a client that trusts it.
-func newServer(t *testing.T) (*confirmingCA, *client.Client) {
+// newServer serves the mock CA as cmd/main.go does, with the server options in extra, and returns a
+// client that trusts it.
+func newServer(t *testing.T, extra ...server.Option) (*confirmingCA, *client.Client) {
 	t.Helper()
 	mock, err := mockserver.New(map[string][]byte{string(reference): iak}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	ca := &confirmingCA{MockCA: mock, confirmed: map[string]server.ConfirmStatus{}}
-	srv := server.NewCAServer(ca,
-		server.LightweightPolicy(),
+	opts := slices.Concat([]server.Option{
 		server.WithSigner(mock.Key(), mock.Cert()),
 		server.WithExtraCerts([]*x509.Certificate{mock.Cert()}),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
-	)
+	}, extra)
+	srv := server.NewCAServer(ca, server.LightweightPolicy(), opts...)
 	require.NoError(t, srv.Err())
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
@@ -213,4 +216,59 @@ func TestRevocationInvalidityDate(t *testing.T) {
 		require.True(t, got.Equal(at), "invalidityDate %v", got)
 	}
 	require.True(t, found, "the CRL entry lacks the invalidityDate extension")
+}
+
+// TestMLKEMEnrollment enrolls ML-KEM keys, which prove possession by decryption, with both
+// indirect methods. The certificate carries the key with keyEncipherment as its only key usage.
+func TestMLKEMEnrollment(t *testing.T) {
+	type kemKey struct {
+		name     string
+		generate func() (any, crypto.PublicKey, error)
+	}
+	kemKeys := []kemKey{
+		{"ML-KEM-768", func() (any, crypto.PublicKey, error) {
+			dk, err := mlkem.GenerateKey768()
+			if err != nil {
+				return nil, nil, err
+			}
+			return dk, dk.EncapsulationKey(), nil
+		}},
+		{"ML-KEM-1024", func() (any, crypto.PublicKey, error) {
+			dk, err := mlkem.GenerateKey1024()
+			if err != nil {
+				return nil, nil, err
+			}
+			return dk, dk.EncapsulationKey(), nil
+		}},
+	}
+	methods := []client.IndirectPOP{client.EncryptedCertificate, client.ChallengeResponse}
+	for _, kk := range kemKeys {
+		for _, method := range methods {
+			t.Run(kk.name+"/"+method.String(), func(t *testing.T) {
+				ca, c := newServer(t, server.WithEncryptedCertificatePOP(), server.WithChallengeResponsePOP())
+				key, pub, err := kk.generate()
+				require.NoError(t, err)
+				macCreds, err := pkicmp.NewMACCredentials(iak)
+				require.NoError(t, err)
+				subject := pkix.Name{CommonName: "kem-device"}
+				ir, err := c.SendIRWithIndirectPOP(context.Background(), key, method, macCreds,
+					client.WithSenderKID(reference),
+					client.WithSender(subject),
+					client.WithTemplateSubject(subject),
+				)
+				require.NoError(t, err)
+				ca.requireAccepted(t, ir.Certificate)
+
+				require.Equal(t, x509.KeyUsageKeyEncipherment, ir.Certificate.KeyUsage)
+				certified, err := pkicmp.ParsePublicKey(ir.Certificate.RawSubjectPublicKeyInfo)
+				require.NoError(t, err)
+				want, err := pkicmp.MarshalPublicKey(pub)
+				require.NoError(t, err)
+				got, err := pkicmp.MarshalPublicKey(certified)
+				require.NoError(t, err)
+				require.Equal(t, want, got, "certificate carries another public key")
+				require.NoError(t, ir.Certificate.CheckSignatureFrom(ca.Cert()))
+			})
+		}
+	}
 }
