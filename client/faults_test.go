@@ -417,3 +417,39 @@ func TestMessageMutatorRevocation(t *testing.T) {
 	assert.Equal(t, pkicmp.FailBadMessageCheck, se.FailInfo)
 	assert.Nil(t, log.last(pkicmp.BodyTypeRR).Header.ProtectionAlg)
 }
+
+// ResumeEnrollment applies the test aids to its pollReq and certConf messages.
+// The first pollReq answers a response the client did not keep, so its
+// mutators see nil.
+func TestResumeEnrollmentAppliesTestAids(t *testing.T) {
+	ca := newDelayedCA(func(check int) bool { return check >= 2 })
+	ts, _ := serveDelayedCA(t, ca)
+	c := newPendingClient(t, ts.URL, ca, client.WithCheckAfterLimits(0, time.Second))
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pending := deferIR(t, c, key)
+
+	var seen []string
+	record := func(tag string) client.MessageMutator {
+		return func(msg, answered *pkicmp.PKIMessage) error {
+			answer := "none"
+			if answered != nil {
+				answer = answered.Body.Type.String()
+			}
+			seen = append(seen, tag+" "+msg.Body.Type.String()+"<"+answer)
+			return nil
+		}
+	}
+	result, err := c.ResumeEnrollment(context.Background(), pending, macCredentials(t),
+		client.WithMessageMutator(record("a")),
+		client.WithProtectedMessageMutator(record("p")),
+		client.WithCertConfStatus(&pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection}))
+	require.NoError(t, err)
+	assert.NotNil(t, result.Certificate, "the CA answers the rejection with pkiConf")
+	assert.Equal(t, []string{
+		"a pollReq<none", "p pollReq<none",
+		"a pollReq<pollRep", "p pollReq<pollRep",
+		"a certConf<ip", "p certConf<ip",
+	}, seen)
+	assert.Equal(t, []server.ConfirmStatus{server.ConfirmRejected}, ca.confirmed())
+}
