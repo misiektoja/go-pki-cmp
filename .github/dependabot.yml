@@ -83,7 +83,8 @@ updates:
           - minor
           - patch
 
-  # The base image of the Insta Certifier client image.
+  # The base image of the Insta Certifier client image. Certifier 7 supports only Enterprise Linux 8,
+  # so only digest updates of Rocky Linux 8 are wanted.
   - package-ecosystem: docker
     directory: "/test/integration/certifier"
     target-branch: dev
@@ -94,3 +95,7 @@ updates:
     commit-message:
       prefix: test
       include: scope
+    ignore:
+      - dependency-name: "rockylinux/rockylinux"
+        update-types:
+          - version-update:semver-major
