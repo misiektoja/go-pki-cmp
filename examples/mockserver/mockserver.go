@@ -37,12 +37,15 @@ import (
 // oidKeyUsage identifies the RFC 5280 §4.2.1.3 keyUsage extension.
 var oidKeyUsage = asn1.ObjectIdentifier{2, 5, 29, 15}
 
-// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], [server.CertificateLookup]
-// and the general message interfaces [server.CACertificatesProvider], [server.RootCAUpdateProvider],
-// [server.CertReqTemplateProvider] and [server.CRLProvider].
+// MockCA implements [server.CA], [server.Revoker], [server.SecretLookup], [server.CertificateLookup],
+// [server.KeyGenerator] and the general message interfaces [server.CACertificatesProvider],
+// [server.RootCAUpdateProvider], [server.CertReqTemplateProvider] and [server.CRLProvider].
 type MockCA struct {
 	key  *ecdsa.PrivateKey // CA private key used to sign issued certificates
 	cert *x509.Certificate // CA certificate returned in caPubs on IR responses
+
+	kgaKey  *ecdsa.PrivateKey // key generation authority key that signs centrally generated keys
+	kgaCert *x509.Certificate // key generation authority certificate the CA issued
 
 	mu          sync.Mutex            // guards issuedCerts, revoked and the CRL state against concurrent HTTP requests
 	issuedCerts []*x509.Certificate   // certificates issued so far; used by LookupCertificate
@@ -67,9 +70,15 @@ func New(secrets map[string][]byte, log *slog.Logger) (*MockCA, error) {
 	if err != nil {
 		return nil, err
 	}
+	kgaKey, kgaCert, err := generateKGA(key, cert)
+	if err != nil {
+		return nil, err
+	}
 	return &MockCA{
 		key:        key,
 		cert:       cert,
+		kgaKey:     kgaKey,
+		kgaCert:    kgaCert,
 		Log:        log,
 		secrets:    secrets,
 		revoked:    map[string]revocation{},
