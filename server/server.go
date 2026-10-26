@@ -179,7 +179,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRequest,
-			StatusString: pkicmp.PKIFreeText{err.Error()},
+			StatusString: statusText(err),
 		})
 		return resp
 	}
@@ -198,7 +198,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     failInfo,
-			StatusString: pkicmp.PKIFreeText{err.Error()},
+			StatusString: statusText(err),
 		})
 		return resp
 	}
@@ -208,21 +208,21 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfileExtraCerts(msg, sender); err != nil {
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadMessageCheck,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfilePOP(msg); err != nil {
 			return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 				Status:       pkicmp.StatusRejection,
 				FailInfo:     pkicmp.FailBadPOP,
-				StatusString: pkicmp.PKIFreeText{err.Error()},
+				StatusString: statusText(err),
 			})
 		}
 		if err := validateProfileGenM(msg); err != nil {

@@ -52,6 +52,19 @@ func rejection(failInfo pkicmp.PKIFailureInfo, text string) *Error {
 	return &Error{Status: pkicmp.StatusRejection, FailureInfo: failInfo, StatusText: text}
 }
 
+// statusText returns the statusString for a refusal the server found itself:
+// the StatusText of an [Error], whose Error method prefixes it for Go callers,
+// or the message of any other error.
+func statusText(err error) pkicmp.PKIFreeText {
+	if se, ok := errors.AsType[*Error](err); ok {
+		if se.StatusText == "" {
+			return nil
+		}
+		return pkicmp.PKIFreeText{se.StatusText}
+	}
+	return pkicmp.PKIFreeText{err.Error()}
+}
+
 // errorToStatusInfo maps a handler error to PKIStatusInfo for CMP responses.
 // Only the text a Handler put in [Error.StatusText] reaches the peer, so an
 // error carrying internal detail is not disclosed by returning it.
