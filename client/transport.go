@@ -129,8 +129,7 @@ type enrollment struct {
 	// central marks a request that asked the CA to generate the key pair.
 	central bool
 	creds   pkicmp.Credentials
-	// certConfStatus and hooks are the test aids of the request options. A
-	// resumed enrollment has none.
+	// certConfStatus and hooks are the test aids of the request options.
 	certConfStatus *pkicmp.PKIStatusInfo
 	hooks          *messageHooks
 }
@@ -741,7 +740,8 @@ type pollState struct {
 	nextPoll time.Time
 	// waiting is set when polling stops without a final response while the request still waits.
 	waiting bool
-	// response is the last response, which the next pollReq answers. It is nil for a resumed enrollment.
+	// response is the last response, which the next pollReq answers. A resumed
+	// enrollment has none until its first pollRep.
 	response *pkicmp.PKIMessage
 	// hooks are the test aids that change each pollReq.
 	hooks *messageHooks

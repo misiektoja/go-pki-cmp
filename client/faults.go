@@ -5,8 +5,10 @@ import (
 )
 
 // MessageMutator changes a message the client is about to send. msg is the
-// message and answered is the response it answers, nil for the first request
-// of an operation. An error stops the operation before msg is sent.
+// message and answered is the response it answers. answered is nil for the
+// first request of an operation and for the first pollReq of
+// [Client.ResumeEnrollment], whose response the client does not keep. An error
+// stops the operation before msg is sent.
 //
 // It is a test aid for [WithMessageMutator] and [WithProtectedMessageMutator].
 type MessageMutator func(msg, answered *pkicmp.PKIMessage) error

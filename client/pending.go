@@ -71,7 +71,8 @@ const opResume = "resume enrollment"
 // transaction by them, and the client needs the trust settings of the one that
 // sent the request, such as [WithTrustedCAs]. The header fields that later
 // messages repeat come from pending, so request options other than
-// [WithDeferredPolling] are ignored. For a request with central key
+// [WithDeferredPolling] and the test aids [WithCertConfStatus],
+// [WithMessageMutator] and [WithProtectedMessageMutator] are ignored. For a request with central key
 // generation, creds also decrypt the generated private key, which
 // [EnrollResult.GeneratedKey] then holds.
 //
@@ -120,6 +121,9 @@ func (c *Client) resumeEnrollment(ctx context.Context, pending *PendingEnrollmen
 	if err != nil {
 		return nil, &Error{Op: opResume, Err: err}
 	}
+	txn.certConfStatus = ropts.certConfStatus
+	txn.hooks = &ropts.hooks
+	state.hooks = &ropts.hooks
 	return c.pollEnrollment(ctx, txn, state, ropts.deferredPolling)
 }
 
