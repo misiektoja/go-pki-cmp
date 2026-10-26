@@ -63,6 +63,8 @@ tmp/
 !cms/testdata/kem/*.der
 !cms/testdata/encval/*.der
 !cms/testdata/encval/rsa-key.pem
+# OpenSSL password recipient vectors.
+!cms/testdata/pwri/*.der
 
 # OS-specific files
 .DS_Store
