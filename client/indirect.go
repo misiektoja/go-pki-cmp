@@ -182,8 +182,9 @@ func decryptCertificate(encrypted []byte, decrypt func(der []byte, key any) ([]b
 
 // answerChallenge proves possession of proof.key by answering the popdecc
 // challenge with a popdecr (RFC 9810 §5.2.8.3.3). It returns the popdecr and
-// the verified response to it, which carries the certificate.
-func (c *Client) answerChallenge(ctx context.Context, req, challenge *pkicmp.PKIMessage, creds pkicmp.Credentials, proof *decryptionProof, knownSigner *x509.Certificate) (*pkicmp.PKIMessage, *cmpHTTPResponse, *pkicmp.VerifyResult, error) {
+// the verified response to it, which carries the certificate. hooks are the
+// test aids that change the popdecr.
+func (c *Client) answerChallenge(ctx context.Context, req, challenge *pkicmp.PKIMessage, creds pkicmp.Credentials, proof *decryptionProof, knownSigner *x509.Certificate, hooks *messageHooks) (*pkicmp.PKIMessage, *cmpHTTPResponse, *pkicmp.VerifyResult, error) {
 	if proof == nil || proof.method != ChallengeResponse {
 		return nil, nil, nil, &Error{Op: "the CA sent a popdecc challenge the request did not ask for"}
 	}
@@ -230,8 +231,8 @@ func (c *Client) answerChallenge(ctx context.Context, req, challenge *pkicmp.PKI
 	msg.Header.TransactionID = req.Header.TransactionID
 	msg.Header.PVNO = req.Header.PVNO
 	msg.Header.SenderKID = req.Header.SenderKID
-	if err := creds.Protect(msg); err != nil {
-		return nil, nil, nil, &Error{Op: "protect popdecr", Err: err}
+	if err := hooks.protect(msg, challenge, creds, "popdecr"); err != nil {
+		return nil, nil, nil, err
 	}
 	der, err := c.encodeRequest(msg)
 	if err != nil {

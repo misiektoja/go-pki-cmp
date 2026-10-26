@@ -262,6 +262,16 @@
 // more. A grant the request did not ask for is honored as well, because the
 // CA has closed the transaction.
 //
+// # Testing a CA
+//
+// Three request options are test aids that send deliberately wrong messages,
+// to check how a CA handles them. [WithCertConfStatus] rejects an issued
+// certificate in the certConf. [WithMessageMutator] changes each message of
+// the operation before it is protected, for example to send a stale
+// recipNonce or a wrong certHash. [WithProtectedMessageMutator] changes it
+// after the protection, for example to remove it. Without them nothing
+// changes. Do not use them in production.
+//
 // # Limits
 //
 // [DefaultMaxResponseBytes] (10 MiB) caps response body size to prevent memory

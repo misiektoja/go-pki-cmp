@@ -53,7 +53,10 @@ func (c *Client) SendGenM(ctx context.Context, items []pkicmp.InfoTypeAndValue, 
 		if vr != nil {
 			knownSigner = vr.ProtectionCertificate
 		}
-		state := &pollState{delayed: msg.Header, recipNonce: resp.Header.SenderNonce, certReqID: -1, knownSigner: knownSigner}
+		state := &pollState{
+			delayed: msg.Header, recipNonce: resp.Header.SenderNonce, certReqID: -1, knownSigner: knownSigner,
+			response: resp, hooks: &ropts.hooks,
+		}
 		cmpResp, _, err = c.poll(ctx, state, creds, false)
 		if err != nil {
 			return nil, err

@@ -53,7 +53,7 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 	// The delayed request a final response may refer back to is the popdecr when there was a challenge.
 	delayed := msg.Header
 	if resp.Body.Type == pkicmp.BodyTypePopDecC {
-		popdecr, answered, answeredVR, err := c.answerChallenge(ctx, msg, resp, creds, proof, knownSigner)
+		popdecr, answered, answeredVR, err := c.answerChallenge(ctx, msg, resp, creds, proof, knownSigner, &opts.hooks)
 		if err != nil {
 			return nil, cmpResp.wrapError(err)
 		}
@@ -88,6 +88,8 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 		proof:           proof,
 		central:         opts.centralKeyGeneration,
 		creds:           creds,
+		certConfStatus:  opts.certConfStatus,
+		hooks:           &opts.hooks,
 	}
 	if certResp.Status.Status == pkicmp.StatusWaiting {
 		if err := checkCertReqID(certResp, certReqIDs); err != nil {
@@ -98,6 +100,8 @@ func (c *Client) enroll(ctx context.Context, reqBody *pkicmp.PKIBody, expectedRe
 			recipNonce:  resp.Header.SenderNonce,
 			certReqID:   certResp.CertReqID,
 			knownSigner: knownSigner,
+			response:    resp,
+			hooks:       &opts.hooks,
 		}
 		if opts.deferredPolling {
 			pending, err := txn.pending(state)
@@ -125,6 +129,10 @@ type enrollment struct {
 	// central marks a request that asked the CA to generate the key pair.
 	central bool
 	creds   pkicmp.Credentials
+	// certConfStatus and hooks are the test aids of the request options. A
+	// resumed enrollment has none.
+	certConfStatus *pkicmp.PKIStatusInfo
+	hooks          *messageHooks
 }
 
 // pollEnrollment polls for the final response to a waiting enrollment and
@@ -180,6 +188,7 @@ func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp 
 	implicit := hasImplicitConfirm(&resp.Header)
 	conf := &certConfirmation{
 		header: txn.header, resp: resp, creds: txn.creds, trustPool: trustPool, knownSigner: knownSigner, implicit: implicit,
+		hooks: txn.hooks,
 	}
 
 	// The rejection repeats the CA's certReqId, since that is the value the CA
@@ -221,6 +230,10 @@ func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp 
 		certStatus, err := pkicmp.NewCertStatus(cert, certResp.CertReqID)
 		if err != nil {
 			return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
+		}
+		if txn.certConfStatus != nil {
+			status := *txn.certConfStatus
+			certStatus.StatusInfo = &status
 		}
 		if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
 			return nil, &ConfirmationError{Certificate: cert, GeneratedKey: generated, Err: err}
@@ -297,6 +310,7 @@ type certConfirmation struct {
 	trustPool   *x509.CertPool
 	knownSigner *x509.Certificate
 	implicit    bool // the response granted implicit confirmation
+	hooks       *messageHooks
 }
 
 // sendCertConf sends a certConf carrying status and checks that the CA answers with pkiConf.
@@ -317,8 +331,8 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 	// cert SubjectKeyId; for MAC-based creds it must be set explicitly.
 	confMsg.Header.SenderKID = conf.header.SenderKID
 
-	if err := conf.creds.Protect(confMsg); err != nil {
-		return &Error{Op: "protect certConf", Err: err}
+	if err := conf.hooks.protect(confMsg, conf.resp, conf.creds, "certConf"); err != nil {
+		return err
 	}
 
 	confDER, err := c.encodeRequest(confMsg)
@@ -427,8 +441,8 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 	}
 	msg.Header.GeneralInfo = append(msg.Header.GeneralInfo, opts.generalInfo...)
 
-	if err := creds.Protect(msg); err != nil {
-		return nil, &Error{Op: "protect request", Err: err}
+	if err := opts.hooks.protect(msg, nil, creds, "request"); err != nil {
+		return nil, err
 	}
 	return msg, nil
 }
@@ -727,6 +741,10 @@ type pollState struct {
 	nextPoll time.Time
 	// waiting is set when polling stops without a final response while the request still waits.
 	waiting bool
+	// response is the last response, which the next pollReq answers. It is nil for a resumed enrollment.
+	response *pkicmp.PKIMessage
+	// hooks are the test aids that change each pollReq.
+	hooks *messageHooks
 }
 
 // poll implements the client-side polling state machine (RFC 9810 §5.3.22).
@@ -769,8 +787,8 @@ func (c *Client) poll(ctx context.Context, state *pollState, creds pkicmp.Creden
 		pollMsg.Header.PVNO = state.delayed.PVNO
 		pollMsg.Header.SenderKID = state.delayed.SenderKID
 
-		if err := creds.Protect(pollMsg); err != nil {
-			return nil, nil, &Error{Op: "protect poll request", Err: err}
+		if err := state.hooks.protect(pollMsg, state.response, creds, "poll request"); err != nil {
+			return nil, nil, err
 		}
 
 		pollDER, err := c.encodeRequest(pollMsg)
@@ -827,6 +845,7 @@ func (c *Client) poll(ctx context.Context, state *pollState, creds pkicmp.Creden
 			}
 			waitTime = c.clampCheckAfter(checkAfter)
 			state.recipNonce = resp.Header.SenderNonce
+			state.response = resp
 			state.nextPoll = time.Now().Add(waitTime)
 			if once {
 				state.waiting = true

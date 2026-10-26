@@ -33,6 +33,10 @@ type requestOptions struct {
 	// algorithm centralKeyAlgorithm or of the CA's choice when it is nil.
 	centralKeyGeneration bool
 	centralKeyAlgorithm  *pkicmp.AlgorithmIdentifier
+	// certConfStatus and hooks are the test aids of [WithCertConfStatus],
+	// [WithMessageMutator] and [WithProtectedMessageMutator].
+	certConfStatus *pkicmp.PKIStatusInfo
+	hooks          messageHooks
 }
 
 // RequestOption configures a specific enrollment request.
