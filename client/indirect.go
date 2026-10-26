@@ -233,7 +233,7 @@ func (c *Client) answerChallenge(ctx context.Context, req, challenge *pkicmp.PKI
 	if err := creds.Protect(msg); err != nil {
 		return nil, nil, nil, &Error{Op: "protect popdecr", Err: err}
 	}
-	der, err := msg.MarshalBinary()
+	der, err := c.encodeRequest(msg)
 	if err != nil {
 		return nil, nil, nil, &Error{Op: "marshal popdecr", Err: err}
 	}

@@ -28,6 +28,8 @@ type Client struct {
 	ignoreCAPubsTrust   bool
 	minMACIterations    int
 	maxMACIterations    int
+	// raCreds sign the nested message around every request when the client acts as a registration authority.
+	raCreds *pkicmp.SignatureCredentials
 }
 
 const (
@@ -193,6 +195,25 @@ func WithMACIterationLimits(minimum, maximum int) Option {
 		c.minMACIterations = minimum
 		c.maxMACIterations = maximum
 	}
+}
+
+// WithRegistrationAuthority makes the client act as a registration authority
+// (RA) that approves the requests it sends (RFC 9483 §5.2.2.1). Every request
+// of an operation, including certConf, pollReq and popdecr, goes out wrapped in
+// a nested message signed with creds. The nested message copies the
+// transactionID, senderNonce and recipNonce of the request and carries the RA
+// certificate and its chain in extraCerts. The request inside keeps the
+// protection made with the credentials of the Send method, so the CA can verify
+// both.
+//
+// The CA answers the request itself, not the nested message, so responses are
+// verified as without this option. An error about the nested message, such as a
+// refusal of the RA, arrives as an error response to the request.
+//
+// A nested message carries one request. Batching several requests (RFC 9483
+// §5.2.2.2) is not supported. A nil creds turns the wrapping off.
+func WithRegistrationAuthority(creds *pkicmp.SignatureCredentials) Option {
+	return func(c *Client) { c.raCreds = creds }
 }
 
 // WithMaxResponseBytes sets the maximum number of bytes accepted from a CMP

@@ -120,6 +120,19 @@
 // credentials or an RSA or ECDSA protection key. The client checks that the
 // key matches the issued certificate before it confirms the certificate.
 //
+// # Registration authorities
+//
+// [WithRegistrationAuthority] makes the client act as a registration authority
+// that approves the requests it forwards (RFC 9483 §5.2.2.1). Every request,
+// including certConf and pollReq, goes out in a nested message signed with the
+// RA credentials, while the request inside keeps the protection of the end
+// entity:
+//
+//	c := client.NewClient(url, client.WithRegistrationAuthority(raCreds))
+//	result, err := c.SendIR(ctx, deviceKey, deviceCreds, opts...)
+//
+// The CA answers the request itself, so responses are verified as usual.
+//
 // # Support messages
 //
 // General messages ask the CA for information rather than a certificate:

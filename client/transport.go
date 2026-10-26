@@ -321,7 +321,7 @@ func (c *Client) sendCertConf(ctx context.Context, conf *certConfirmation, statu
 		return &Error{Op: "protect certConf", Err: err}
 	}
 
-	confDER, err := confMsg.MarshalBinary()
+	confDER, err := c.encodeRequest(confMsg)
 	if err != nil {
 		return &Error{Op: "marshal certConf", Err: err}
 	}
@@ -435,7 +435,7 @@ func (c *Client) newRequest(reqBody *pkicmp.PKIBody, creds pkicmp.Credentials, o
 
 // exchangeFirst sends the first request of an operation and returns its verified response.
 func (c *Client) exchangeFirst(ctx context.Context, msg *pkicmp.PKIMessage, creds pkicmp.Credentials) (*cmpHTTPResponse, *pkicmp.VerifyResult, error) {
-	reqDER, err := msg.MarshalBinary()
+	reqDER, err := c.encodeRequest(msg)
 	if err != nil {
 		return nil, nil, &Error{Op: "marshal request", Err: err}
 	}
@@ -773,7 +773,7 @@ func (c *Client) poll(ctx context.Context, state *pollState, creds pkicmp.Creden
 			return nil, nil, &Error{Op: "protect poll request", Err: err}
 		}
 
-		pollDER, err := pollMsg.MarshalBinary()
+		pollDER, err := c.encodeRequest(pollMsg)
 		if err != nil {
 			return nil, nil, &Error{Op: "marshal poll request", Err: err}
 		}
