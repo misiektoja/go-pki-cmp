@@ -421,6 +421,17 @@ func (t *transactionTracker) setCompleted(credentialID, transactionID []byte) {
 	}
 }
 
+// remove deletes the transaction when its entry is still entry and reports
+// whether it did, so that only one caller hears that the transaction ended.
+func (t *transactionTracker) remove(credentialID, transactionID []byte, entry *transactionEntry) bool {
+	if !t.transactions.CompareAndDelete(makeKey(credentialID, transactionID), entry) {
+		return false
+	}
+	t.count.Add(-1)
+	t.getOrCreateCredCount(entry.credentialKey).Add(-1)
+	return true
+}
+
 func (t *transactionTracker) delete(credentialID, transactionID []byte) {
 	key := makeKey(credentialID, transactionID)
 	v, loaded := t.transactions.LoadAndDelete(key)

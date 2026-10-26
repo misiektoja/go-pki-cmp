@@ -149,7 +149,8 @@ func WithSender(name pkix.Name) Option {
 // WithConfirmWaitTime sets the confirmWaitTime included in certificate responses
 // and controls when [Server.CleanupExpired] considers transactions stale, except
 // waiting requests, which [WithWaitingLifetime] governs. The default is 10
-// seconds. RFC 9810 §5.1.1.2.
+// seconds. RFC 9810 §5.1.1.2. A certConf that arrives later is refused with
+// badRequest and the CA hears [ConfirmExpired], as RFC 9483 §4.1.1 asks.
 func WithConfirmWaitTime(d time.Duration) Option {
 	return func(c *serverConfig) {
 		c.confirmWait = d

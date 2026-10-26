@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
@@ -69,6 +70,20 @@ func (s *Server) handleCertConf(ctx context.Context, msg *pkicmp.PKIMessage, sen
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRequest,
 			StatusString: pkicmp.PKIFreeText{"unknown transaction"},
+		})
+	}
+
+	// RFC 9483 §4.1.1: a certConf that misses confirmWaitTime is handled like
+	// a rejection, also when CleanupExpired has not removed the transaction yet.
+	if s.cfg.confirmWait > 0 && time.Since(entry.lastActivity) > s.cfg.confirmWait {
+		if s.remove(credID, txnID, entry) && s.cfg.confirmer != nil {
+			_ = s.cfg.confirmer.ConfirmCertificate(contextWithPOPMethod(ctx, entry.popMethod),
+				entry.cert, ConfirmExpired, entry.issueRef)
+		}
+		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
+			Status:       pkicmp.StatusRejection,
+			FailInfo:     pkicmp.FailBadRequest,
+			StatusString: pkicmp.PKIFreeText{"certConf after confirmWaitTime"},
 		})
 	}
 
