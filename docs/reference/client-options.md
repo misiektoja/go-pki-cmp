@@ -60,7 +60,9 @@ nothing unless given. Do not use them in production.
 
 The client verifies each response against the message as changed. A mutator that returns an error
 stops the call before the message is sent. A changed `certConf` that the CA refuses ends in a
-`ConfirmationError` that holds the certificate. `ResumeEnrollment` ignores the options.
+`ConfirmationError` that holds the certificate. `ResumeEnrollment` applies them to its `pollReq`
+and `certConf` messages. Its first `pollReq` answers a response the client did not keep, so the
+mutators get nil for it.
 
 ```go
 // Send a certConf whose certHash does not match the certificate.

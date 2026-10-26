@@ -62,7 +62,9 @@ Deployed clients break them, so they are off by default. `WithStrictProfileValid
 * A signed request must carry `extraCerts` that lead with the protection certificate and form a
   chain.
 * A request must carry a transaction ID and every message a senderNonce of at least 128 bits.
-* A `certConf` must hold one CertStatus and must not reuse a senderNonce.
+* A `certConf` must hold one CertStatus.
+* A `certConf`, `pollReq` or `popdecr` must not repeat the senderNonce of the last request or
+  response in the transaction.
 * A signature proof of possession must not carry poposkInput.
 * Proof by decryption is allowed only for keys that cannot sign.
 
