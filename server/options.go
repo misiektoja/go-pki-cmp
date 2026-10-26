@@ -62,6 +62,7 @@ type serverConfig struct {
 	signerKey                    crypto.Signer
 	signerCert                   *x509.Certificate
 	signerChain                  []*x509.Certificate
+	unprotectedPreAuthErrors     bool
 	secretLookup                 SecretLookup
 	certificateLookup            CertificateLookup
 	extraCerts                   []*x509.Certificate
@@ -115,6 +116,31 @@ func WithSigner(key crypto.Signer, cert *x509.Certificate, chain ...*x509.Certif
 		c.signerKey = key
 		c.signerCert = cert
 		c.signerChain = chain
+	}
+}
+
+// WithUnprotectedErrorsBeforeAuthentication sends an error raised before the
+// sender was authenticated without protection: a malformed message, an
+// unsupported version, a wrong recipient, an unknown sender or a failed MAC or
+// signature check. By default such errors are signed with the [WithSigner]
+// key, as RFC 9483 §3.6.4 recommends. The same section allows omitting the
+// protection when it is not clear which credential the recipient could verify
+// it with, which is the case before authentication.
+//
+// Use it when the signer is slow. One SLH-DSA-SHA2-128s signature takes well
+// over 100 ms, so unauthenticated requests of a few bytes can keep a CPU core
+// busy signing errors nobody can verify. A faster response signer, such as an
+// ML-DSA or ECDSA registration authority certificate, avoids the cost without
+// this option. A request forwarded by an authenticated registration authority
+// is answered with a protected error either way, because it comes from a
+// known peer.
+//
+// RFC 9483 §3.5 requires a client to accept an unprotected error. The client
+// of this module reports one as an unverified status. OpenSSL reports a
+// missing protection instead of the status unless -unprotected_errors is set.
+func WithUnprotectedErrorsBeforeAuthentication() Option {
+	return func(c *serverConfig) {
+		c.unprotectedPreAuthErrors = true
 	}
 }
 

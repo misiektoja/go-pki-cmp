@@ -20,13 +20,15 @@ func (s *Server) buildResponseWithEchoProtection(req *pkicmp.PKIMessage, body *p
 	return s.buildResponseInternal(req, body, sender, nil, protectionParams)
 }
 
-// Echo transactionID and senderNonce as recipNonce and generate a fresh senderNonce
-// per RFC 9810 section 5.1.1.
-func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, sender *SenderIdentity, generalInfo []pkicmp.InfoTypeAndValue, protectionParams pkicmp.MACCredentialOption) *pkicmp.PKIMessage {
+// newResponse creates an unprotected response to req. It echoes the
+// transactionID, answers the senderNonce with recipNonce and carries a fresh
+// senderNonce (RFC 9810 §5.1.1). It has no senderKID and no extraCerts, which
+// only serve to verify protection.
+func (s *Server) newResponse(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, generalInfo []pkicmp.InfoTypeAndValue) *pkicmp.PKIMessage {
 	senderNonce := make([]byte, 16)
 	_, _ = rand.Read(senderNonce)
 
-	resp := &pkicmp.PKIMessage{
+	return &pkicmp.PKIMessage{
 		Header: pkicmp.PKIHeader{
 			PVNO:          req.Header.PVNO,
 			Sender:        s.responseSender(),
@@ -39,6 +41,11 @@ func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIB
 		},
 		Body: body,
 	}
+}
+
+// buildResponseInternal creates a response and protects it for sender.
+func (s *Server) buildResponseInternal(req *pkicmp.PKIMessage, body *pkicmp.PKIBody, sender *SenderIdentity, generalInfo []pkicmp.InfoTypeAndValue, protectionParams pkicmp.MACCredentialOption) *pkicmp.PKIMessage {
+	resp := s.newResponse(req, body, generalInfo)
 
 	// RFC 9810 §5.1.1: senderKID names the key that protects the response.
 	// protectResponseWithOptions MAC-protects the response to a MAC-protected
@@ -93,6 +100,19 @@ func (s *Server) responseSender() pkicmp.GeneralName {
 // signed error. Pass nil for errors raised before authentication.
 func (s *Server) buildErrorResponse(req *pkicmp.PKIMessage, sender *SenderIdentity, si pkicmp.PKIStatusInfo) *pkicmp.PKIMessage {
 	return s.buildResponse(req, pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: si}), sender)
+}
+
+// unauthenticatedError creates an error response for a request whose sender was
+// not authenticated. It carries no protection when
+// WithUnprotectedErrorsBeforeAuthentication is set, unless fwd reports that an
+// authenticated registration authority forwarded the request: that error goes
+// back to a known peer and is protected as any other.
+func (s *Server) unauthenticatedError(req *pkicmp.PKIMessage, fwd *forwarding, si pkicmp.PKIStatusInfo) *pkicmp.PKIMessage {
+	body := pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: si})
+	if s.cfg.unprotectedPreAuthErrors && fwd == nil {
+		return s.newResponse(req, body, nil)
+	}
+	return s.buildResponse(req, body, nil)
 }
 
 // buildRevRepResponse creates an rp with one status for the single revocation requested.

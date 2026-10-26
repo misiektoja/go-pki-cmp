@@ -124,13 +124,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // malformedMessageResponse refuses a message whose content after the header could not be decoded.
 //
-// The message was never authenticated, so the error is protected like any other
+// The message was never authenticated, so the error is answered like any other
 // error raised before authentication.
 func (s *Server) malformedMessageResponse(header *pkicmp.PKIHeader) *pkicmp.PKIMessage {
 	req := &pkicmp.PKIMessage{Header: *header}
 	// RFC 9810 §7: answer with the closest supported version.
 	req.Header.PVNO = min(max(req.Header.PVNO, pkicmp.PVNO2), pkicmp.PVNO3)
-	return s.buildErrorResponse(req, nil, pkicmp.PKIStatusInfo{
+	return s.unauthenticatedError(req, nil, pkicmp.PKIStatusInfo{
 		Status:       pkicmp.StatusRejection,
 		FailInfo:     pkicmp.FailBadDataFormat,
 		StatusString: pkicmp.PKIFreeText{"malformed message"},
@@ -160,7 +160,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 
 	// RFC 9810 §7: Validate PVNO.
 	if msg.Header.PVNO < pkicmp.PVNO2 || msg.Header.PVNO > pkicmp.PVNO3 {
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailUnsupportedVersion,
 			StatusString: pkicmp.PKIFreeText{fmt.Sprintf("unsupported pvno %d", msg.Header.PVNO)},
@@ -176,7 +176,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 
 	// RFC 9810 §5.1.1: Verify that the recipient matches the server's identity.
 	if err := s.verifyRecipient(msg); err != nil {
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     pkicmp.FailBadRequest,
 			StatusString: statusText(err),
@@ -195,7 +195,7 @@ func (s *Server) process(ctx context.Context, msg *pkicmp.PKIMessage, fwd *forwa
 		if errors.As(err, &srvErr) && srvErr.FailureInfo == pkicmp.FailBadAlg {
 			failInfo = pkicmp.FailBadAlg
 		}
-		resp := s.buildErrorResponse(msg, nil, pkicmp.PKIStatusInfo{
+		resp := s.unauthenticatedError(msg, fwd, pkicmp.PKIStatusInfo{
 			Status:       pkicmp.StatusRejection,
 			FailInfo:     failInfo,
 			StatusString: statusText(err),
