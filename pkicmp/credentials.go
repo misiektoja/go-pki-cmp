@@ -251,6 +251,12 @@ func (c *SignatureCredentials) Certificate() *x509.Certificate {
 	return c.cert
 }
 
+// Key returns the signing key. A client uses it to decrypt a private key the
+// CA generated for it and encrypted to the protection certificate.
+func (c *SignatureCredentials) Key() crypto.Signer {
+	return c.key
+}
+
 // WithHash returns credentials that sign with the digest hash instead of the
 // one the key type selects. An RSA or ECDSA key takes SHA-1, SHA-256, SHA-384
 // or SHA-512. Other key types take no digest and are refused with a
