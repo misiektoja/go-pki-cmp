@@ -65,6 +65,9 @@ tmp/
 !cms/testdata/encval/rsa-key.pem
 # OpenSSL password recipient vectors.
 !cms/testdata/pwri/*.der
+# OpenSSL key package vectors, the test key they wrap and the signer certificate.
+!pkicmp/testdata/keypackage/*.der
+!pkicmp/testdata/keypackage/kga.crt
 
 # OS-specific files
 .DS_Store
