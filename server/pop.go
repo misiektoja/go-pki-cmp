@@ -231,12 +231,13 @@ func (s *Server) challengePossession(ctx context.Context, msg *pkicmp.PKIMessage
 	}
 	respMsg := s.buildResponse(msg, pkicmp.NewPopDecCBody(&pkicmp.POPODecKeyChallContent{challenge}), sender)
 	if !s.setChallenged(credID, msg.Header.TransactionID, challengeState{
-		reqType:         req.reqType,
-		certReqID:       req.certReqID,
-		implicitConfirm: req.implicit,
-		request:         der,
-		answer:          answer,
-		senderNonce:     respMsg.Header.SenderNonce,
+		reqType:           req.reqType,
+		certReqID:         req.certReqID,
+		implicitConfirm:   req.implicit,
+		request:           der,
+		answer:            answer,
+		senderNonce:       respMsg.Header.SenderNonce,
+		clientSenderNonce: msg.Header.SenderNonce,
 	}) {
 		return s.buildErrorResponse(msg, sender, failure)
 	}
@@ -274,6 +275,10 @@ func (s *Server) handlePopDecR(ctx context.Context, msg *pkicmp.PKIMessage, send
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRecipientNonce,
 			StatusString: pkicmp.PKIFreeText{"recipNonce does not match the popdecc"},
 		})
+	}
+	// As for a certConf, a repeated senderNonce is only refused under WithStrictProfileValidation.
+	if s.cfg.strictProfile && reusesSenderNonce(msg, entry.senderNonce, entry.clientSenderNonce) {
+		return s.buildErrorResponse(msg, sender, senderNonceReused())
 	}
 	req := certRequestInfo{
 		certReqID: *entry.certReqID,

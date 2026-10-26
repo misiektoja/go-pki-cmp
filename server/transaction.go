@@ -123,7 +123,7 @@ type transactionEntry struct {
 	cert                *x509.Certificate
 	issueRef            any    // opaque CA reference for CertificateConfirmer
 	issuedSenderNonce   []byte // server's senderNonce from the issued response
-	clientSenderNonce   []byte // client's senderNonce from the cert request
+	clientSenderNonce   []byte // client's senderNonce from the request the last response answered
 	protectionAlgorithm *pkicmp.AlgorithmIdentifier
 	protectionParams    pkicmp.MACCredentialOption // decoded protection parameters for echo-back
 
@@ -220,8 +220,10 @@ type waitingState struct {
 	generatedKey []byte
 	pollRef      string
 	senderNonce  []byte
-	checkAfter   time.Duration
-	lastPollTime time.Time
+	// clientSenderNonce is the senderNonce of the request that the waiting response answered.
+	clientSenderNonce []byte
+	checkAfter        time.Duration
+	lastPollTime      time.Time
 }
 
 // setPending moves an active, waiting or challenged transaction to the waiting state w describes.
@@ -240,19 +242,20 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, w wa
 	}
 
 	newEntry := &transactionEntry{
-		state:           statePending,
-		lastActivity:    time.Now(),
-		credentialKey:   ck,
-		reqType:         w.reqType,
-		pollRef:         w.pollRef,
-		senderNonce:     w.senderNonce,
-		lastPollTime:    w.lastPollTime,
-		checkAfter:      w.checkAfter,
-		implicitConfirm: w.implicitConfirm,
-		popMethod:       w.popMethod,
-		privateKey:      w.privateKey,
-		generatedKey:    w.generatedKey,
-		certReqID:       &w.certReqID,
+		state:             statePending,
+		lastActivity:      time.Now(),
+		credentialKey:     ck,
+		reqType:           w.reqType,
+		pollRef:           w.pollRef,
+		senderNonce:       w.senderNonce,
+		clientSenderNonce: w.clientSenderNonce,
+		lastPollTime:      w.lastPollTime,
+		checkAfter:        w.checkAfter,
+		implicitConfirm:   w.implicitConfirm,
+		popMethod:         w.popMethod,
+		privateKey:        w.privateKey,
+		generatedKey:      w.generatedKey,
+		certReqID:         &w.certReqID,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
 }
@@ -260,16 +263,17 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, w wa
 // waiting returns the state of a waiting entry, for a transition that keeps the request's details.
 func (e *transactionEntry) waiting() waitingState {
 	w := waitingState{
-		reqType:         e.reqType,
-		implicitConfirm: e.implicitConfirm,
-		popMethod:       e.popMethod,
-		privateKey:      e.privateKey,
-		generatedKey:    e.generatedKey,
-		pollRef:         e.pollRef,
-		senderNonce:     e.senderNonce,
-		checkAfter:      e.checkAfter,
-		lastPollTime:    e.lastPollTime,
-		certReqID:       -1,
+		reqType:           e.reqType,
+		implicitConfirm:   e.implicitConfirm,
+		popMethod:         e.popMethod,
+		privateKey:        e.privateKey,
+		generatedKey:      e.generatedKey,
+		pollRef:           e.pollRef,
+		senderNonce:       e.senderNonce,
+		clientSenderNonce: e.clientSenderNonce,
+		checkAfter:        e.checkAfter,
+		lastPollTime:      e.lastPollTime,
+		certReqID:         -1,
 	}
 	if e.certReqID != nil {
 		w.certReqID = *e.certReqID
@@ -344,6 +348,8 @@ type challengeState struct {
 	request         []byte
 	answer          []byte
 	senderNonce     []byte
+	// clientSenderNonce is the senderNonce of the request that the popdecc answered.
+	clientSenderNonce []byte
 }
 
 // setChallenged moves an active transaction to the challenged state c describes.
@@ -354,16 +360,17 @@ func (t *transactionTracker) setChallenged(credentialID, transactionID []byte, c
 		return false
 	}
 	newEntry := &transactionEntry{
-		state:            stateChallenged,
-		lastActivity:     time.Now(),
-		credentialKey:    makeCredentialKey(credentialID),
-		reqType:          c.reqType,
-		popMethod:        POPChallengeResponse,
-		certReqID:        &c.certReqID,
-		implicitConfirm:  c.implicitConfirm,
-		senderNonce:      c.senderNonce,
-		challengeRequest: c.request,
-		challengeAnswer:  c.answer,
+		state:             stateChallenged,
+		lastActivity:      time.Now(),
+		credentialKey:     makeCredentialKey(credentialID),
+		reqType:           c.reqType,
+		popMethod:         POPChallengeResponse,
+		certReqID:         &c.certReqID,
+		implicitConfirm:   c.implicitConfirm,
+		senderNonce:       c.senderNonce,
+		clientSenderNonce: c.clientSenderNonce,
+		challengeRequest:  c.request,
+		challengeAnswer:   c.answer,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
 }

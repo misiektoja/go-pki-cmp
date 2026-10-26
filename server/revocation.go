@@ -261,11 +261,12 @@ func (s *Server) handleRevocation(ctx context.Context, msg *pkicmp.PKIMessage, s
 		} else {
 			respMsg := s.buildErrorResponse(msg, sender, waitingStatus(resp.Waiting))
 			if s.setPending(credID, txnID, waitingState{
-				reqType:     requestRR,
-				certReqID:   -1,
-				pollRef:     resp.Waiting.PollRef,
-				senderNonce: respMsg.Header.SenderNonce,
-				checkAfter:  advertisedCheckAfter(resp.Waiting.CheckAfter),
+				reqType:           requestRR,
+				certReqID:         -1,
+				pollRef:           resp.Waiting.PollRef,
+				senderNonce:       respMsg.Header.SenderNonce,
+				clientSenderNonce: msg.Header.SenderNonce,
+				checkAfter:        advertisedCheckAfter(resp.Waiting.CheckAfter),
 			}) {
 				return respMsg
 			}

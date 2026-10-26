@@ -282,15 +282,16 @@ func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sende
 			certReqID: req.certReqID, status: waitingStatus(resp.Waiting), reqType: req.reqType, implicit: req.implicit,
 		})
 		if !s.setPending(credID, reply.Header.TransactionID, waitingState{
-			reqType:         req.reqType,
-			certReqID:       req.certReqID,
-			implicitConfirm: req.implicit,
-			popMethod:       req.method,
-			privateKey:      req.privateKey,
-			generatedKey:    req.generatedKey,
-			pollRef:         resp.Waiting.PollRef,
-			senderNonce:     respMsg.Header.SenderNonce,
-			checkAfter:      advertisedCheckAfter(resp.Waiting.CheckAfter),
+			reqType:           req.reqType,
+			certReqID:         req.certReqID,
+			implicitConfirm:   req.implicit,
+			popMethod:         req.method,
+			privateKey:        req.privateKey,
+			generatedKey:      req.generatedKey,
+			pollRef:           resp.Waiting.PollRef,
+			senderNonce:       respMsg.Header.SenderNonce,
+			clientSenderNonce: reply.Header.SenderNonce,
+			checkAfter:        advertisedCheckAfter(resp.Waiting.CheckAfter),
 		}) {
 			return s.buildErrorResponse(reply, sender, pkicmp.PKIStatusInfo{
 				Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,
@@ -428,6 +429,10 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 			StatusString: pkicmp.PKIFreeText{"recipNonce mismatch"},
 		})
 	}
+	// As for a certConf, a repeated senderNonce is only refused under WithStrictProfileValidation.
+	if s.cfg.strictProfile && reusesSenderNonce(msg, pending.senderNonce, pending.clientSenderNonce) {
+		return s.buildErrorResponse(msg, sender, senderNonceReused())
+	}
 
 	waiting := pending.waiting()
 	if pending.certReqID != nil && !pollRefersTo(certReqID, waiting.certReqID) {
@@ -512,6 +517,7 @@ func (s *Server) answerPoll(msg *pkicmp.PKIMessage, sender *SenderIdentity, cred
 	pollRep := pkicmp.PollRepContent{item}
 	respMsg := s.buildResponse(msg, pkicmp.NewPollRepBody(&pollRep), sender)
 	waiting.senderNonce = respMsg.Header.SenderNonce
+	waiting.clientSenderNonce = msg.Header.SenderNonce
 	if !s.setPending(credID, msg.Header.TransactionID, waiting) {
 		return s.buildErrorResponse(msg, sender, pkicmp.PKIStatusInfo{
 			Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure,

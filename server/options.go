@@ -202,7 +202,8 @@ func WithImplicitConfirm() Option {
 //     protection certificate or that hold a certificate not certifying the one
 //     before it (§3.3). The chain may stop below a self-signed root, which §3.3
 //     recommends leaving out,
-//   - a certConf whose senderNonce repeats one used earlier in the transaction (§3.1),
+//   - a certConf, pollReq or popdecr whose senderNonce repeats the senderNonce
+//     of the last request or response in the transaction (§3.1),
 //   - a request without a transactionID (§3.5), which RFC 4210 and RFC 9810
 //     let the server assign instead,
 //   - a message whose senderNonce is missing or shorter than 128 bits (§3.5),
