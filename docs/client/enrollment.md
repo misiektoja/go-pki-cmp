@@ -150,7 +150,7 @@ reported to the CA, as RFC 9483 section 3.6.1 asks. The option applies to `ir`, 
 | --- | --- |
 | `*pkicmp.PKIStatusError` | The CA refused the request in a verified response. `pkicmp.HasFailure(err, pkicmp.FailBadPOP)` tests a failure bit |
 | `*client.UnverifiedStatusError` | The CA refused in a signed error the client could not verify, usually because no trust anchor is set. Log it, do not act on it |
-| `*client.ConfirmationError` | The CA issued a certificate but the `certConf` exchange failed. The error holds the certificate |
+| `*client.ConfirmationError` | The CA issued a certificate but the `certConf` exchange failed. The error holds the certificate and the key the CA generated for a request for central key generation |
 | `*client.PendingError` | Polling stopped while the CA still had the request waiting. `Pending` resumes it with `ResumeEnrollment` |
 | `*client.Error` | A transport or verification failure, with the failed step in `Op` |
 

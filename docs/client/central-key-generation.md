@@ -49,7 +49,9 @@ signer certificate must also chain to the trusted CAs and either assert id-kp-cm
 certificate or be the certificate that protected the response. Without trusted CAs the client does
 not validate the signer, which RFC 9483 section 4.1.6 allows for a MAC-protected exchange.
 
-When a check fails, the client rejects the certificate in its `certConf` and returns an error.
+When a check fails, the client rejects the certificate in its `certConf` and returns an error. When
+the `certConf` itself fails after the checks, the `ConfirmationError` holds the key in `GeneratedKey`
+next to the certificate.
 
 ## Result
 
