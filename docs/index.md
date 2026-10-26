@@ -49,10 +49,12 @@ each piece you replace in your own client or server.
 | Revoke a certificate | [Revocation (client)](client/revocation.md) |
 | Fetch CA certificates, root updates, templates or CRLs | [Support messages (client)](client/support-messages.md) |
 | Certify an ML-KEM or encryption-only key | [Keys that cannot sign (client)](client/indirect-pop.md) |
+| Have the CA generate my key pair | [Keys the CA generates](client/central-key-generation.md) |
 | Put a CMP front end on my CA | [Implementing a CA](server/ca.md) |
 | Authenticate devices by shared secret or certificate | [Authentication](server/authentication.md) |
 | Accept clients that break RFC 9483 rules | [Policy and client compatibility](server/policy.md) |
 | Hold requests for an operator's approval | [Delayed issuance and confirmation](server/delayed-issuance.md) |
+| Generate key pairs for devices that cannot | [Keys the server generates](server/central-key-generation.md) |
 | Accept requests forwarded by a registration authority | [Registration authorities](server/registration-authorities.md) |
 | Run several replicas or survive a restart | [Transactions and recovery](server/transactions.md) |
 | Build or verify CMP messages myself | [Messages and protection](pkicmp/messages-and-protection.md) |

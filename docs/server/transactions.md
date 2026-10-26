@@ -57,7 +57,9 @@ The host must:
   completed transaction ID. The library provides neither database transactions nor a response cache.
 
 Treat snapshots as trusted private server data, never as client input. They have a versioned format
-and contain no secrets or signing keys, unless your `IssueRef` holds them. `IssueRef` must be JSON
+and contain no secrets or signing keys, unless your `IssueRef` holds them. A waiting request for
+[central key generation](central-key-generation.md) keeps its private key encrypted for the client.
+`IssueRef` must be JSON
 serializable. Pass a decoder to `RestoreTransactions` when its original Go type matters. A nil
 decoder uses the standard encoding/json value types.
 

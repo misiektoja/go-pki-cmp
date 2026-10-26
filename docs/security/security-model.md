@@ -63,6 +63,8 @@ checks have fuzz targets that CI runs.
 * Every response is verified with the shared secret or against the trust anchors.
 * The transaction ID, nonces and `certReqId` must match the request.
 * The issued certificate must certify the requested key and chain to the anchors.
+* A centrally generated private key must carry a valid signature and match the issued certificate.
+  With trust anchors its signer must chain to them and be a key generation authority.
 * `caPubs` extend the anchors only for a MAC-protected response and never with `WithoutCAPubsTrust`.
 * Waits between polls are clamped and the response size is limited.
 * An unverified error status is reported as `UnverifiedStatusError` and never as a
@@ -78,6 +80,7 @@ checks have fuzz targets that CI runs.
 | Certificate contents | Remove requested extensions before you set your own and check every subject attribute |
 | CA key protection | `WithSigner` takes a `crypto.Signer`, so the key can stay in an HSM |
 | Encrypted certificates | Publish only after `ConfirmAccepted` and revoke on `ConfirmExpired` or `ConfirmRejected` |
+| Central key generation | The `KeyGenerator` keeps no copy of a private key it hands out unless your key archive policy needs one. The key generation authority key is protected like the CA key |
 | Registration authorities | The `RAAuthorizer` must identify the RA itself, not only a valid protection |
 | Transport | TLS if the deployment needs confidentiality. CMP protection gives integrity and authentication only |
 | Rate limiting and audit | Middleware. The library has no rate limits beyond the transaction caps |
@@ -91,7 +94,8 @@ rule. They keep the checks that authenticate a request, but some remove a bindin
 * `WithPoposkInputVariants` accepts a proof that does not cover the template, so only the message
   protection binds the requested names to the key holder.
 * `WithOptionalPollReqRecipNonce` lets a recorded `pollReq` of the same transaction collect the final
-  response. That response holds no secret.
+  response. That response holds no secret in the clear. A centrally generated key in it is
+  encrypted for the requester.
 * `WithMACRevocation` lets a shared secret revoke. Your `RevocationAuthorizer` decides which
   certificates.
 * `WithSHA1Signatures` accepts a deprecated hash.

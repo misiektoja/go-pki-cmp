@@ -7,13 +7,20 @@ for your application.
 
 ### Some CMP operations are not implemented
 
-Key recovery, central key generation, cross-certification and announcements are not implemented.
+Key recovery, cross-certification and announcements are not implemented.
 Requests for them are refused with badRequest and the text "message type not supported".
 
 ### One request per nested message
 
 A registration authority may forward one request per nested message. Batches (RFC 9483 section
 5.2.2.2) are refused with badRequest. The client does not send nested messages.
+
+### Central key generation needs a key that can decrypt
+
+A centrally generated private key is encrypted for the requester. A signature-protected request
+needs an RSA or ECDSA P-256, P-384 or P-521 protection key. Other keys, such as Ed25519 or ML-DSA, can
+receive a generated key only through a MAC-protected request. The CMP version 2 EncryptedValue form
+of the private key is not supported.
 
 ### ML-KEM-512 and older Dilithium encodings
 

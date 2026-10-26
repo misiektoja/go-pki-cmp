@@ -11,6 +11,8 @@ whole exchange: protection, response verification, polling and certificate confi
 | `SendP10CR` | `p10cr` | Send an existing PKCS #10 CSR |
 
 Keys that cannot sign, such as ML-KEM, use the methods in [Keys that cannot sign](indirect-pop.md).
+A device that lets the CA generate its key pair uses the methods in
+[Keys the CA generates](central-key-generation.md).
 
 ## Credentials
 

@@ -36,6 +36,14 @@ full.
 | [`WithSignatureProtectionPOP`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithSignatureProtectionPOP) | Off | Accepts a request without proof whose protection was signed with the requested key |
 | [`WithPoposkInputVariants`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithPoposkInputVariants) | Off | Accepts the signature proof the Insta Certifier 10 cmpclient sends |
 
+## Central key generation
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| [`WithCentralKeyGeneration`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGeneration) | Off | Generates the key pair for requests without a public key and signs the private key with a key generation authority |
+| [`WithCentralKeyGenerationAESKeyWrap`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAESKeyWrap) | Off | Encrypts the key for a MAC-protected request with the AES key wrap instead of the RFC 3211 key wrap that OpenSSL reads |
+| [`WithCentralKeyGenerationAsymmetricKeyPackage`](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp/server#WithCentralKeyGenerationAsymmetricKeyPackage) | Off | Signs the key as an RFC 9810 AsymmetricKeyPackage instead of the id-data that OpenSSL reads |
+
 ## Request rules
 
 | Option | Default | Effect |
