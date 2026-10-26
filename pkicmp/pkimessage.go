@@ -203,7 +203,8 @@ func withHeader(err error, header PKIHeader) error {
 }
 
 // unmarshalAfterHeader decodes the body, protection and extraCerts that follow the header in seq
-// and checks that neither seq nor s, the input after the message, holds trailing data.
+// and checks that the extraCerts wrapper, seq and s, the input after the message, hold no trailing
+// data.
 func (m *PKIMessage) unmarshalAfterHeader(s, seq *cryptobyte.String) error {
 	// PKIBody
 	var rawBody cryptobyte.String
@@ -251,6 +252,10 @@ func (m *PKIMessage) unmarshalAfterHeader(s, seq *cryptobyte.String) error {
 				return err
 			}
 			m.ExtraCerts = append(m.ExtraCerts, cert)
+		}
+		// The wrapper is EXPLICIT, so nothing may follow the SEQUENCE inside it.
+		if !extraCertsSeq.Empty() {
+			return &ParseError{Detail: "trailing data inside extraCerts"}
 		}
 	}
 
