@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/misiektoja/go-pki-cmp/internal/certpath"
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 )
 
 // ProtectionMechanism identifies a class of message protection.
@@ -563,6 +564,9 @@ func signatureChecker(alg AlgorithmIdentifier, allowSHA1 bool) (func(cert *x509.
 		return nil, err
 	}
 	return func(cert *x509.Certificate, data, signature []byte) error {
+		if err := keylimit.Check(cert.PublicKey); err != nil {
+			return err
+		}
 		return cert.CheckSignature(sigAlg, data, signature)
 	}, nil
 }

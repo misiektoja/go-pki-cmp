@@ -11,6 +11,8 @@ import (
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+
+	"github.com/misiektoja/go-pki-cmp/internal/keylimit"
 )
 
 // ML-KEM algorithm identifiers (RFC 9935 §3).
@@ -23,6 +25,15 @@ var (
 // ErrMLKEM512 is returned for an ML-KEM-512 key, which the Go standard library does not implement.
 var ErrMLKEM512 = errors.New("pkicmp: ML-KEM-512 keys are not supported")
 
+// MaxRSAModulusBits is the largest RSA modulus accepted in a key or certificate
+// taken from a peer. The cost of one RSA operation grows with the square of the
+// modulus size and crypto/rsa does not bound it, so a larger key would let one
+// message cost tens of seconds of verification. The limit matches OpenSSL's.
+const MaxRSAModulusBits = keylimit.MaxRSAModulusBits
+
+// ErrRSAKeyTooLarge is returned for an RSA key whose modulus exceeds [MaxRSAModulusBits].
+var ErrRSAKeyTooLarge = keylimit.ErrRSAKeyTooLarge
+
 // ParsePublicKey parses a DER SubjectPublicKeyInfo.
 //
 // ML-KEM-768 and ML-KEM-1024 keys (RFC 9935) are returned as *mlkem.EncapsulationKey768
@@ -30,7 +41,8 @@ var ErrMLKEM512 = errors.New("pkicmp: ML-KEM-512 keys are not supported")
 // An SLH-DSA key (RFC 9909) is returned as an slhdsa.PublicKey value from
 // github.com/cloudflare/circl/sign/slhdsa, the type its PrivateKey.Public returns.
 // A composite ML-DSA key is returned as *compositemldsa.PublicKey and every other key
-// as crypto/x509 returns it.
+// as crypto/x509 returns it. An RSA key whose modulus exceeds [MaxRSAModulusBits] is
+// refused with [ErrRSAKeyTooLarge].
 func ParsePublicKey(der []byte) (crypto.PublicKey, error) {
 	oid, key, ok := parseSPKI(der)
 	if id, isSLHDSA := SLHDSAAlgorithmFromOID(oid); ok && isSLHDSA {
@@ -50,7 +62,14 @@ func ParsePublicKey(der []byte) (crypto.PublicKey, error) {
 	case oid.Equal(oidMLKEM512):
 		return nil, ErrMLKEM512
 	}
-	return compositex509.ParsePKIXPublicKey(der)
+	pub, err := compositex509.ParsePKIXPublicKey(der)
+	if err != nil {
+		return nil, err
+	}
+	if err := keylimit.Check(pub); err != nil {
+		return nil, err
+	}
+	return pub, nil
 }
 
 // MarshalPublicKey encodes a public key as a DER SubjectPublicKeyInfo. It accepts the
