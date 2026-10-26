@@ -515,11 +515,16 @@ const (
 	DefaultMinMACIterationCount = 100
 
 	// DefaultMaxMACIterationCount is the largest PasswordBasedMac or PBMAC1
-	// iteration count accepted by default. No RFC sets a maximum. RFC 4210 and
-	// RFC 9810 let an implementation limit the count to reduce the risk of
-	// denial of service, because the peer chooses it and the receiver must run
-	// every iteration before it can check the MAC.
-	DefaultMaxMACIterationCount = 500000
+	// iteration count accepted by default. For PBMAC1 it bounds the whole
+	// PBKDF2 derivation, the iterations multiplied by the PRF output blocks
+	// the key length needs. No RFC sets a maximum. RFC 4210 and RFC 9810 let
+	// an implementation limit the count to reduce the risk of denial of
+	// service, because the peer chooses it and the receiver must run every
+	// iteration before it can check the MAC. The default leaves room for the
+	// 262144 iterations and 32-byte key the Siemens CMP test suite sends with
+	// every PRF, two blocks from HMAC-SHA224, and for the 600000 iterations
+	// OWASP recommends for PBKDF2-HMAC-SHA256.
+	DefaultMaxMACIterationCount = 1000000
 )
 
 // macIterationLimits returns the effective iteration count bounds. A
