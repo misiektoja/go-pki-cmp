@@ -4,7 +4,7 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.8.0 - TBD
 
-This release adds central key generation (RFC 9483 section 4.1.6) to the client and the server: a device can have the CA generate its key pair and receive the private key signed and encrypted for it. The release also lets a client act as a registration authority that forwards requests in nested messages, ask for implicit confirmation, collect a certificate the CA keeps waiting in a later process, revoke a certificate it holds no copy of by issuer and serial number, send an invalidity date with a revocation and shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items and a chosen digest for signatures.
+This release adds central key generation (RFC 9483 section 4.1.6) to the client and the server: a device can have the CA generate its key pair and receive the private key signed and encrypted for it. The release also lets a client act as a registration authority that forwards requests in nested messages, ask for implicit confirmation, collect a certificate the CA keeps waiting in a later process, revoke a certificate it holds no copy of by issuer and serial number, send an invalidity date with a revocation and shape its requests the way vendor clients and test scenarios need: a chosen certReqId, extra generalInfo items, a requested validity and a chosen digest for signatures.
 
 ### `client`
 
@@ -17,6 +17,7 @@ This release adds central key generation (RFC 9483 section 4.1.6) to the client 
 * **`WithCertReqID`** sets the certReqId of an ir, cr or kur. The CA must repeat it in its certificate response, which the client checks as before. A negative value is refused.
 * **`WithGeneralInfo`** adds items to the generalInfo field of the request header after the certProfile, for example a vendor profile identifier a CA keys its policy on.
 * **`WithPOPHash`** selects SHA-1, SHA-256, SHA-384 or SHA-512 for the signature proof of possession of an RSA or ECDSA key. Other key types take no digest and refuse the option.
+* **`WithTemplateValidity`** asks for a validity period in the certificate template of an ir, cr or kur (RFC 4211 section 5): a notBefore, a notAfter or both. The CA decides the validity it grants and may shorten or ignore the request. RFC 9483 does not profile the field, so a lightweight CMP server need not honor it. A p10cr ignores the option.
 
 ### `server`
 
@@ -28,6 +29,7 @@ This release adds central key generation (RFC 9483 section 4.1.6) to the client 
 
 * **`NewKeyPackage`** and **`ParseKeyPackage`** sign and verify the SignedData around a centrally generated private key in either content form. **`CertTemplate.RequestsCentralKeyGeneration`** and **`CentralKeyGenerationPublicKey`** read and build a request for central key generation. **`IsKeyGenerationAuthority`** checks a signer certificate. **`CertifiedKeyPair.EncryptedPrivateKey`** and **`SetEncryptedPrivateKey`** read and set the encrypted key. **`SignatureCredentials.Key`** returns the protection key.
 * **`NewRevDetailsBySerial`** builds the RevDetails of a revocation request from an issuer name and a serial number, without the certificate. **`NewInvalidityDateExtension`** encodes an invalidityDate and **`RevDetails.AddCRLEntryExtension`** adds a CRL entry extension after the reasonCode.
+* **`CertTemplate.Validity`** holds the **`OptionalValidity`** of a certificate template, which marshalling encodes and parsing reads. Times are encoded as UTCTime through 2049 and GeneralizedTime from 2050. A malformed validity or one with neither bound fails parsing, where before this release a received validity was skipped. The server does not pass it to the CA.
 * **`SignatureCredentials.WithHash`** returns credentials that protect messages with the chosen digest instead of the one the key type selects, with the same choices and limits as `WithPOPHash`. **`CertReqMsg.GeneratePOPWithHash`** does the same for a proof of possession built by hand. A SHA-1 signature is still refused by a verifier unless it allows SHA-1.
 
 ### `cms`
