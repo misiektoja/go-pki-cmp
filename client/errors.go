@@ -34,6 +34,10 @@ func (e *Error) Unwrap() error {
 type ConfirmationError struct {
 	// Certificate is the certificate the CA issued.
 	Certificate *x509.Certificate
+	// GeneratedKey is the private key of a request for central key
+	// generation, which the client checked before the certConf. It is nil
+	// for any other request.
+	GeneratedKey *GeneratedKey
 	// Err is why the confirmation failed.
 	Err error
 }

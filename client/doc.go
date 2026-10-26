@@ -239,7 +239,8 @@
 //
 // A certificate the client accepts can still fail in the confirming certConf,
 // for example when the CA refuses it. The error is then a [ConfirmationError]
-// holding the certificate. The CA may keep it or revoke it as unconfirmed, so
+// holding the certificate and the key of a request for central key
+// generation. The CA may keep it or revoke it as unconfirmed, so
 // check the CA before retrying, because a retry may issue a second one.
 //
 // [WithImplicitConfirm] asks the CA to skip the certConf round trip (RFC 9810

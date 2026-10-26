@@ -223,7 +223,7 @@ func (c *Client) finishEnrollment(ctx context.Context, txn *enrollment, cmpResp 
 			return nil, cmpResp.wrapError(&Error{Op: "compute certHash", Err: err})
 		}
 		if err := c.sendCertConf(ctx, conf, certStatus); err != nil {
-			return nil, &ConfirmationError{Certificate: cert, Err: err}
+			return nil, &ConfirmationError{Certificate: cert, GeneratedKey: generated, Err: err}
 		}
 	}
 
