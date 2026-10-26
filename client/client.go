@@ -51,6 +51,13 @@ const (
 	// interval a CA is expected to request and only guards against a checkAfter
 	// large enough to park the operation or to overflow into no wait at all.
 	DefaultMaxCheckAfter = 60 * time.Minute
+
+	// DefaultHTTPTimeout bounds one HTTP exchange of the HTTP client that
+	// NewClient creates, from the connection to the end of the response body.
+	// A CA that accepts the connection and never answers would otherwise hold
+	// the call until the context expires. [WithHTTPClient] replaces the client
+	// and with it the timeout.
+	DefaultHTTPTimeout = 120 * time.Second
 )
 
 // Option is a functional option for configuring a Client.
@@ -60,7 +67,7 @@ type Option func(*Client)
 func NewClient(endpoint string, opts ...Option) *Client {
 	c := &Client{
 		endpoint:         endpoint,
-		httpClient:       http.DefaultClient,
+		httpClient:       &http.Client{Timeout: DefaultHTTPTimeout},
 		maxResponseBytes: DefaultMaxResponseBytes,
 		maxPolls:         DefaultMaxPolls,
 		minCheckAfter:    DefaultMinCheckAfter,
@@ -72,7 +79,8 @@ func NewClient(endpoint string, opts ...Option) *Client {
 	return c
 }
 
-// WithHTTPClient sets a custom HTTP client.
+// WithHTTPClient sets the HTTP client, for TLS settings, a proxy or another
+// timeout. The default uses the default transport with [DefaultHTTPTimeout].
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }

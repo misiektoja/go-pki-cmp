@@ -187,6 +187,8 @@
 //     1 hour). The ceiling is a guard against an unusable value rather than a
 //     normal-operation bound, because RFC 9810 Section 5.3.22 asks the client to
 //     wait at least the interval the CA sent.
+//   - [WithHTTPClient]: bound each HTTP exchange. The default client gives up
+//     after [DefaultHTTPTimeout].
 //
 // To collect the certificate later, possibly in another process, pass
 // [WithDeferredPolling]. The Send* method then returns at the first waiting
