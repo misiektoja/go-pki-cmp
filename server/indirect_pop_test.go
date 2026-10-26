@@ -367,34 +367,54 @@ func TestEnvelopedDataForVersion2(t *testing.T) {
 	}
 }
 
-// A wrong hash fails the proof and keeps the transaction, so the certificate
-// expires unconfirmed unless a right certConf follows.
+// A wrong hash fails the proof and keeps the transaction, so a right certConf
+// can still follow and a certificate that gets none expires unconfirmed.
 func TestEncryptedCertificateWrongHash(t *testing.T) {
 	secret := []byte("encrypted-certificate-wrong-hash")
 	key := popKeys(t)[0]
-	ca := newPOPCA(t)
-	srv := server.NewCAServer(ca, server.LightweightPolicy(),
-		server.WithSecretLookup(&staticMACLookup{secret: secret}),
-		server.WithEncryptedCertificatePOP(),
-		server.WithConfirmWaitTime(50*time.Millisecond),
-	)
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
+	newServer := func(t *testing.T, confirmWait time.Duration) (*server.Server, *httptest.Server, *popCA) {
+		t.Helper()
+		ca := newPOPCA(t)
+		srv := server.NewCAServer(ca, server.LightweightPolicy(),
+			server.WithSecretLookup(&staticMACLookup{secret: secret}),
+			server.WithEncryptedCertificatePOP(),
+			server.WithConfirmWaitTime(confirmWait),
+		)
+		ts := httptest.NewServer(srv)
+		t.Cleanup(ts.Close)
+		return srv, ts, ca
+	}
 
-	ip := exchange(t, ts, indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, false), secret)
-	cert := decryptIssued(t, ip, key)
+	t.Run("a right certConf follows", func(t *testing.T) {
+		_, ts, ca := newServer(t, time.Minute)
+		ip := exchange(t, ts, indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, false), secret)
+		cert := decryptIssued(t, ip, key)
 
-	resp := exchange(t, ts, popCertConf(t, cert, true, ip), secret)
-	si := statusInfoOf(t, resp)
-	assert.Equal(t, pkicmp.BodyTypeError, resp.Body.Type)
-	assert.Equal(t, pkicmp.FailBadPOP, si.FailInfo)
-	_, confirmations := ca.recorded()
-	assert.Empty(t, confirmations)
+		resp := exchange(t, ts, popCertConf(t, cert, true, ip), secret)
+		si := statusInfoOf(t, resp)
+		assert.Equal(t, pkicmp.BodyTypeError, resp.Body.Type)
+		assert.Equal(t, pkicmp.FailBadPOP, si.FailInfo)
+		_, confirmations := ca.recorded()
+		assert.Empty(t, confirmations)
 
-	time.Sleep(100 * time.Millisecond)
-	srv.CleanupExpired()
-	_, confirmations = ca.recorded()
-	assert.Equal(t, []popConfirmation{{server.ConfirmExpired, server.POPEncryptedCertificate}}, confirmations)
+		conf := exchange(t, ts, popCertConf(t, cert, false, ip), secret)
+		assert.Equal(t, pkicmp.BodyTypePKIConf, conf.Body.Type)
+		_, confirmations = ca.recorded()
+		assert.Equal(t, []popConfirmation{{server.ConfirmAccepted, server.POPEncryptedCertificate}}, confirmations)
+	})
+
+	t.Run("no certConf follows", func(t *testing.T) {
+		// The sleep outlasts the confirm wait whatever the load, so the expiry
+		// is not racing a certConf. Its refusal is covered above.
+		srv, ts, ca := newServer(t, time.Millisecond)
+		ip := exchange(t, ts, indirectPOPRequest(t, key, pkicmp.SubsequentMessageEncrCert, false), secret)
+		decryptIssued(t, ip, key)
+
+		time.Sleep(10 * time.Millisecond)
+		srv.CleanupExpired()
+		_, confirmations := ca.recorded()
+		assert.Equal(t, []popConfirmation{{server.ConfirmExpired, server.POPEncryptedCertificate}}, confirmations)
+	})
 }
 
 // A waiting request delivers the encrypted certificate on the poll that
