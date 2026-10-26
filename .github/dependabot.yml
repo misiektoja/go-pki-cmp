@@ -2,7 +2,8 @@
 #
 # Go modules, GitHub Actions, the documentation toolchain and the EJBCA test images are grouped so one
 # pull request carries a whole ecosystem's patch and minor updates. Major updates stay separate,
-# because they need their own validation run.
+# because they need their own validation run. Container images are pinned by digest, so an image
+# rebuilt under the same tag arrives as a pull request too.
 version: 2
 
 updates:
@@ -81,3 +82,15 @@ updates:
         update-types:
           - minor
           - patch
+
+  # The base image of the Insta Certifier client image.
+  - package-ecosystem: docker
+    directory: "/test/integration/certifier"
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: test
+      include: scope
