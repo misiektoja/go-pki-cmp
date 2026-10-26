@@ -45,10 +45,11 @@ func TestValidatePBKDF2Work(t *testing.T) {
 func TestPBMAC1WorkIsBounded(t *testing.T) {
 	secret := []byte("shared-secret")
 	// 128 bytes from HMAC-SHA1 take seven PBKDF2 blocks, so these parameters
-	// cost seven times the 100000 iterations they declare.
+	// cost seven times the 150000 iterations they declare, more than the
+	// default maximum permits.
 	params := pbmac1Options{
 		Secret:         secret,
-		IterationCount: 100000,
+		IterationCount: 150000,
 		KeyLength:      128,
 		PRF:            oidHMACWithSHA1,
 		MAC:            oidHMACWithSHA512,
@@ -78,4 +79,27 @@ func TestPBMAC1WorkIsBounded(t *testing.T) {
 
 	_, err = parsed.Verify(VerifyOptions{SharedSecret: secret, MaxMACIterationCount: 1 << 30})
 	assert.NoError(t, err, "a verifier that permits the work accepts the MAC")
+}
+
+// The default maximum leaves room for the PBMAC1 parameters the Siemens CMP
+// test suite sends with every PRF: 262144 iterations and a 32-byte key, which
+// take two blocks from HMAC-SHA224.
+func TestDefaultMaximumAcceptsTwoBlockDerivation(t *testing.T) {
+	secret := []byte("shared-secret")
+	msg := NewPKIMessage(NewPKIConfBody(), MessageOptions{Sender: NewDirectoryName(pkix.Name{CommonName: "sender"})})
+	require.NoError(t, msg.protectWithPBMAC1Options(pbmac1Options{
+		Secret:         secret,
+		IterationCount: 262144,
+		KeyLength:      32,
+		PRF:            oidHMACWithSHA224,
+		MAC:            oidHMACWithSHA224,
+	}))
+	encoded, err := msg.MarshalBinary()
+	require.NoError(t, err)
+	parsed, err := ParsePKIMessage(encoded)
+	require.NoError(t, err)
+
+	vr, err := parsed.Verify(VerifyOptions{SharedSecret: secret})
+	require.NoError(t, err)
+	assert.True(t, vr.MACVerified)
 }
