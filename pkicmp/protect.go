@@ -509,9 +509,10 @@ var (
 
 const (
 	// DefaultMinMACIterationCount is the smallest PasswordBasedMac or PBMAC1
-	// iteration count accepted by default. RFC 4211 §4.4 requires at least 100,
-	// but the default stays at 1 so that a peer choosing fewer is not rejected.
-	DefaultMinMACIterationCount = 1
+	// iteration count accepted by default, the minimum RFC 4211 §4.4 requires.
+	// A peer that sends fewer needs WithMACIterationLimits or
+	// VerifyOptions.MinMACIterationCount.
+	DefaultMinMACIterationCount = 100
 
 	// DefaultMaxMACIterationCount is the largest PasswordBasedMac or PBMAC1
 	// iteration count accepted by default. No RFC sets a maximum. RFC 4210 and

@@ -534,9 +534,9 @@ func WithRAAuthorizer(authorizer RAAuthorizer) Option {
 // The client chooses the count and every iteration runs before the MAC can be
 // checked, so the maximum bounds the work an unauthenticated request costs.
 // Only a request naming a known shared secret reaches that point. Raise the
-// maximum for devices configured with more iterations. Raise the minimum, for
-// example to the 100 that RFC 4211 §4.4 requires, to refuse protection too
-// cheap to slow an offline guess of a weak shared secret.
+// maximum for devices configured with more iterations. Lower the minimum below
+// the 100 that RFC 4211 §4.4 requires only for a peer that sends fewer: a small
+// count makes an offline guess of a weak shared secret cheap.
 func WithMACIterationLimits(minimum, maximum int) Option {
 	return func(c *serverConfig) {
 		c.minMACIterationCount = minimum
