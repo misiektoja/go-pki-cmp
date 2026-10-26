@@ -29,6 +29,7 @@ This release lets a client ask for implicit confirmation, collect a certificate 
 ### `examples/mockserver`
 
 * **The mock CA records the invalidityDate** of a revocation request, logs it and publishes it in the CRL entry.
+* **The mock CA certifies ML-KEM-768 and ML-KEM-1024 keys** that prove possession by decryption, when the server accepts it with `WithEncryptedCertificatePOP` or `WithChallengeResponsePOP`. Their certificates have keyEncipherment as the only key usage. Before, the mock CA failed to sign them.
 
 ## v0.7.2 - 22 Oct 2026
 
