@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/mlkem"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
 	"slices"
@@ -71,6 +75,7 @@ func newServer(t *testing.T, extra ...server.Option) (*confirmingCA, *client.Cli
 		server.WithExtraCerts([]*x509.Certificate{mock.Cert()}),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
+		mock.CentralKeyGeneration(),
 	}, extra)
 	srv := server.NewCAServer(ca, server.LightweightPolicy(), opts...)
 	require.NoError(t, srv.Err())
@@ -271,4 +276,100 @@ func TestMLKEMEnrollment(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestCentralKeyGeneration has the mock CA generate key pairs for MAC- and
+// signature-protected requests and checks that each private key arrives
+// signed by the key generation authority and matches its certificate.
+func TestCentralKeyGeneration(t *testing.T) {
+	ecAlgorithm := func(curve asn1.ObjectIdentifier) *pkicmp.AlgorithmIdentifier {
+		params, err := asn1.Marshal(curve)
+		require.NoError(t, err)
+		return &pkicmp.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}, Parameters: params}
+	}
+	mlDSA44 := &pkicmp.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 17}}
+	ed25519Algorithm := &pkicmp.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{1, 3, 101, 112}}
+	subject := pkix.Name{CommonName: "keygen-device"}
+	ctx := context.Background()
+
+	// checkGenerated checks the generated key of res and returns it as a signer.
+	checkGenerated := func(t *testing.T, ca *confirmingCA, res *client.EnrollResult) crypto.Signer {
+		t.Helper()
+		require.NotNil(t, res.GeneratedKey)
+		require.True(t, res.GeneratedKey.Signer.Equal(ca.KGACert()))
+		key, ok := res.GeneratedKey.PrivateKey.(crypto.Signer)
+		require.True(t, ok, "unexpected key type %T", res.GeneratedKey.PrivateKey)
+		requireCertifies(t, ca.Cert(), res.Certificate, key)
+		parsed, err := x509.ParsePKCS8PrivateKey(res.GeneratedKey.PKCS8)
+		require.NoError(t, err)
+		require.True(t, parsed.(interface{ Equal(crypto.PrivateKey) bool }).Equal(key))
+		ca.requireAccepted(t, res.Certificate)
+		return key
+	}
+
+	t.Run("MAC", func(t *testing.T) {
+		cases := []struct {
+			name      string
+			algorithm *pkicmp.AlgorithmIdentifier
+			options   []server.Option
+			check     func(t *testing.T, key crypto.Signer)
+		}{
+			{"CA choice", nil, nil, func(t *testing.T, key crypto.Signer) {
+				require.Equal(t, elliptic.P256(), key.(*ecdsa.PrivateKey).Curve)
+			}},
+			{"P-384", ecAlgorithm(asn1.ObjectIdentifier{1, 3, 132, 0, 34}), nil, func(t *testing.T, key crypto.Signer) {
+				require.Equal(t, elliptic.P384(), key.(*ecdsa.PrivateKey).Curve)
+			}},
+			{"ML-DSA-44 with AES key wrap", mlDSA44, []server.Option{server.WithCentralKeyGenerationAESKeyWrap()}, func(t *testing.T, key crypto.Signer) {
+				require.IsType(t, &mldsa.PrivateKey{}, key)
+			}},
+			{"P-256 as AsymmetricKeyPackage", ecAlgorithm(asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7}), []server.Option{server.WithCentralKeyGenerationAsymmetricKeyPackage()}, func(t *testing.T, key crypto.Signer) {
+				require.Equal(t, elliptic.P256(), key.(*ecdsa.PrivateKey).Curve)
+			}},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				ca, c := newServer(t, tc.options...)
+				macCreds, err := pkicmp.NewMACCredentials(iak)
+				require.NoError(t, err)
+				res, err := c.SendIRWithCentralKeyGeneration(ctx, tc.algorithm, macCreds,
+					client.WithSenderKID(reference), client.WithSender(subject), client.WithTemplateSubject(subject))
+				require.NoError(t, err)
+				tc.check(t, checkGenerated(t, ca, res))
+			})
+		}
+	})
+
+	t.Run("signature", func(t *testing.T) {
+		ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		require.NoError(t, err)
+		// KARI for the ECDSA protection key and KTRI for the RSA one (RFC 9483 §4.1.6.1 and §4.1.6.2).
+		for _, protection := range []crypto.Signer{ecKey, rsaKey} {
+			t.Run(fmt.Sprintf("%T", protection), func(t *testing.T) {
+				ca, c := newServer(t)
+				macCreds, err := pkicmp.NewMACCredentials(iak)
+				require.NoError(t, err)
+				ir, err := c.SendIR(ctx, protection, macCreds,
+					client.WithSenderKID(reference), client.WithSender(subject), client.WithTemplateSubject(subject))
+				require.NoError(t, err)
+				sigCreds, err := pkicmp.NewSignatureCredentials(protection, ir.Certificate)
+				require.NoError(t, err)
+
+				res, err := c.SendCRWithCentralKeyGeneration(ctx, ed25519Algorithm, sigCreds, client.WithTemplateSubject(subject))
+				require.NoError(t, err)
+				require.IsType(t, ed25519.PrivateKey{}, checkGenerated(t, ca, res))
+			})
+		}
+	})
+
+	t.Run("unsupported algorithm", func(t *testing.T) {
+		_, c := newServer(t)
+		macCreds, err := pkicmp.NewMACCredentials(iak)
+		require.NoError(t, err)
+		_, err = c.SendIRWithCentralKeyGeneration(ctx, &pkicmp.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{1, 2, 3}}, macCreds,
+			client.WithSenderKID(reference), client.WithSender(subject), client.WithTemplateSubject(subject))
+		require.True(t, pkicmp.HasFailure(err, pkicmp.FailBadAlg), "got %v", err)
+	})
 }
