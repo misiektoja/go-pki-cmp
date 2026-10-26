@@ -105,6 +105,11 @@ type transactionEntry struct {
 	// implicitConfirm records that the delayed request asked for implicit
 	// confirmation, which the pollReq that collects the certificate does not repeat.
 	implicitConfirm bool
+	// privateKey holds the DER EnvelopedData of a centrally generated private
+	// key until the certificate is ready. Only the requester can decrypt it.
+	// generatedKey holds the DER SubjectPublicKeyInfo of the pair.
+	privateKey   []byte
+	generatedKey []byte
 
 	// Set when state == statePending or stateIssued
 	//
@@ -210,10 +215,13 @@ type waitingState struct {
 	certReqID       int64
 	implicitConfirm bool
 	popMethod       POPMethod
-	pollRef         string
-	senderNonce     []byte
-	checkAfter      time.Duration
-	lastPollTime    time.Time
+	// privateKey and generatedKey hold a centrally generated key pair, see transactionEntry.
+	privateKey   []byte
+	generatedKey []byte
+	pollRef      string
+	senderNonce  []byte
+	checkAfter   time.Duration
+	lastPollTime time.Time
 }
 
 // setPending moves an active, waiting or challenged transaction to the waiting state w describes.
@@ -242,6 +250,8 @@ func (t *transactionTracker) setPending(credentialID, transactionID []byte, w wa
 		checkAfter:      w.checkAfter,
 		implicitConfirm: w.implicitConfirm,
 		popMethod:       w.popMethod,
+		privateKey:      w.privateKey,
+		generatedKey:    w.generatedKey,
 		certReqID:       &w.certReqID,
 	}
 	return t.transactions.CompareAndSwap(key, old, newEntry)
@@ -253,6 +263,8 @@ func (e *transactionEntry) waiting() waitingState {
 		reqType:         e.reqType,
 		implicitConfirm: e.implicitConfirm,
 		popMethod:       e.popMethod,
+		privateKey:      e.privateKey,
+		generatedKey:    e.generatedKey,
 		pollRef:         e.pollRef,
 		senderNonce:     e.senderNonce,
 		checkAfter:      e.checkAfter,

@@ -33,6 +33,10 @@ const (
 	// §5.2.8.3.3, enabled by [WithChallengeResponsePOP]. Possession is proven
 	// before the request reaches the [Handler].
 	POPChallengeResponse
+	// POPCentralKeyGeneration marks a request that asks the server to generate
+	// the key pair (RFC 9483 §4.1.6), enabled by [WithCentralKeyGeneration].
+	// There is no key to prove possession of. The request carries no proof.
+	POPCentralKeyGeneration
 )
 
 // String returns a short name for the method.
@@ -44,6 +48,8 @@ func (m POPMethod) String() string {
 		return "encrypted certificate"
 	case POPChallengeResponse:
 		return "challenge-response"
+	case POPCentralKeyGeneration:
+		return "central key generation"
 	default:
 		return "unknown"
 	}
@@ -72,7 +78,13 @@ func requestPOPMethod(msg *pkicmp.PKIMessage) POPMethod {
 		return POPSignature
 	}
 	msgs, err := msg.Body.CertReqMessages()
-	if err != nil || len(*msgs) == 0 || (*msgs)[0].Popo == nil {
+	if err != nil || len(*msgs) == 0 {
+		return POPSignature
+	}
+	if _, ok := (*msgs)[0].CertReq.CertTemplate.RequestsCentralKeyGeneration(); ok {
+		return POPCentralKeyGeneration
+	}
+	if (*msgs)[0].Popo == nil {
 		return POPSignature
 	}
 	switch v, ok := (*msgs)[0].Popo.SubsequentMessage(); {

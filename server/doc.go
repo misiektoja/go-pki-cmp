@@ -368,6 +368,8 @@
 //     made with the requested key. [WithEncryptedCertificatePOP] and
 //     [WithChallengeResponsePOP] accept the indirect methods of RFC 9810
 //     §5.2.8.3 for RSA, ECDH and ML-KEM keys. X25519 is refused with badAlg.
+//     [WithCentralKeyGeneration] accepts a request without a public key and
+//     generates the key pair (RFC 9483 §4.1.6).
 //   - Rejection of a BasicConstraints extension that cannot be decoded, so that
 //     no extension reaches [CA.IssueCertificate] that the checks above did not
 //     understand.

@@ -58,13 +58,16 @@ func New(handler Handler, opts ...Option) *Server {
 			s.cfg.signerKey, s.cfg.signerCert, s.cfg.signerChain...,
 		)
 	}
+	s.cfg.kgaErr = s.cfg.checkKeyGeneration()
 	return s
 }
 
 // Err reports a configuration error detected by [New], such as a signer key that
-// does not match its certificate. A server with a non-nil Err answers every
-// request with systemFailure, so callers should check it at startup.
-func (s *Server) Err() error { return s.cfg.signerErr }
+// does not match its certificate. A server with a signer error answers every
+// request with systemFailure. A server with a [WithCentralKeyGeneration] error
+// answers every request for central key generation with systemFailure. Check it
+// at startup.
+func (s *Server) Err() error { return errors.Join(s.cfg.signerErr, s.cfg.kgaErr) }
 
 // isCMPMediaType reports whether a Content-Type value identifies the CMP media type.
 func isCMPMediaType(value string) bool {

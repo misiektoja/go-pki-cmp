@@ -285,6 +285,10 @@ func (h *caHandler) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessag
 			return nil, err
 		}
 		subject, rawSubject, pubKey, extensions = crmf.subject, crmf.rawSubject, crmf.publicKey, crmf.extensions
+		// enforceProofOfPossession has checked that the server generated this key for the request.
+		if crmf.centralKeyGeneration {
+			pubKey = GeneratedPublicKeyFromContext(ctx)
+		}
 	}
 
 	// An extension that cannot be decoded must not travel on to the CA in

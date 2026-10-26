@@ -92,11 +92,19 @@ type serverConfig struct {
 	confirmer                    CertificateConfirmer // set automatically by NewCAServer
 	waitingLifetime              time.Duration        // zero selects defaultWaitingLifetime
 	waitingExpirer               WaitingExpirer       // set by WithWaitingExpirer or NewCAServer
+	keyGenerator                 KeyGenerator
+	kgaKey                       crypto.Signer
+	kgaCert                      *x509.Certificate
+	kgaChain                     []*x509.Certificate
+	kgaAESKeyWrap                bool
+	kgaKeyPackage                pkicmp.KeyPackageContent
 
 	// Built once by New from signerKey and signerCert. signerErr records a
 	// rejected pair so responses fail visibly instead of going out unprotected.
 	signerCreds *pkicmp.SignatureCredentials
 	signerErr   error
+	// kgaErr records central key generation settings that cannot work.
+	kgaErr error
 }
 
 // WithSigner configures signature-based response protection. The key must match

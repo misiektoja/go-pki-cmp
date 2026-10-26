@@ -108,8 +108,10 @@ type certRep struct {
 	// encrypted carries cert instead of the plaintext certificate, for the
 	// encrypted certificate proof of possession.
 	encrypted *pkicmp.CertOrEncCert
-	caCerts   []*x509.Certificate
-	reqType   RequestType
+	// privateKey is the DER EnvelopedData of a centrally generated private key.
+	privateKey []byte
+	caCerts    []*x509.Certificate
+	reqType    RequestType
 	// implicit reports that the client asked for implicit confirmation and may
 	// be granted it. The server grants it only with a certificate, so a waiting
 	// or rejected response carries none.
@@ -130,6 +132,9 @@ func (s *Server) buildCertRep(req *pkicmp.PKIMessage, sender *SenderIdentity, r 
 			certOrEncCert = *r.encrypted
 		}
 		certResp.CertifiedKeyPair = &pkicmp.CertifiedKeyPair{CertOrEncCert: certOrEncCert}
+		if r.privateKey != nil {
+			certResp.CertifiedKeyPair.SetEncryptedPrivateKey(r.privateKey)
+		}
 	}
 
 	rep := &pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{certResp}}
@@ -208,6 +213,10 @@ type certRequestInfo struct {
 	// implicit reports that the client asked for implicit confirmation.
 	implicit bool
 	method   POPMethod
+	// privateKey and generatedKey are the DER EnvelopedData of a centrally
+	// generated private key and the DER SubjectPublicKeyInfo of its public key.
+	privateKey   []byte
+	generatedKey []byte
 }
 
 // handleCertRequest processes certificate requests through the configured handler.
@@ -235,10 +244,14 @@ func (s *Server) handleCertRequest(ctx context.Context, msg *pkicmp.PKIMessage, 
 		method:    requestPOPMethod(msg),
 	}
 	ctx = contextWithPOPMethod(ctx, req.method)
-	if req.method == POPChallengeResponse {
+	switch req.method {
+	case POPChallengeResponse:
 		return s.challengePossession(ctx, msg, sender, credID, req)
+	case POPCentralKeyGeneration:
+		return s.generateKey(ctx, msg, sender, credID, req)
+	default:
+		return s.issue(ctx, msg, msg, sender, credID, req)
 	}
-	return s.issue(ctx, msg, msg, sender, credID, req)
 }
 
 // issue passes the certificate request in msg to the handler and answers reply
@@ -273,6 +286,8 @@ func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sende
 			certReqID:       req.certReqID,
 			implicitConfirm: req.implicit,
 			popMethod:       req.method,
+			privateKey:      req.privateKey,
+			generatedKey:    req.generatedKey,
 			pollRef:         resp.Waiting.PollRef,
 			senderNonce:     respMsg.Header.SenderNonce,
 			checkAfter:      advertisedCheckAfter(resp.Waiting.CheckAfter),
@@ -289,9 +304,24 @@ func (s *Server) issue(ctx context.Context, msg, reply *pkicmp.PKIMessage, sende
 // deliver answers reply with the certificate the CA issued and records what its
 // confirmation needs. The certificate is encrypted for its own key when the
 // request chose the encrypted certificate proof of possession, and such a
-// request is never granted implicit confirmation, because its certConf is the proof.
+// request is never granted implicit confirmation, because its certConf is the
+// proof. A centrally generated private key goes with the certificate that
+// certifies its public key.
 func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *SenderIdentity, credID []byte, req certRequestInfo, resp *Response) *pkicmp.PKIMessage {
 	txnID := reply.Header.TransactionID
+	// undeliverable answers a certificate that exists but cannot reach its
+	// holder. The CA hears that it was not accepted.
+	undeliverable := func() *pkicmp.PKIMessage {
+		s.setCompleted(credID, txnID)
+		if s.cfg.confirmer != nil {
+			_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmRejected, resp.IssueRef)
+		}
+		return s.buildCertRep(reply, sender, certRep{
+			certReqID: req.certReqID,
+			status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
+			reqType:   req.reqType,
+		})
+	}
 	r := certRep{
 		certReqID:        req.certReqID,
 		status:           issuedStatus(resp),
@@ -304,18 +334,15 @@ func (s *Server) deliver(ctx context.Context, reply *pkicmp.PKIMessage, sender *
 	if req.method == POPEncryptedCertificate && resp.Certificate != nil && grantsCertificate(r.status) {
 		encrypted, err := encryptCertificate(resp.Certificate, reply.Header.PVNO, s.cfg.envelopedDataForVersion2)
 		if err != nil {
-			// The certificate exists but cannot reach its holder, so the CA hears that it was not accepted.
-			s.setCompleted(credID, txnID)
-			if s.cfg.confirmer != nil {
-				_ = s.cfg.confirmer.ConfirmCertificate(ctx, resp.Certificate, ConfirmRejected, resp.IssueRef)
-			}
-			return s.buildCertRep(reply, sender, certRep{
-				certReqID: req.certReqID,
-				status:    pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailSystemFailure},
-				reqType:   req.reqType,
-			})
+			return undeliverable()
 		}
 		r.encrypted = &encrypted
+	}
+	if req.method == POPCentralKeyGeneration && resp.Certificate != nil && grantsCertificate(r.status) {
+		if !samePublicKey(req.generatedKey, certificatePublicKey(resp.Certificate)) {
+			return undeliverable()
+		}
+		r.privateKey = req.privateKey
 	}
 	respMsg := s.buildCertRep(reply, sender, r)
 
@@ -424,6 +451,11 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 
 	ctx = contextWithPollRef(ctx, pending.pollRef)
 	ctx = contextWithPOPMethod(ctx, waiting.popMethod)
+	if waiting.popMethod == POPCentralKeyGeneration {
+		if pub, err := pkicmp.ParsePublicKey(waiting.generatedKey); err == nil {
+			ctx = contextWithGeneratedPublicKey(ctx, pub)
+		}
+	}
 
 	resp, err := s.handler.HandleCMP(ctx, msg, sender)
 	if err != nil {
@@ -452,10 +484,12 @@ func (s *Server) handlePollReq(ctx context.Context, msg *pkicmp.PKIMessage, send
 
 	// Certificate ready → respond with ip/cp/kup matching original request type.
 	return s.deliver(ctx, msg, sender, credID, certRequestInfo{
-		certReqID: waiting.certReqID,
-		reqType:   waiting.reqType,
-		implicit:  waiting.implicitConfirm,
-		method:    waiting.popMethod,
+		certReqID:    waiting.certReqID,
+		reqType:      waiting.reqType,
+		implicit:     waiting.implicitConfirm,
+		method:       waiting.popMethod,
+		privateKey:   waiting.privateKey,
+		generatedKey: waiting.generatedKey,
 	}, resp)
 }
 
