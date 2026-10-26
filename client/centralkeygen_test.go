@@ -12,8 +12,10 @@ import (
 	"encoding/asn1"
 	"encoding/json"
 	"math/big"
+	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,6 +158,36 @@ func TestCentralKeyGenerationUntrustedSigner(t *testing.T) {
 	require.NoError(t, err)
 	requireGeneratedKey(t, res, kgaCert)
 	assert.Equal(t, []server.ConfirmStatus{server.ConfirmRejected, server.ConfirmAccepted}, statuses())
+}
+
+// A certConf that fails after the key was checked returns the key with the
+// certificate in the ConfirmationError, so the caller can keep both.
+func TestCentralKeyGenerationConfirmationFailed(t *testing.T) {
+	ca := &confirmingCA{ca: &certyaml.Certificate{Subject: "CN=Test CA"}}
+	kgaKey, kgaCert := issueKGA(t, ca.ca)
+	srv := server.NewCAServer(ca, server.LightweightPolicy(),
+		server.WithSecretLookup(server.SecretLookupFunc(func(pkix.Name, []byte) ([]byte, error) { return []byte("secret"), nil })),
+		server.WithCentralKeyGeneration(p256Keys, kgaKey, kgaCert),
+	)
+	require.NoError(t, srv.Err())
+	var requests atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The second request is the certConf.
+		if requests.Add(1) == 2 {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		srv.ServeHTTP(w, r)
+	}))
+	t.Cleanup(ts.Close)
+
+	_, err := client.NewClient(ts.URL).SendIRWithCentralKeyGeneration(context.Background(), nil, macCredentials(t),
+		client.WithSenderKID([]byte("test")),
+		client.WithTemplateSubject(pkix.Name{CommonName: "unconfirmed keygen"}),
+	)
+	var ce *client.ConfirmationError
+	require.ErrorAs(t, err, &ce)
+	requireGeneratedKey(t, &client.EnrollResult{Certificate: ce.Certificate, GeneratedKey: ce.GeneratedKey}, kgaCert)
 }
 
 // Credentials whose key cannot decrypt are refused before the request is sent.
