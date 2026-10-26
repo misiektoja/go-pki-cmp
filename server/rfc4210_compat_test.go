@@ -120,8 +120,9 @@ func certReqMsgWithSHA1POP(t *testing.T, key *ecdsa.PrivateKey, subject string) 
 }
 
 // RFC 4210 §5.1.1 lets a MAC client identify its secret by sender name alone.
-// Two such clients must not share one transaction namespace or quota.
-func TestMACCredentialIncludesSenderName(t *testing.T) {
+// Two such clients with different secrets must not share one transaction
+// namespace or quota.
+func TestMACCredentialSeparatesNameOnlyClients(t *testing.T) {
 	ca := &certyaml.Certificate{Subject: "CN=Test CA"}
 	caCert, err := ca.X509Certificate()
 	require.NoError(t, err)
