@@ -12,7 +12,8 @@ Go library for the **Certificate Management Protocol (CMP)**. Its core encodes, 
 verifies CMP and CRMF messages. On top of it, the `client` package enrolls, updates and revokes
 certificates and the `server` package serves the same operations to CMP clients as an `http.Handler`
 in front of a CA. [cmp-issuer](https://github.com/misiektoja/cmp-issuer), a cert-manager external
-issuer, is built on this library.
+issuer, is built on this library. So is [certrally](https://github.com/misiektoja/certrally), a
+command line client for CMP, EST and SCEP certificate enrollment.
 
 ## Contents
 

@@ -17,7 +17,8 @@ go-pki-cmp is a Go library for the **Certificate Management Protocol (CMP)**. It
 The server handles the protocol: transport, message protection, transactions, polling and
 certificate confirmation. Your application supplies issuance, credential lookup and authorization
 policy through Go interfaces. [cmp-issuer](https://github.com/misiektoja/cmp-issuer), a cert-manager
-external issuer, is built on this library.
+external issuer, is built on this library. So is [certrally](https://github.com/misiektoja/certrally),
+a command line client for CMP, EST and SCEP certificate enrollment.
 
 Certificates can carry **post-quantum ML-DSA**, **SLH-DSA** or **composite ML-DSA** keys and all of
 them can sign CMP messages. **ML-KEM** keys are certified through proof of possession by decryption. The
