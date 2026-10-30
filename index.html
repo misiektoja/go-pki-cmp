@@ -1878,7 +1878,8 @@
 <p>The server handles the protocol: transport, message protection, transactions, polling and
 certificate confirmation. Your application supplies issuance, credential lookup and authorization
 policy through Go interfaces. <a href="https://github.com/misiektoja/cmp-issuer">cmp-issuer</a>, a cert-manager
-external issuer, is built on this library.</p>
+external issuer, is built on this library. So is <a href="https://github.com/misiektoja/certrally">certrally</a>,
+a command line client for CMP, EST and SCEP certificate enrollment.</p>
 <p>Certificates can carry <strong>post-quantum ML-DSA</strong>, <strong>SLH-DSA</strong> or <strong>composite ML-DSA</strong> keys and all of
 them can sign CMP messages. <strong>ML-KEM</strong> keys are certified through proof of possession by decryption. The
 <a href="support-matrix/">support matrix</a> lists what is covered.</p>
