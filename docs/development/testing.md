@@ -9,7 +9,9 @@ parser and protection checks and integration tests against independent CMP imple
 make test
 ```
 
-Runs `go vet` and every unit test under the race detector. The `server` tests drive complete flows
+Runs `go vet` and every unit test under the race detector. The coverage profile goes to `coverage.out`
+or to the path in `COVERPROFILE`. CI uploads it to [Codecov](https://app.codecov.io/gh/misiektoja/go-pki-cmp),
+which leaves out `examples/`. The `server` tests drive complete flows
 through the handler, including delayed issuance, confirmation, revocation, nested messages, snapshots
 and the compatibility options. The `client` tests run against an in-process server. The unit tests
 have no external dependencies.

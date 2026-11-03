@@ -4,6 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/misiektoja/go-pki-cmp.svg)](https://pkg.go.dev/github.com/misiektoja/go-pki-cmp)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
 [![Tests](https://github.com/misiektoja/go-pki-cmp/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-cmp/actions/workflows/test.yml)
+[![Coverage](https://codecov.io/gh/misiektoja/go-pki-cmp/graph/badge.svg)](https://app.codecov.io/gh/misiektoja/go-pki-cmp)
 [![Integration](https://github.com/misiektoja/go-pki-cmp/actions/workflows/integration.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-cmp/actions/workflows/integration.yml)
 [![Supply chain](https://github.com/misiektoja/go-pki-cmp/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/go-pki-cmp/actions/workflows/supply-chain.yml)
 [![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fgo-pki-cmp&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/go-pki-cmp)
