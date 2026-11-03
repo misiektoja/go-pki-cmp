@@ -1861,7 +1861,9 @@ parser and protection checks and integration tests against independent CMP imple
 <h2 id="unit-tests">Unit tests<a class="headerlink" href="#unit-tests" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>make<span class="w"> </span><span class="nb">test</span>
 </code></pre></div>
-<p>Runs <code>go vet</code> and every unit test under the race detector. The <code>server</code> tests drive complete flows
+<p>Runs <code>go vet</code> and every unit test under the race detector. The coverage profile goes to <code>coverage.out</code>
+or to the path in <code>COVERPROFILE</code>. CI uploads it to <a href="https://app.codecov.io/gh/misiektoja/go-pki-cmp">Codecov</a>,
+which leaves out <code>examples/</code>. The <code>server</code> tests drive complete flows
 through the handler, including delayed issuance, confirmation, revocation, nested messages, snapshots
 and the compatibility options. The <code>client</code> tests run against an in-process server. The unit tests
 have no external dependencies.</p>
