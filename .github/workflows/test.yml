@@ -45,6 +45,16 @@ jobs:
       - name: Run the tests
         run: make test
 
+      # The upload feeds the coverage report and badge on Codecov. Pull requests from forks cannot read
+      # CODECOV_TOKEN and upload without it. A failed upload leaves the job green, because the tests
+      # have already passed and the figure is informational.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage.out
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   fuzz:
     permissions:
       contents: read

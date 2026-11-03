@@ -53,9 +53,12 @@ tidy-check: ## Fail when go.mod or go.sum is not tidy.
 fix: ## Modernize code to use newer Go APIs.
 	go fix ./...
 
+# COVERPROFILE is the coverage profile make test writes. CI uploads it to Codecov.
+COVERPROFILE ?= coverage.out
+
 .PHONY: test
 test: vet ## Run the unit tests under the race detector.
-	go test -race -count=1 ./...
+	go test -race -count=1 -coverprofile "$(COVERPROFILE)" ./...
 
 # FUZZTIME bounds each fuzz target. Raise it to hunt for new inputs locally, for example
 # make fuzz FUZZTIME=10m. go test fuzzes one target per invocation, so the targets run in turn.
