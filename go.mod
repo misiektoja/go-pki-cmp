@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/cloudflare/circl v1.6.5
-	github.com/misiektoja/go-composite-mldsa v0.2.1
+	github.com/misiektoja/go-composite-mldsa v0.2.2
 	github.com/stretchr/testify v1.12.1
 	github.com/tsaarni/certyaml v0.13.0
 	golang.org/x/crypto v0.58.0
