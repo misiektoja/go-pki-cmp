@@ -33,7 +33,7 @@ command line client for CMP, EST and SCEP certificate enrollment.
 go get github.com/misiektoja/go-pki-cmp
 ```
 
-Requires Go 1.27.3 or newer. Releases up to v0.3.2 use the module path
+Requires Go 1.27.4 or newer. Releases up to v0.3.2 use the module path
 `github.com/misiektoja/go-pkicmp-ng`.
 
 | Package | Content |
