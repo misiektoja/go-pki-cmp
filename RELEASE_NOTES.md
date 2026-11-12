@@ -4,11 +4,15 @@ Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags pub
 
 ## v0.8.1 - 12 Nov 2026
 
-This release makes a sender mismatch name its cause.
+This release makes a sender mismatch name its cause and requires Go 1.27.4, which fixes GO-2026-6859 in `net/http`.
 
 ### `pkicmp`
 
 * **A sender mismatch says what to fix.** When no candidate certificate names the sender of a signed message, the **`ReasonSenderMismatch`** error names the certificate whose key made the signature or says that none did. The second case means the signer's certificate is missing from `extraCerts` and from the configured certificates. The reason is unchanged, so code that checks it keeps working.
+
+### Requirements
+
+* **Go 1.27.4 or newer** is required. Go 1.27.3 has GO-2026-6859 in `net/http`, which govulncheck reports for every program that uses the client or server. The server reads the whole request before it writes the response, so it does not hit the race the advisory describes.
 
 ## v0.8.0 - 27 Oct 2026
 
