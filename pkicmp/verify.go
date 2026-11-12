@@ -510,7 +510,10 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 	}
 
 	if named == 0 {
-		return nil, &VerificationError{Reason: ReasonSenderMismatch}
+		return nil, &VerificationError{
+			Reason: ReasonSenderMismatch,
+			Err:    unnamedSignerCause(m.Header.Sender, signers, checkSignature, data, m.Protection),
+		}
 	}
 	// A signature is checked only with a trusted certificate, so a message
 	// signed by a certificate outside the trust pool is reported as untrusted
@@ -522,6 +525,20 @@ func (m *PKIMessage) verifySignature(opts VerifyOptions) (*VerifyResult, error) 
 		return nil, &VerificationError{Reason: ReasonKeyUsageNotPermitted}
 	}
 	return nil, &VerificationError{Reason: ReasonSignatureFailed}
+}
+
+// unnamedSignerCause explains a sender mismatch for the operator. A candidate whose key verifies the signature names
+// another identity than the sender. No such candidate means the signer's certificate is missing. The result only
+// describes the failure and trusts no candidate.
+func unnamedSignerCause(sender GeneralName, candidates []*x509.Certificate, checkSignature func(cert *x509.Certificate, data, signature []byte) error, data []byte, signature []byte) error {
+	for _, cert := range candidates {
+		if checkSignature(cert, data, signature) == nil {
+			return fmt.Errorf(
+				"signed with the certificate of %s, which is not the sender %s", cert.Subject, sender.DirectoryName,
+			)
+		}
+	}
+	return fmt.Errorf("no candidate certificate names the sender %s or verifies the signature", sender.DirectoryName)
 }
 
 // verificationTime returns the time at which certificates must be valid.

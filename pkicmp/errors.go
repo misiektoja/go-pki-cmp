@@ -28,7 +28,8 @@ const (
 	ReasonUnexpectedProtection
 	// ReasonSenderMismatch indicates that the subject of the protection
 	// certificate, or of every candidate for it, is not the sender named in the
-	// header (RFC 9483 §3.5).
+	// header (RFC 9483 §3.5). When candidates were searched, Err says whether one
+	// of another name made the signature or the signer's certificate is missing.
 	ReasonSenderMismatch
 	// ReasonKeyUsageNotPermitted indicates the CMP protection certificate carries
 	// a keyUsage extension without the digitalSignature bit, which RFC 9483 §3.5
