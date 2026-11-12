@@ -43,7 +43,7 @@ options above. Set it only when every client follows RFC 9483 exactly.
 | `pkicmp.ReasonUntrustedSigner` | The CA's protection certificate does not chain to the anchors | Add the right root to the pool |
 | `pkicmp.ReasonNoCandidateSigner` | The CA signed without attaching its certificate | `client.WithServerCerts` |
 | `pkicmp.ReasonSenderKIDMismatch` | The CA copied the request's senderKID into the response | `client.WithSenderKIDMismatch` |
-| `pkicmp.ReasonSenderMismatch` | No candidate certificate has the sender name of the response | Check which certificate the CA signs with |
+| `pkicmp.ReasonSenderMismatch` | No candidate certificate has the sender name of the response. The error names the certificate that made the signature, or says that none did because the signer's certificate is missing | Configure a missing certificate with `client.WithServerCerts`, otherwise check which certificate the CA signs with |
 | `pkicmp.ReasonUnsupportedAlgorithm` | The CA signs with SHA-1 | `client.WithSHA1Signatures` |
 | `pkicmp.ReasonBadMAC` | The shared secret differs from the CA's | Check the secret and the reference sent as `senderKID` |
 | `client.ErrInfoTypeNotSupported` | The CA does not offer that support message | None, the CA decides |
