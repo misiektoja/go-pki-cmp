@@ -95,7 +95,7 @@ Common verification reasons:
 | --- | --- |
 | `ReasonBadMAC` | The MAC does not match the shared secret |
 | `ReasonUnexpectedProtection` | The message used another mechanism than `RequiredProtection` |
-| `ReasonSenderMismatch` | No candidate certificate has the sender's name |
+| `ReasonSenderMismatch` | No candidate certificate has the sender's name. The error says which certificate made the signature, if any |
 | `ReasonUntrustedSigner` | No candidate with the sender's name chains to the trust pool |
 | `ReasonNoCandidateSigner` | No certificate was available to verify the signature |
 | `ReasonSenderKIDMismatch` | The senderKID names none of the candidate certificates |

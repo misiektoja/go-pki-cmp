@@ -2,6 +2,18 @@
 
 Notable changes to go-pki-cmp. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.8.1 - 12 Nov 2026
+
+This release makes a sender mismatch name its cause and requires Go 1.27.4, which fixes GO-2026-6859 in `net/http`.
+
+### `pkicmp`
+
+* **A sender mismatch says what to fix.** When no candidate certificate names the sender of a signed message, the **`ReasonSenderMismatch`** error names the certificate whose key made the signature or says that none did. The second case means the signer's certificate is missing from `extraCerts` and from the configured certificates. The reason is unchanged, so code that checks it keeps working.
+
+### Requirements
+
+* **Go 1.27.4 or newer** is required. Go 1.27.3 has GO-2026-6859 in `net/http`, which govulncheck reports for every program that uses the client or server. The server reads the whole request before it writes the response, so it does not hit the race the advisory describes.
+
 ## v0.8.0 - 27 Oct 2026
 
 This release adds **central key generation** (RFC 9483 section 4.1.6): the CA generates the key pair and sends the private key signed and encrypted for the device. A client can also act as a registration authority, use implicit confirmation, resume a waiting enrollment in a later process and revoke a certificate by issuer and serial number. It also limits the work a peer can force on a verifier with large RSA keys or PBMAC1 parameters. Before upgrading, read the entries on the MAC iteration minimum and the per-credential transaction quota.
