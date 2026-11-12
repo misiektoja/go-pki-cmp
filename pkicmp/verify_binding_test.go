@@ -207,3 +207,30 @@ func TestVerifyRequiredProtection(t *testing.T) {
 		assert.Equal(t, pkicmp.ReasonMissingSharedSecret, ve.Reason)
 	})
 }
+
+// A sender mismatch has two operator-facing causes that need different fixes: the certificate that signed names
+// another identity, or the signer's certificate is not among the candidates at all.
+func TestVerifyExplainsSenderMismatch(t *testing.T) {
+	t.Run("SignedByCertificateOfAnotherName", func(t *testing.T) {
+		msg, pool := signedMessage(t, pkicmp.NewDirectoryName(pkix.Name{CommonName: "totally-unrelated-service"}))
+
+		_, err := msg.Verify(pkicmp.VerifyOptions{TrustPool: pool, ExtraCerts: msg.ExtraCerts})
+		var ve *pkicmp.VerificationError
+		require.ErrorAs(t, err, &ve)
+		assert.Equal(t, pkicmp.ReasonSenderMismatch, ve.Reason)
+		assert.Contains(t, err.Error(), "CN=Signer")
+		assert.Contains(t, err.Error(), "CN=totally-unrelated-service")
+	})
+
+	t.Run("SignerCertificateMissing", func(t *testing.T) {
+		msg, pool := signedMessage(t, pkicmp.NewDirectoryName(pkix.Name{CommonName: "Signer"}))
+		other := otherCertificate(t)
+
+		_, err := msg.Verify(pkicmp.VerifyOptions{TrustPool: pool, ExtraCerts: []pkicmp.CMPCertificate{{Raw: other.Raw}}})
+		var ve *pkicmp.VerificationError
+		require.ErrorAs(t, err, &ve)
+		assert.Equal(t, pkicmp.ReasonSenderMismatch, ve.Reason)
+		assert.Contains(t, err.Error(), "CN=Signer")
+		assert.NotContains(t, err.Error(), "Other CA")
+	})
+}
