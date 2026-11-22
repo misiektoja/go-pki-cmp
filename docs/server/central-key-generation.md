@@ -1,3 +1,7 @@
+---
+description: "Let go-pki-cmp generate key pairs for CMP clients with WithCentralKeyGeneration (RFC 9483 section 4.1.6), including encryption and delayed issuance."
+---
+
 # Keys the server generates
 
 `WithCentralKeyGeneration` lets a client ask the server to generate its key pair (RFC 9483 section

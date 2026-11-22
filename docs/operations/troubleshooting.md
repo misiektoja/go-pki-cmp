@@ -1,3 +1,7 @@
+---
+description: "Fix refused CMP requests in go-pki-cmp by matching the server status text or client error to its cause. Then collect diagnostics before reporting."
+---
+
 # Troubleshooting
 
 Most problems come from configuration that differs between CMP peers. A refused request names the

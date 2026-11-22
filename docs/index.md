@@ -1,3 +1,8 @@
+---
+title: "Go library for the Certificate Management Protocol (CMP)"
+description: "go-pki-cmp is a Go library for CMP (RFC 9810 and RFC 9483) with a client, a server and message packages, including post-quantum ML-DSA and ML-KEM keys."
+---
+
 # go-pki-cmp
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/go-pki-cmp?style=flat-square&color=blue)](https://github.com/misiektoja/go-pki-cmp/releases)

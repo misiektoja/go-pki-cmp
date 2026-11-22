@@ -1,3 +1,7 @@
+---
+description: "Hold CMP certificate requests for approval with PendingChecker and WaitingResponse in go-pki-cmp, with polling rules and certConf confirmation."
+---
+
 # Delayed issuance and confirmation
 
 A CA does not have to decide at once. It can hold a request until an operator approves it or an HSM

@@ -1,3 +1,7 @@
+---
+description: "Known limitations of go-pki-cmp, such as unimplemented CMP operations, in-memory server state, SLH-DSA speed and keys crypto/x509 cannot certify."
+---
+
 # Known limitations
 
 Behavior to plan around in the current release. Each item states what is missing and what it means

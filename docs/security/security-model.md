@@ -1,3 +1,7 @@
+---
+description: "Security model of go-pki-cmp: trust boundaries, what the CMP client and server enforce, what your application must add and options that weaken checks."
+---
+
 # Security model
 
 What the library checks, what it assumes about your application and where you must add your own

@@ -1,3 +1,7 @@
+---
+description: "Reference of go-pki-cmp server options for server.New and server.NewCAServer, with defaults for credentials, proof of possession, request rules and limits."
+---
+
 # Server options
 
 Options of `server.New` and `server.NewCAServer`. The

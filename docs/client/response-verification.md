@@ -1,3 +1,7 @@
+---
+description: "How the go-pki-cmp client checks CMP responses, including MAC and signature protection, trust anchors, signer certificates and options for non-compliant CAs."
+---
+
 # Response verification
 
 The client verifies every response before it acts on it. This page explains what it checks, which

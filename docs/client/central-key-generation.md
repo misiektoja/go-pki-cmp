@@ -1,3 +1,7 @@
+---
+description: "Ask a CMP CA to generate the key pair for a device with go-pki-cmp central key generation (RFC 9483 section 4.1.6) and receive the private key."
+---
+
 # Keys the CA generates
 
 A device that cannot generate a good key pair itself can ask the CA to do it (RFC 9483 section

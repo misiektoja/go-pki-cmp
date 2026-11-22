@@ -1,3 +1,7 @@
+---
+description: "Authorization and compatibility policy for the go-pki-cmp CMP server, including the Lightweight CMP Profile of RFC 9483 and options for deployed clients."
+---
+
 # Policy and client compatibility
 
 The server authenticates every message, but it does not decide who may request which certificate.

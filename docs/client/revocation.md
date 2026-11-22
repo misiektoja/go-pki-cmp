@@ -1,3 +1,7 @@
+---
+description: "Revoke a certificate with SendRR in go-pki-cmp using a CMP rr message under RFC 9483, with invalidity dates, holds and delayed answers."
+---
+
 # Revocation
 
 `Client.SendRR` asks the CA to revoke a certificate (RFC 9483 section 4.2). RFC 9483 expects the

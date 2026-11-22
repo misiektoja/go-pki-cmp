@@ -1,3 +1,7 @@
+---
+description: "How a go-pki-cmp release is made from a version tag, with versioning rules, release steps, artifacts and the release notes format."
+---
+
 # Release process
 
 A release is started by pushing a version tag that is reachable from `main` and by nothing else.

@@ -1,3 +1,7 @@
+---
+description: "Run the go-pki-cmp example CA and client to enroll with a shared secret, update a key and revoke a certificate, then reuse the pieces in your own module."
+---
+
 # Getting started
 
 This page runs the example CA and client from the repository and explains what they exchange.

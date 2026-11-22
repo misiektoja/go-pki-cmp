@@ -1,3 +1,7 @@
+---
+description: "How the go-pki-cmp server tracks CMP transactions, with limits, cleanup, durable recovery after a restart and running several replicas."
+---
+
 # Transactions and recovery
 
 The server tracks multi-message exchanges such as `ir`, `ip`, `certConf` and `pkiConf` and the

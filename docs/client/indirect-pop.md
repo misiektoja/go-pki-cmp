@@ -1,3 +1,7 @@
+---
+description: "Certify ML-KEM and encryption-only keys with go-pki-cmp by proving possession through decryption, as defined in RFC 9810 section 5.2.8.3."
+---
+
 # Keys that cannot sign
 
 ML-KEM keys and RSA or elliptic curve keys kept for encryption only cannot sign a proof of

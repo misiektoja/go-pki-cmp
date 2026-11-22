@@ -1,3 +1,7 @@
+---
+description: "Accept CMP requests that a registration authority forwards in a nested message to the go-pki-cmp server with WithRAAuthorizer."
+---
+
 # Registration authorities
 
 A registration authority (RA) can approve a request by forwarding it unchanged inside a nested

@@ -1,3 +1,7 @@
+---
+description: "Semantic versioning and API compatibility rules for the go-pki-cmp Go module, what may change before v1.0.0 and the supported Go version."
+---
+
 # Compatibility policy
 
 The module uses semantic versioning. The public API is every exported identifier of `pkicmp`,

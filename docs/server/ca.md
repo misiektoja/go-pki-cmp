@@ -1,3 +1,7 @@
+---
+description: "Implement the server.CA interface in go-pki-cmp to put a CMP front end on your CA, with certificate templates, responses and optional interfaces."
+---
+
 # Implementing a CA
 
 The `server` package handles the protocol. Your code signs certificates by implementing `server.CA`:

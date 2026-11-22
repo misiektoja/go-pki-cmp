@@ -1,3 +1,7 @@
+---
+description: "Build, parse, protect and verify CMP and CRMF messages directly with the go-pki-cmp pkicmp package for custom tools, RA proxies and tests."
+---
+
 # Messages and protection
 
 The `pkicmp` package is the base of the module. It defines the CMP and CRMF types, builds and parses

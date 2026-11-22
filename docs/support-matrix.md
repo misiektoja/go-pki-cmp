@@ -1,3 +1,7 @@
+---
+description: "Which RFCs, CMP messages, protection methods, proof of possession modes and key types go-pki-cmp supports and which options enable them."
+---
+
 # Support matrix
 
 What the library implements, which option turns a feature on and what is out of scope.

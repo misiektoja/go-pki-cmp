@@ -1,3 +1,7 @@
+---
+description: "How the pkicmp, cms, client and server packages of go-pki-cmp fit together and what a CMP request does on the client and on the server."
+---
+
 # Architecture
 
 How the packages divide the work and what happens to a request on each side.

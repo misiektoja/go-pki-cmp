@@ -1,3 +1,7 @@
+---
+description: "Handle CMP revocation requests (rr) on the go-pki-cmp server by implementing server.Revoker, including who may revoke and delayed revocation."
+---
+
 # Revocation
 
 Implement `server.Revoker` to accept revocation requests (RFC 9483 section 4.2). Without it the

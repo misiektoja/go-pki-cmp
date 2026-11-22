@@ -1,3 +1,7 @@
+---
+description: "Request certificates with the go-pki-cmp client using the CMP ir, cr, kur and p10cr messages, with credentials, request options, polling and confirmation."
+---
+
 # Enrollment
 
 The `client` package requests certificates with the four CMP enrollment messages. Each call runs the

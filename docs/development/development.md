@@ -1,3 +1,7 @@
+---
+description: "Build, check and change go-pki-cmp, with prerequisites, repository layout, common Make commands, documentation builds and code style."
+---
+
 # Development
 
 How to build, check and change the library. Contribution rules are in

@@ -1,3 +1,7 @@
+---
+description: "How the go-pki-cmp CMP server authenticates clients with shared secrets and certificates through WithSecretLookup and WithCertificateLookup."
+---
+
 # Authentication
 
 The server verifies the protection of every message before your code sees it. It has no credential

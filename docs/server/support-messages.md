@@ -1,3 +1,7 @@
+---
+description: "Answer CMP general messages on the go-pki-cmp server with providers for CA certificates, root CA updates, request templates and CRLs."
+---
+
 # Support messages
 
 RFC 9483 section 4.3 defines general messages that ask the CA for information. Implement the matching

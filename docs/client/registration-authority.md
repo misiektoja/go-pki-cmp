@@ -1,3 +1,7 @@
+---
+description: "Use the go-pki-cmp client as a CMP registration authority that forwards end entity requests in a nested message with its own signature."
+---
+
 # Acting as a registration authority
 
 A registration authority (RA) approves a request of an end entity by forwarding it inside a nested

@@ -1,3 +1,7 @@
+---
+description: "Reference of go-pki-cmp client options and per-request options with their defaults and effects, including trust anchors and recipient name."
+---
+
 # Client options
 
 Options of `client.NewClient` apply to every call of that client. Request options apply to one call.

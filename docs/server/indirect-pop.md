@@ -1,3 +1,7 @@
+---
+description: "Accept CMP requests for RSA, ECDH and ML-KEM keys that cannot sign in go-pki-cmp with encrypted certificate or challenge-response proof of possession."
+---
+
 # Keys that cannot sign
 
 By default only a signature proves possession of a key, so the server refuses a CRMF request for a

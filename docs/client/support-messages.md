@@ -1,3 +1,7 @@
+---
+description: "Fetch CA certificates, root CA updates, certificate request templates and CRLs with CMP general messages (RFC 9483 section 4.3) in the go-pki-cmp client."
+---
+
 # Support messages
 
 General messages ask the CA for information rather than a certificate (RFC 9483 section 4.3):
